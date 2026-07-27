@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>مشغل فيفوق — نظام الإنتاج</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --navy:#1b2a4a; --navy2:#24365e; --crimson:#b3213b; --bg:#f4f5f8;
+    --ok:#1e8e5a; --warn:#c98a00; --late:#c62828; --line:#e3e6ee;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; font-family:'Tajawal',sans-serif;}
+  body{background:var(--bg); color:#20242e; min-height:100vh;}
+  header{background:var(--navy); color:#fff; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:10;}
+  header h1{font-size:17px; font-weight:900;}
+  header .who{font-size:13px; opacity:.85;}
+  header button{background:rgba(255,255,255,.15); color:#fff; border:0; border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer;}
+  main{max-width:760px; margin:0 auto; padding:14px;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; box-shadow:0 1px 3px rgba(20,30,60,.05);}
+  .btn{display:inline-block; border:0; border-radius:10px; padding:12px 18px; font-size:15px; font-weight:700; cursor:pointer; text-align:center;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-crimson{background:var(--crimson); color:#fff;}
+  .btn-ok{background:var(--ok); color:#fff;}
+  .btn-warn{background:var(--warn); color:#fff;}
+  .btn-ghost{background:#eef0f5; color:#20242e;}
+  .btn-big{width:100%; padding:16px; font-size:18px; border-radius:12px; margin-top:8px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .tabs{display:flex; gap:6px; overflow-x:auto; margin-bottom:12px; padding-bottom:2px;}
+  .tabs button{flex-shrink:0; border:0; background:#fff; border:1px solid var(--line); border-radius:20px; padding:8px 14px; font-size:14px; font-weight:700; cursor:pointer; color:#444;}
+  .tabs button.on{background:var(--navy); color:#fff; border-color:var(--navy);}
+  .chip{display:inline-block; font-size:12px; font-weight:700; border-radius:12px; padding:2px 10px; background:#eef0f5;}
+  .chip.stage-قص{background:#e3edff; color:#1b4fa0;}
+  .chip.stage-تطريز{background:#f6e8ff; color:#7c2fa0;}
+  .chip.stage-خياطة{background:#fff2dd; color:#9a6400;}
+  .chip.stage-كي{background:#ffe9e0; color:#b04a17;}
+  .chip.stage-جودة{background:#e6f7ee; color:#177a4c;}
+  .chip.stage-تنظيف{background:#e0f4f7; color:#0e7285;}
+  .chip.stage-تجهيز{background:#eae9ff; color:#4636b8;}
+  .chip.stage-أُرسل{background:#dcf5e5; color:#15693f;}
+  .chip.type-كولكشن{background:#e3edff; color:#1b4fa0;}
+  .chip.type-طلب{background:#ffe6ec; color:#a01b3c;}
+  .chip.type-تصليح{background:#fff2dd; color:#9a6400;}
+  .late{color:var(--late); font-weight:900;}
+  label{display:block; font-size:13px; font-weight:700; margin:10px 0 4px; color:#4a4f5c;}
+  input,select{width:100%; border:1px solid #ccd2de; border-radius:9px; padding:10px; font-size:15px; background:#fff;}
+  .linerow{display:grid; grid-template-columns:2fr 1fr 1fr 1fr auto; gap:6px; margin-top:6px; align-items:center;}
+  .linerow input,.linerow select{padding:8px; font-size:14px;}
+  .muted{color:#7a8090; font-size:13px;}
+  .title{font-weight:900; font-size:16px; margin-bottom:6px;}
+  .lineitem{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px dashed var(--line); gap:8px; flex-wrap:wrap;}
+  .login-card{max-width:380px; margin:40px auto; text-align:center;}
+  .login-card .btn{width:100%; margin-top:10px;}
+  .workimg{width:64px; height:64px; border-radius:10px; object-fit:cover; background:#eef0f5;}
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th,td{padding:8px 6px; border-bottom:1px solid var(--line); text-align:right;}
+  th{color:#4a4f5c; font-size:13px;}
+  .empty{text-align:center; color:#8a90a0; padding:30px 10px; font-size:15px;}
+  .timer{font-size:13px; color:var(--crimson); font-weight:700;}
+</style>
+</head>
+<body>
+<header>
+  <h1>مشغل فيفوق</h1>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span class="who" id="whoami"></span>
+    <button id="logoutBtn" style="display:none" onclick="logout()">خروج</button>
+  </div>
+</header>
+<main id="app"><div class="empty">جاري التحميل...</div></main>
+
+<script>
+/* ============ الإعدادات — تُعبأ عند التركيب ============ */
+const SUPA_URL = "https://piivfnhnhwymhspiqqpq.supabase.co";
+const SUPA_KEY = "sb_publishable_EL5y8Utc62RgpvYeDAlBmQ_81smvXU3";
+const MANAGER_PIN = "9371";
+
+const STAGES = ["قص","تطريز","خياطة","كي","جودة","تنظيف","تجهيز","أُرسل"];
+const SPECIALTIES = {"قص":["قص"],"خياطة":["خياطة"],"كي":["كي"],"تجهيز":["تنظيف","تجهيز"]};
+
+let sb=null, DB={workers:[],designs:[],orders:[],lines:[],events:[],external:[]};
+let session=JSON.parse(localStorage.getItem("vv_session")||"null");
+let mTab=localStorage.getItem("vv_tab")||"لوحة";
+
+/* ============ تشغيل ============ */
+window.addEventListener("DOMContentLoaded", async ()=>{
+  if(SUPA_URL.includes("ضع_")){
+    el("app").innerHTML=`<div class="card"><div class="title">النظام غير مربوط بعد</div>
+    <p class="muted">هذا الملف جاهز، لكن يحتاج جلسة التركيب لربطه بقاعدة البيانات. ارجع لسليمان/كلود لإكمال الربط.</p></div>`;
+    return;
+  }
+  sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+  await loadAll();
+  render();
+});
+
+async function loadAll(){
+  const [w,d,o,l,e,x] = await Promise.all([
+    sb.from("workers").select("*").order("name"),
+    sb.from("designs").select("*").order("name"),
+    sb.from("orders").select("*").order("created_at",{ascending:false}),
+    sb.from("order_lines").select("*"),
+    sb.from("stage_events").select("*"),
+    sb.from("external_jobs").select("*"),
+  ]);
+  DB={workers:w.data||[],designs:d.data||[],orders:o.data||[],lines:l.data||[],events:e.data||[],external:x.data||[]};
+}
+
+/* ============ أدوات ============ */
+function el(id){return document.getElementById(id);}
+function design(id){return DB.designs.find(d=>d.id===id)||{name:"؟"};}
+function order(id){return DB.orders.find(o=>o.id===id)||{};}
+function worker(id){return DB.workers.find(w=>w.id===id)||{name:"؟"};}
+function esc(s){return (s??"").toString().replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));}
+function today(){return new Date().toISOString().slice(0,10);}
+function isLate(o){return o.due_date && o.status==="جاري" && o.due_date < today();}
+function mins(a,b){return Math.round((new Date(b)-new Date(a))/60000);}
+
+function stageAfter(stage, des, ord){
+  if(stage==="قص") return (des.needs_external && des.needs_external!=="لا") ? "تطريز" : "خياطة";
+  if(stage==="تطريز") return "خياطة";
+  if(stage==="خياطة") return "كي";
+  if(stage==="كي") return "جودة";
+  if(stage==="تنظيف") return "تجهيز";
+  if(stage==="تجهيز") return "أُرسل";
+  return stage;
+}
+
+function logout(){session=null; localStorage.removeItem("vv_session"); render();}
+function setSession(s){session=s; localStorage.setItem("vv_session",JSON.stringify(s)); render();}
+async function refresh(){await loadAll(); render();}
+
+/* ============ العرض الرئيسي ============ */
+function render(){
+  el("logoutBtn").style.display = session? "block":"none";
+  el("whoami").textContent = session? (session.role==="manager"?"المدير": session.role==="quality"?"فحص الجودة": worker(session.workerId).name) : "";
+  if(!session) return renderLogin();
+  if(session.role==="manager") return renderManager();
+  if(session.role==="quality") return renderQuality();
+  return renderWorker();
+}
+
+/* ============ الدخول ============ */
+function renderLogin(){
+  const ws=DB.workers.filter(w=>w.active);
+  el("app").innerHTML=`<div class="login-card card">
+    <div class="title" style="font-size:20px">منو أنت؟</div>
+    <button class="btn btn-primary btn-big" onclick="loginManager()">المدير</button>
+    <button class="btn btn-crimson btn-big" onclick="setSession({role:'quality'})">فحص الجودة</button>
+    <div class="muted" style="margin-top:16px">العمال</div>
+    ${ws.map(w=>`<button class="btn btn-ghost btn-big" onclick="setSession({role:'worker',workerId:'${w.id}'})">${esc(w.name)} <span class="muted">(${esc(w.specialty)})</span></button>`).join("") || `<p class="muted">ما في عمال مسجلين — المدير يضيفهم</p>`}
+  </div>`;
+}
+function loginManager(){
+  const p=prompt("رقم المدير السري:");
+  if(p===MANAGER_PIN) setSession({role:"manager"});
+  else if(p!==null) alert("الرقم غلط");
+}
+
+/* ============ شاشة المدير ============ */
+function renderManager(){
+  const tabs=["لوحة","أمر جديد","الخارجي","التصاميم","العمال","الأداء"];
+  el("app").innerHTML=`
+    <div class="tabs">${tabs.map(t=>`<button class="${mTab===t?'on':''}" onclick="mTab='${t}';localStorage.setItem('vv_tab','${t}');render()">${t}</button>`).join("")}</div>
+    <div id="tabbody"></div>`;
+  if(mTab==="لوحة") tabBoard();
+  else if(mTab==="أمر جديد") tabNewOrder();
+  else if(mTab==="الخارجي") tabExternal();
+  else if(mTab==="التصاميم") tabDesigns();
+  else if(mTab==="العمال") tabWorkers();
+  else tabPerf();
+}
+
+function tabBoard(){
+  const active=DB.orders.filter(o=>o.status==="جاري");
+  const done=DB.orders.filter(o=>o.status!=="جاري").slice(0,10);
+  const card=o=>{
+    const ls=DB.lines.filter(l=>l.order_id===o.id);
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+        <div class="title">أمر #${o.order_no} <span class="chip type-${o.order_type}">${o.order_type}</span></div>
+        <div class="muted">${o.due_date? (isLate(o)?`<span class="late">متأخر — ${o.due_date}</span>`:`تسليم: ${o.due_date}`):""}</div>
+      </div>
+      ${o.customer_ref?`<div class="muted">فاتورة: ${esc(o.customer_ref)}</div>`:""}
+      ${o.repair_reason?`<div class="muted">سبب التصليح: ${esc(o.repair_reason)}</div>`:""}
+      ${ls.map(l=>`<div class="lineitem">
+          <div><b>${esc(design(l.design_id).name)}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span></div>
+          <div><span class="chip stage-${l.stage}">${l.stage}${l.stage_status==="جاري"?" ⏱":""}</span>
+          ${l.stage==="تجهيز"?`<button class="btn btn-ok" style="padding:6px 10px;font-size:13px" onclick="shipLine('${l.id}')">أُرسلت ✓</button>`:""}</div>
+        </div>`).join("")}
+      ${o.status==="جاري" && ls.length && ls.every(l=>l.stage==="أُرسل")?`<button class="btn btn-primary btn-big" onclick="closeOrder('${o.id}')">إقفال الأمر ✓</button>`:""}
+    </div>`;
+  };
+  el("tabbody").innerHTML =
+    (active.length? active.map(card).join("") : `<div class="empty">ما في أوامر جارية — افتح «أمر جديد»</div>`)
+    + (done.length? `<div class="muted" style="margin:10px 4px">أوامر مقفلة مؤخراً</div>`+done.map(card).join(""):"");
+}
+async function shipLine(id){
+  await sb.from("order_lines").update({stage:"أُرسل",stage_status:"منتظر"}).eq("id",id);
+  await refresh();
+}
+async function closeOrder(id){
+  await sb.from("orders").update({status:"مكتمل"}).eq("id",id);
+  await refresh();
+}
+
+/* ---- أمر جديد ---- */
+let newLines=[];
+function tabNewOrder(){
+  if(!DB.designs.filter(d=>d.active).length){
+    el("tabbody").innerHTML=`<div class="empty">سجّل التصاميم أولاً من تبويب «التصاميم»</div>`; return;
+  }
+  if(!newLines.length) newLines=[{design_id:"",size:"",color:"",qty:1}];
+  const dOpts=DB.designs.filter(d=>d.active).map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
+  el("tabbody").innerHTML=`<div class="card">
+    <label>نوع الأمر</label>
+    <select id="o_type" onchange="render(), mTab='أمر جديد'">
+      <option>كولكشن</option><option>طلب</option><option>تصليح</option>
+    </select>
+    <div id="typeExtra"></div>
+    <label>تاريخ التسليم (اختياري للكولكشن)</label>
+    <input type="date" id="o_due">
+    <label>القطع</label>
+    <div id="lineRows">${newLines.map((l,i)=>`
+      <div class="linerow">
+        <select id="ld${i}">${dOpts}</select>
+        <input id="ls${i}" placeholder="مقاس" value="${esc(l.size)}">
+        <input id="lc${i}" placeholder="لون" value="${esc(l.color)}">
+        <input id="lq${i}" type="number" min="1" value="${l.qty}">
+        <button class="btn btn-ghost" onclick="delLine(${i})">✕</button>
+      </div>`).join("")}
+    </div>
+    <button class="btn btn-ghost" style="margin-top:8px" onclick="addLine()">+ سطر</button>
+    <button class="btn btn-crimson btn-big" onclick="saveOrder()">حفظ الأمر</button>
+  </div>`;
+  updateTypeExtra();
+  el("o_type").onchange=updateTypeExtra;
+  newLines.forEach((l,i)=>{ if(l.design_id && el("ld"+i)) el("ld"+i).value=l.design_id; });
+}
+function updateTypeExtra(){
+  const t=el("o_type").value;
+  el("typeExtra").innerHTML =
+    t==="طلب"? `<label>رقم فاتورة الزبونة</label><input id="o_ref" placeholder="مثال: INV-1024">`
+    : t==="تصليح"? `<label>سبب الرجوع</label><input id="o_reason" placeholder="مثال: فتق خياطة بالكم">`
+    : "";
+}
+function addLine(){captureLines(); newLines.push({design_id:"",size:"",color:"",qty:1}); tabNewOrder();}
+function delLine(i){captureLines(); newLines.splice(i,1); tabNewOrder();}
+function captureLines(){
+  newLines=newLines.map((l,i)=>({
+    design_id:el("ld"+i)?.value||"", size:el("ls"+i)?.value||"", color:el("lc"+i)?.value||"", qty:+(el("lq"+i)?.value||1)
+  }));
+}
+async function saveOrder(){
+  captureLines();
+  const t=el("o_type").value;
+  const valid=newLines.filter(l=>l.design_id&&l.qty>0);
+  if(!valid.length) return alert("أضف قطعة واحدة على الأقل");
+  const {data:o,error}=await sb.from("orders").insert({
+    order_type:t,
+    customer_ref: t==="طلب"? el("o_ref")?.value||null : null,
+    repair_reason: t==="تصليح"? el("o_reason")?.value||null : null,
+    due_date: el("o_due").value||null
+  }).select().single();
+  if(error) return alert("خطأ: "+error.message);
+  const startStage = t==="تصليح"? "خياطة":"قص";
+  await sb.from("order_lines").insert(valid.map(l=>({...l, order_id:o.id, stage:startStage})));
+  newLines=[]; mTab="لوحة"; localStorage.setItem("vv_tab","لوحة");
+  await refresh();
+}
+
+/* ---- الإرساليات الخارجية ---- */
+function tabExternal(){
+  const ls=DB.lines.filter(l=>l.stage==="تطريز");
+  el("tabbody").innerHTML = ls.length? ls.map(l=>{
+    const d=design(l.design_id), o=order(l.order_id);
+    const job=DB.external.find(x=>x.line_id===l.id && !x.returned_at);
+    const days=job? Math.round((new Date()-new Date(job.sent_at))/86400000):0;
+    return `<div class="card">
+      <div class="title">${esc(d.name)} <span class="muted">أمر #${o.order_no} — ${esc(l.size||"")} × ${l.qty}</span></div>
+      <div class="muted">النوع: ${esc(d.needs_external)} ${job?`— عند: ${esc(job.vendor||"غير محدد")} — صار له <b>${days}</b> يوم`:""}</div>
+      ${job? `<button class="btn btn-ok btn-big" onclick="externalBack('${l.id}','${job.id}')">رجعت من المصدر ✓</button>`
+           : `<button class="btn btn-warn btn-big" onclick="externalSend('${l.id}','${esc(d.needs_external)}')">تسجيل الإرسال ←</button>`}
+    </div>`;
+  }).join("") : `<div class="empty">ما في قطع عند مصادر خارجية حالياً</div>`;
+}
+async function externalSend(lineId, kind){
+  const vendor=prompt("اسم المصدر الخارجي (المطرز/المطبعة):")||"";
+  await sb.from("external_jobs").insert({line_id:lineId, kind, vendor});
+  await refresh();
+}
+async function externalBack(lineId, jobId){
+  await sb.from("external_jobs").update({returned_at:today()}).eq("id",jobId);
+  await sb.from("order_lines").update({stage:"خياطة",stage_status:"منتظر"}).eq("id",lineId);
+  await refresh();
+}
+
+/* ---- التصاميم ---- */
+function tabDesigns(){
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">تصميم جديد</div>
+    <label>الاسم</label><input id="d_name" placeholder="مثال: تريننج سنو وايت">
+    <label>رابط صورة (اختياري)</label><input id="d_img" placeholder="https://...">
+    <div class="grid2">
+      <div><label>عدد المكونات</label><input id="d_comp" type="number" min="1" value="1"></div>
+      <div><label>تطريز/طباعة خارجية؟</label><select id="d_ext"><option>لا</option><option>تطريز</option><option>طباعة</option></select></div>
+    </div>
+    <label>الأوقات التقديرية بالدقايق (قص / خياطة / كي)</label>
+    <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
+      <input id="d_cut" type="number" placeholder="قص"><input id="d_sew" type="number" placeholder="خياطة"><input id="d_iron" type="number" placeholder="كي">
+    </div>
+    <button class="btn btn-primary btn-big" onclick="saveDesign()">حفظ التصميم</button>
+  </div>
+  ${DB.designs.filter(d=>d.active).map(d=>`<div class="card lineitem" style="border-top:0">
+    <div style="display:flex;gap:10px;align-items:center">
+      ${d.image_url?`<img class="workimg" src="${esc(d.image_url)}">`:""}
+      <div><b>${esc(d.name)}</b><div class="muted">مكونات: ${d.components} — خارجي: ${esc(d.needs_external)} — تقديري: ${d.est_cut_min||"؟"}/${d.est_sew_min||"؟"}/${d.est_iron_min||"؟"} د</div></div>
+    </div>
+    <button class="btn btn-ghost" onclick="archiveDesign('${d.id}')">أرشفة</button>
+  </div>`).join("")}`;
+}
+async function saveDesign(){
+  const name=el("d_name").value.trim();
+  if(!name) return alert("اكتب اسم التصميم");
+  await sb.from("designs").insert({
+    name, image_url:el("d_img").value||null, components:+el("d_comp").value||1,
+    needs_external:el("d_ext").value,
+    est_cut_min:+el("d_cut").value||null, est_sew_min:+el("d_sew").value||null, est_iron_min:+el("d_iron").value||null
+  });
+  await refresh();
+}
+async function archiveDesign(id){ if(confirm("أرشفة التصميم؟")){await sb.from("designs").update({active:false}).eq("id",id); await refresh();} }
+
+/* ---- العمال ---- */
+function tabWorkers(){
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">عامل جديد</div>
+    <div class="grid2">
+      <div><label>الاسم</label><input id="w_name"></div>
+      <div><label>التخصص</label><select id="w_spec"><option>قص</option><option>خياطة</option><option>كي</option><option>تجهيز</option></select></div>
+    </div>
+    <button class="btn btn-primary btn-big" onclick="saveWorker()">إضافة</button>
+  </div>
+  ${DB.workers.filter(w=>w.active).map(w=>`<div class="card lineitem" style="border-top:0">
+    <div><b>${esc(w.name)}</b> <span class="muted">${esc(w.specialty)}</span></div>
+    <button class="btn btn-ghost" onclick="removeWorker('${w.id}')">إيقاف</button>
+  </div>`).join("")}`;
+}
+async function saveWorker(){
+  const name=el("w_name").value.trim();
+  if(!name) return alert("اكتب الاسم");
+  await sb.from("workers").insert({name, specialty:el("w_spec").value});
+  await refresh();
+}
+async function removeWorker(id){ if(confirm("إيقاف العامل؟")){await sb.from("workers").update({active:false}).eq("id",id); await refresh();} }
+
+/* ---- الأداء ---- */
+function tabPerf(){
+  const done=DB.events.filter(e=>e.started_at&&e.finished_at&&e.worker_id);
+  if(!done.length){el("tabbody").innerHTML=`<div class="empty">ما في بيانات بعد — تتجمع مع الاستخدام</div>`; return;}
+  const rows={};
+  done.forEach(e=>{
+    const k=e.worker_id+"|"+e.stage;
+    rows[k]=rows[k]||{w:worker(e.worker_id).name, stage:e.stage, n:0, total:0, est:0, estN:0};
+    const r=rows[k]; r.n++; r.total+=mins(e.started_at,e.finished_at);
+    const l=DB.lines.find(x=>x.id===e.line_id);
+    if(l){const d=design(l.design_id);
+      const est=e.stage==="قص"?d.est_cut_min: e.stage==="خياطة"?d.est_sew_min: e.stage==="كي"?d.est_iron_min:null;
+      if(est){r.est+=est*l.qty; r.estN++;}
+    }
+  });
+  const rework={};
+  DB.events.filter(e=>e.result==="تعديل").forEach(e=>{
+    const evs=DB.events.filter(x=>x.line_id===e.line_id&&x.stage==="خياطة"&&x.finished_at&&x.worker_id);
+    if(evs.length){const wid=evs[evs.length-1].worker_id; rework[wid]=(rework[wid]||0)+1;}
+  });
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">الأداء الفعلي</div>
+    <table><tr><th>العامل</th><th>المرحلة</th><th>عدد</th><th>متوسط فعلي</th><th>متوسط تقديري</th></tr>
+    ${Object.values(rows).map(r=>`<tr><td>${esc(r.w)}</td><td>${r.stage}</td><td>${r.n}</td><td>${Math.round(r.total/r.n)} د</td><td>${r.estN?Math.round(r.est/r.estN)+" د":"—"}</td></tr>`).join("")}
+    </table>
+    ${Object.keys(rework).length?`<div class="title" style="margin-top:14px">قطع رجعت «تعديل» من الجودة</div>
+    <table><tr><th>العامل</th><th>عدد</th></tr>
+    ${Object.entries(rework).map(([wid,n])=>`<tr><td>${esc(worker(wid).name)}</td><td>${n}</td></tr>`).join("")}</table>`:""}
+    <p class="muted" style="margin-top:10px">أول شهر لضبط الأوقات التقديرية — لا تقيّم على أرقام غير مضبوطة.</p>
+  </div>`;
+}
+
+/* ============ شاشة العامل ============ */
+function renderWorker(){
+  const w=worker(session.workerId);
+  const myStages=SPECIALTIES[w.specialty]||[];
+  const ls=DB.lines.filter(l=>myStages.includes(l.stage) && order(l.order_id).status==="جاري");
+  el("app").innerHTML = `
+    <button class="btn btn-ghost" style="margin-bottom:10px" onclick="refresh()">↻ تحديث</button>
+    ${ls.length? ls.map(l=>{
+      const d=design(l.design_id), o=order(l.order_id);
+      const running=l.stage_status==="جاري";
+      const ev=running? DB.events.find(e=>e.line_id===l.id&&e.stage===l.stage&&e.started_at&&!e.finished_at):null;
+      return `<div class="card">
+        <div style="display:flex;gap:12px;align-items:center">
+          ${d.image_url?`<img class="workimg" src="${esc(d.image_url)}">`:""}
+          <div>
+            <div class="title">${esc(d.name)}</div>
+            <div class="muted">أمر #${o.order_no} <span class="chip type-${o.order_type}">${o.order_type}</span> — ${esc(l.size||"")} ${esc(l.color||"")} × <b>${l.qty}</b></div>
+            <span class="chip stage-${l.stage}">${l.stage}</span>
+            ${o.repair_reason?`<div class="muted">تصليح: ${esc(o.repair_reason)}</div>`:""}
+            ${ev?`<div class="timer">شغال من ${mins(ev.started_at,new Date().toISOString())} دقيقة</div>`:""}
+          </div>
+        </div>
+        ${running? `<button class="btn btn-ok btn-big" onclick="finishStage('${l.id}')">خلصت ✓</button>`
+                 : `<button class="btn btn-crimson btn-big" onclick="startStage('${l.id}')">بديت ▶</button>`}
+      </div>`;
+    }).join("") : `<div class="empty">ما عندك شغل حالياً 👌<br>اضغط تحديث بين فترة وفترة</div>`}`;
+}
+async function startStage(lineId){
+  const l=DB.lines.find(x=>x.id===lineId);
+  await sb.from("stage_events").insert({line_id:lineId, stage:l.stage, worker_id:session.workerId, started_at:new Date().toISOString()});
+  await sb.from("order_lines").update({stage_status:"جاري"}).eq("id",lineId);
+  await refresh();
+}
+async function finishStage(lineId){
+  const l=DB.lines.find(x=>x.id===lineId);
+  const ev=DB.events.find(e=>e.line_id===lineId&&e.stage===l.stage&&e.started_at&&!e.finished_at);
+  if(ev) await sb.from("stage_events").update({finished_at:new Date().toISOString()}).eq("id",ev.id);
+  const next=stageAfter(l.stage, design(l.design_id), order(l.order_id));
+  await sb.from("order_lines").update({stage:next, stage_status:"منتظر"}).eq("id",lineId);
+  await refresh();
+}
+
+/* ============ شاشة الجودة ============ */
+function renderQuality(){
+  const ls=DB.lines.filter(l=>l.stage==="جودة" && order(l.order_id).status==="جاري");
+  el("app").innerHTML = `
+    <button class="btn btn-ghost" style="margin-bottom:10px" onclick="refresh()">↻ تحديث</button>
+    ${ls.length? ls.map(l=>{
+      const d=design(l.design_id), o=order(l.order_id);
+      return `<div class="card">
+        <div style="display:flex;gap:12px;align-items:center">
+          ${d.image_url?`<img class="workimg" src="${esc(d.image_url)}">`:""}
+          <div><div class="title">${esc(d.name)}</div>
+          <div class="muted">أمر #${o.order_no} — ${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</div></div>
+        </div>
+        <div class="grid2" style="grid-template-columns:1fr 1fr 1fr; margin-top:10px">
+          <button class="btn btn-ok" onclick="qcResult('${l.id}','سليمة')">سليمة ✓</button>
+          <button class="btn btn-warn" onclick="qcResult('${l.id}','تنظيف')">تنظيف</button>
+          <button class="btn btn-crimson" onclick="qcResult('${l.id}','تعديل')">تعديل ↩</button>
+        </div>
+      </div>`;
+    }).join("") : `<div class="empty">ما في قطع بانتظار الفحص</div>`}`;
+}
+async function qcResult(lineId, result){
+  await sb.from("stage_events").insert({line_id:lineId, stage:"جودة", result, started_at:new Date().toISOString(), finished_at:new Date().toISOString()});
+  const next = result==="سليمة"? "تجهيز" : result==="تنظيف"? "تنظيف" : "خياطة";
+  await sb.from("order_lines").update({stage:next, stage_status:"منتظر"}).eq("id",lineId);
+  await refresh();
+}
+</script>
+</body>
+</html>
