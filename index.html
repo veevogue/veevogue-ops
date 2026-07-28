@@ -33,7 +33,7 @@
   .btn-big{width:100%;padding:15px;font-size:17px;border-radius:12px;margin-top:8px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
-  .tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;padding-bottom:3px;}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:3px;}
   .tabs button{flex-shrink:0;border:1px solid var(--line);background:var(--paper);border-radius:20px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;color:var(--gray);}
   .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink);}
   .chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:12px;padding:3px 10px;background:var(--soft);color:#333;}
@@ -60,8 +60,8 @@
   .sechead .ico{width:26px;height:26px;}
   .bignum{font-family:'Inter';font-weight:800;font-size:30px;line-height:1;}
   .biglabel{font-size:10px;letter-spacing:1px;color:var(--gray);font-weight:700;}
-  .statrow{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;}
-  .stat{flex:1;min-width:86px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;}
+  .statrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:12px;}
+  .stat{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;}
   .stat .ico{margin:0 auto 4px;display:block;color:#444;}
   .overlay{position:fixed;inset:0;background:rgba(20,20,20,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
@@ -238,7 +238,7 @@ function pinPad(title, correct, onOk){
     <div class="title">${esc(title)}</div>
     <div id="pinDots" style="font-size:30px;letter-spacing:10px;height:42px;font-family:'Inter'">····</div>
     <div id="pinErr" class="muted" style="color:var(--bad);height:18px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:280px;margin:8px auto">
+    <div dir="ltr" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:280px;margin:8px auto">
       ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="btn btn-ghost" style="font-size:22px;padding:16px" onclick="pinKey('${n}')">${n}</button>`).join("")}
       <button class="btn btn-ghost" style="padding:16px" onclick="pinKey('del')">⌫</button>
       <button class="btn btn-ghost" style="font-size:22px;padding:16px" onclick="pinKey('0')">0</button>
