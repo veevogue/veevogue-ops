@@ -227,7 +227,7 @@ const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hi
 const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
 
 let sb=null;
-let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[]};
+let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[]};
 let session=JSON.parse(localStorage.getItem("vv2_session")||"null");
 let mTab=localStorage.getItem("vv2_tab")||"board";
 let editProductId=null, newLines=[], customModels=[];
@@ -246,7 +246,7 @@ function checkDailyLogout(){
   if(session && session.day !== today()){ session=null; localStorage.removeItem("vv2_session"); }
 }
 async function loadAll(){
-  const [w,p,d,s,r,o,l,pa,e,j,st,br] = await Promise.all([
+  const [w,p,d,s,r,o,l,pa,e,j,st,br,col] = await Promise.all([
     sb.from("workers").select("*").order("name"),
     sb.from("products").select("*").order("created_at",{ascending:false}),
     sb.from("design_projects").select("*").order("created_at",{ascending:false}),
@@ -259,11 +259,12 @@ async function loadAll(){
     sb.from("ext_jobs").select("*").order("created_at",{ascending:false}),
     sb.from("settings").select("*").eq("id",1).maybeSingle(),
     sb.from("breaks").select("*"),
+    sb.from("collections").select("*").order("created_at",{ascending:false}),
   ]);
   DB={workers:w.data||[],products:p.data||[],designs:d.data||[],shoots:s.data||[],reasons:r.data||[],
       orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
       settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
-      breaks:br.data||[]};
+      breaks:br.data||[], collections:col.data||[]};
 }
 async function refresh(){await loadAll(); render();}
 
@@ -760,62 +761,213 @@ function showChart(pid, size){
   </div>`);
 }
 
-/* ---- التصميم ---- */
+/* ---- التصميم: الكولكشنات ← المسار ---- */
+const DSTAGES=["idea","sketch","prep","sample","notes","approved"];
+const DLABEL={idea:["الفكرة","IDEA"],sketch:["السكيتشات","SKETCH"],prep:["تجهيز العينة","PREP"],
+  sample:["تنفيذ العينة","SAMPLE"],notes:["ملاحظات العينة","REVIEW"],approved:["معتمد","APPROVED"]};
+function dlab(s){return isAr()? (DLABEL[s]?DLABEL[s][0]:s) : (DLABEL[s]?DLABEL[s][1]:s);}
+function design_(id){return DB.designs.find(x=>x.id===id)||{};}
+function collection_(id){return (DB.collections||[]).find(c=>c.id===id)||{};}
+
 function tabDesign(){
+  const cur=window._curCol;
+  if(cur) return renderCollection(cur);
+  const cols=DB.collections||[];
   el("tabbody").innerHTML=`
-    <button class="btn btn-wine btn-big" onclick="newDesign()">${I.plus} ${t("design")}</button>
-    ${DB.designs.map(d=>`<div class="card">
-      <div class="wtop">${(d.images&&d.images[0])?`<img class="thumb" src="${esc(d.images[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
-        <div style="flex:1"><div class="title">${esc(d.name)}</div>
-        <span class="chip sage">${esc(d.status)}</span> <span class="muted">${(d.notes||[]).length}</span></div>
-      </div>
-      <button class="btn btn-ghost" style="margin-top:8px" onclick="openDesign('${d.id}')">${t("open")} ←</button>
-    </div>`).join("")||`<div class="empty">—</div>`}`;
+    <button class="btn btn-ink btn-big" onclick="newCollection()">${I.plus} ${isAr()?"كولكشن جديد":"New collection"}</button>
+    ${cols.map(c=>{
+      const ds=DB.designs.filter(d=>d.collection_id===c.id);
+      const doneN=ds.filter(d=>d.stage==="approved").length;
+      const late=c.target_date && c.target_date<today() && doneN<ds.length;
+      return `<div class="card">
+        <div class="lineitem" style="border:0;cursor:pointer" onclick="window._curCol='${c.id}';render()">
+          <div><div class="title">${esc(c.name)}</div>
+          <span class="muted">${ds.length} ${isAr()?"تصميم":"designs"} · ${doneN} ${isAr()?"معتمد":"approved"}</span></div>
+          <div class="muted">${c.target_date?(late?`<span class="late">${t("late")} ${fmtD(c.target_date)}</span>`:`${t("due")} ${fmtD(c.target_date)}`):""} ←</div>
+        </div>
+      </div>`;}).join("") || `<div class="empty">${isAr()?"ابدأ بإنشاء كولكشن":"Create a collection"}</div>`}`;
 }
-function newDesign(){
-  openSheet(`<div class="title">${t("design")}</div><label>${isAr()?"اسم التصميم":"Name"}</label><input id="nd_name">
-    <button class="btn btn-wine btn-big" onclick="saveNewDesign()">${t("add")}</button>`);
+function newCollection(){
+  openSheet(`<div class="title">${isAr()?"كولكشن جديد":"New collection"}</div>
+    <label>${isAr()?"الاسم":"Name"}</label><input id="nc_name" placeholder="${isAr()?"رمضان · الأميرات · ملابس البحر":"..."}">
+    <label>${isAr()?"تاريخ الانتهاء من التصميم":"Design deadline"}</label><input type="date" id="nc_date">
+    <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="nc_notes"></textarea>
+    <button class="btn btn-ok btn-big" onclick="saveCollection()">${t("add")}</button>`);
 }
-async function saveNewDesign(){
-  const name=el("nd_name").value.trim(); if(!name) return;
-  await sb.from("design_projects").insert({name}); closeSheet(); await refresh();
-}
-function openDesign(id){
-  const d=DB.designs.find(x=>x.id===id);
-  openSheet(`
-    <div class="title">${esc(d.name)} <span class="chip sage">${esc(d.status)}</span></div>
-    <div class="imgrow">${(d.images||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>
-    <label>${isAr()?"صور وسكيتشات":"Images"}</label><input type="file" id="dj_imgs" accept="image/*" multiple onchange="addDesignImgs('${d.id}')">
-    <label>${isAr()?"الملاحظات":"Notes"}</label>
-    ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
-    <div style="display:flex;gap:6px;margin-top:8px"><input id="dj_note"><button class="btn btn-ghost" onclick="addDesignNote('${d.id}')">${t("add")}</button></div>
-    <div class="pillrow" style="margin-top:10px">${["فكرة","عينة","ملاحظات"].map(s=>`<span class="pill ${d.status===s?'on':''}" onclick="setDesignStatus('${d.id}','${s}')">${s}</span>`).join("")}</div>
-    ${d.status!=="معتمد"?`<button class="btn btn-wine btn-big" onclick="approveDesign('${d.id}')">${I.done} ${isAr()?"اعتماد → منتج":"Approve → product"}</button>`:`<div class="note-box">✓</div>`}
-    ${session.role==="manager"?`<button class="btn btn-ghost btn-big" onclick="delDesign('${d.id}')">${I.trash}</button>`:""}
-  `);
-}
-async function addDesignImgs(id){
-  const d=DB.designs.find(x=>x.id===id); const imgs=[...(d.images||[])];
-  for(const f of el("dj_imgs").files){const u=await uploadFile(f,"designs"); if(u) imgs.push(u);}
-  await sb.from("design_projects").update({images:imgs}).eq("id",id);
-  await refresh(); closeSheet(); openDesign(id);
-}
-async function addDesignNote(id){
-  const tx=el("dj_note").value.trim(); if(!tx) return;
-  const d=DB.designs.find(x=>x.id===id);
-  await sb.from("design_projects").update({notes:[...(d.notes||[]),{t:tx,d:today()}]}).eq("id",id);
-  await refresh(); closeSheet(); openDesign(id);
-}
-async function setDesignStatus(id,s){await sb.from("design_projects").update({status:s}).eq("id",id); await refresh(); closeSheet(); openDesign(id);}
-async function delDesign(id){if(confirm("?")){await sb.from("design_projects").delete().eq("id",id); closeSheet(); await refresh();}}
-async function approveDesign(id){
-  const d=DB.designs.find(x=>x.id===id);
-  const {data:p,error}=await sb.from("products").insert({name:d.name, images:d.images||[], notes:(d.notes||[]).map(n=>n.t).join(" | ")}).select().single();
+async function saveCollection(){
+  const name=el("nc_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Name?");
+  const {error}=await sb.from("collections").insert({name,target_date:el("nc_date").value||null,notes:el("nc_notes").value||null});
   if(error) return alert(error.message);
-  await sb.from("design_projects").update({status:"معتمد",product_id:p.id}).eq("id",id);
-  await sb.from("photoshoots").insert({product_id:p.id});
-  closeSheet(); await refresh(); mTab="products"; render(); showProductForm(p.id);
+  closeSheet(); await refresh();
 }
+function renderCollection(cid){
+  const c=collection_(cid);
+  const ds=DB.designs.filter(d=>d.collection_id===cid);
+  el("tabbody").innerHTML=`
+    <div class="lineitem" style="border:0">
+      <button class="btn btn-ghost" onclick="window._curCol=null;render()">← ${isAr()?"الكولكشنات":"Collections"}</button>
+      ${session.role==="manager"?`<button class="btn btn-ghost" onclick="delCollection('${cid}')">${I.trash}</button>`:""}
+    </div>
+    <div class="card">
+      <div class="title">${esc(c.name)}</div>
+      <div class="muted">${c.target_date?`${isAr()?"الانتهاء من التصميم":"Deadline"}: ${esc(c.target_date)}`:""}</div>
+      ${c.notes?`<div class="note-box">${esc(c.notes)}</div>`:""}
+    </div>
+    <button class="btn btn-ink btn-big" onclick="newDesign('${cid}')">${I.plus} ${isAr()?"تصميم جديد":"New design"}</button>
+    ${DSTAGES.map(st=>{
+      const list=ds.filter(d=>(d.stage||"idea")===st);
+      if(!list.length) return "";
+      return `<div class="sechead">${dlab(st)} <span class="muted" style="letter-spacing:0">(${list.length})</span></div>
+      ${list.map(d=>`<div class="card">
+        <div class="wtop">${(d.mood&&d.mood[0])?`<img class="thumb" src="${esc(d.mood[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+          <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
+          ${d.sample_worker_id?`<span class="chip">${I.user} ${esc(wname(worker(d.sample_worker_id)))}</span>`:""}
+          ${(d.sample_notes||[]).length?`<span class="chip wine">${(d.sample_notes||[]).length} ${isAr()?"ملاحظة":"notes"}</span>`:""}
+          </div>
+        </div>
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="openDesign('${d.id}')">${t("open")} ←</button>
+      </div>`).join("")}`;
+    }).join("") || `<div class="empty">—</div>`}`;
+}
+async function delCollection(id){
+  if(!confirm(isAr()?"حذف الكولكشن؟ التصاميم تبقى بدون كولكشن":"Delete collection?")) return;
+  await sb.from("collections").delete().eq("id",id); window._curCol=null; await refresh();
+}
+function newDesign(cid){
+  openSheet(`<div class="title">${isAr()?"تصميم جديد":"New design"}</div>
+    <label>${isAr()?"الاسم الأولي":"Working name"}</label><input id="nd_name">
+    <button class="btn btn-ok btn-big" onclick="saveNewDesign('${cid}')">${t("add")}</button>`);
+}
+async function saveNewDesign(cid){
+  const name=el("nd_name").value.trim(); if(!name) return;
+  await sb.from("design_projects").insert({name, collection_id:cid, stage:"idea", status:"فكرة"});
+  closeSheet(); await refresh();
+}
+
+/* ---- ورقة التصميم حسب المرحلة ---- */
+function openDesign(id){
+  const d=design_(id); const st=d.stage||"idea";
+  const imgs=(arr,fld)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>`;
+  let body="";
+  if(st==="idea"){
+    body=`<label>${isAr()?"المود بورد — صور مرجعية":"Mood board"}</label>
+      ${imgs(d.mood)}<input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
+      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','sketch')">${isAr()?"التالي: السكيتشات":"Next: sketches"} ←</button>`;
+  } else if(st==="sketch"){
+    body=`${imgs(d.mood)}
+      <label>${isAr()?"السكيتشات":"Sketches"}</label>
+      ${imgs(d.sketches)}<input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
+      <label>${isAr()?"الملاحظات":"Notes"}</label>
+      ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
+      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
+      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${I.done} ${isAr()?"اعتماد الفكرة":"Approve idea"}</button>
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','idea')">← ${isAr()?"رجوع":"Back"}</button>`;
+  } else if(st==="prep"){
+    const ws=DB.workers.filter(w=>w.active&&(w.specialties||[]).includes("sample"));
+    window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
+    body=`${imgs(d.sketches)}
+      <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
+      <label>${isAr()?"الأعمار (افصل بفاصلة)":"Ages"}</label>
+      <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()">
+      <div id="dChartGrid"></div>
+      <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
+      <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
+        : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
+      ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
+      <button class="btn btn-ok btn-big" onclick="sendToSample('${id}')">${isAr()?"إرسال لتنفيذ العينة":"Send to sample"} ←</button>
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','sketch')">← ${isAr()?"رجوع":"Back"}</button>`;
+    setTimeout(redrawDChart,0);
+  } else if(st==="sample"){
+    const running=d.sample_started_at&&!d.sample_finished_at;
+    body=`<div class="note-box">${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${mins(d.sample_started_at,new Date().toISOString())} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}</div>
+      ${imgs(d.sketches)}
+      ${d.materials?`<div class="note-box">${esc(d.materials)}</div>`:""}
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">← ${isAr()?"تعديل التجهيز":"Edit prep"}</button>`;
+  } else if(st==="notes"){
+    body=`<div class="note-box">${I.done} ${isAr()?"العينة انفذت":"Sample done"} — ${esc(wname(worker(d.sample_worker_id)))}
+      ${d.sample_started_at&&d.sample_finished_at?` · ${mins(d.sample_started_at,d.sample_finished_at)} ${t("minutes")}`:""}</div>
+      ${imgs(d.sketches)}
+      <label>${isAr()?"ملاحظات على العينة":"Sample notes"}</label>
+      ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
+      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note"><button class="btn btn-ghost" onclick="addDesignNote('${id}','sample_notes')">${t("add")}</button></div>
+      <button class="btn btn-bad btn-big" onclick="backToSample('${id}')">↩ ${isAr()?"إرجاع لنفس العامل للتعديل":"Back to worker"}</button>
+      <button class="btn btn-ok btn-big" onclick="approveSample('${id}')">${I.done} ${isAr()?"اعتماد العينة":"Approve sample"}</button>`;
+  } else {
+    body=`<div class="note-box">${I.done} ${isAr()?"معتمد وتحول لمنتج":"Approved → product"}</div>
+      ${d.product_id?`<button class="btn btn-ghost btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}`;
+  }
+  openSheet(`<div class="title">${esc(d.final_name||d.name)} <span class="chip sage">${dlab(st)}</span></div>${body}
+    ${session.role==="manager"&&st!=="approved"?`<button class="btn btn-ghost btn-big" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
+}
+function captureDChart(){Object.keys(window._dchart||{}).forEach(s=>{MEAS.forEach(m=>{const i=el(`dc_${s}_${m[0]}`); if(i) window._dchart[s][m[0]]=i.value;});});}
+function redrawDChart(){
+  const box=el("dChartGrid"); if(!box) return;
+  const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
+  sizes.forEach(s=>{window._dchart[s]=window._dchart[s]||{};});
+  box.innerHTML= sizes.length? `<div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+    ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="dc_${s}_${m[0]}" style="min-width:56px;padding:6px" value="${esc(window._dchart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
+}
+async function addDesignFiles(id, field){
+  const d=design_(id); const arr=[...(d[field]||[])];
+  for(const f of el(field==="mood"?"d_mood":"d_sketches").files){const u=await uploadFile(f,"designs"); if(u) arr.push(u);}
+  await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  await refresh(); closeSheet(); openDesign(id);
+}
+async function addDesignNote(id, field){
+  const tx=el("d_note").value.trim(); if(!tx) return;
+  const d=design_(id);
+  await sb.from("design_projects").update({[field]:[...(d[field]||[]),{t:tx,d:today()}]}).eq("id",id);
+  await refresh(); closeSheet(); openDesign(id);
+}
+async function setDStage(id, st){
+  await sb.from("design_projects").update({stage:st}).eq("id",id);
+  await refresh(); closeSheet(); openDesign(id);
+}
+async function sendToSample(id){
+  captureDChart();
+  const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
+  const wid=el("d_worker").value; if(!wid) return alert(isAr()?"اختر عامل":"Pick worker");
+  await sb.from("design_projects").update({materials:el("d_mat").value||null, size_chart:chart,
+    sample_worker_id:wid, stage:"sample", sample_started_at:null, sample_finished_at:null}).eq("id",id);
+  closeSheet(); await refresh();
+}
+async function backToSample(id){
+  await sb.from("design_projects").update({stage:"sample", sample_started_at:null, sample_finished_at:null}).eq("id",id);
+  closeSheet(); await refresh();
+}
+function approveSample(id){
+  const d=design_(id);
+  window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
+  openSheet(`<div class="title">${isAr()?"اعتماد العينة":"Approve sample"}</div>
+    <label>${isAr()?"الاسم النهائي (عربي)":"Final name (AR)"}</label><input id="ap_name" value="${esc(d.final_name||d.name||"")}">
+    <label>${isAr()?"الاسم النهائي (إنجليزي)":"Final name (EN)"}</label><input id="ap_name_en" dir="ltr" value="${esc(d.final_name_en||"")}">
+    <label>${isAr()?"الأعمار":"Ages"}</label><input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()">
+    <div id="dChartGrid"></div>
+    <button class="btn btn-ok btn-big" onclick="finishApprove('${id}')">${I.done} ${isAr()?"اعتماد وتحويل لمنتج":"Approve → product"}</button>`);
+  setTimeout(redrawDChart,0);
+}
+async function finishApprove(id){
+  const d=design_(id);
+  const name=el("ap_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم النهائي":"Final name?");
+  captureDChart();
+  const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
+  if(!sizes.length) return alert(isAr()?"حدد الأعمار وجدول القياسات":"Add sizes");
+  const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
+  const est = (d.sample_started_at&&d.sample_finished_at)? mins(d.sample_started_at,d.sample_finished_at) : null;
+  const {data:p,error}=await sb.from("products").insert({
+    name, name_en:el("ap_name_en").value||null,
+    images:[...(d.sketches||[]),...(d.mood||[])].slice(0,6),
+    size_chart:chart, notes:(d.notes||[]).map(n=>n.t).join(" | ")||null,
+    est_sew_min:est
+  }).select().single();
+  if(error) return alert(error.message);
+  await sb.from("design_projects").update({stage:"approved",status:"معتمد",product_id:p.id,final_name:name,final_name_en:el("ap_name_en").value||null,size_chart:chart}).eq("id",id);
+  await sb.from("photoshoots").insert({product_id:p.id});
+  closeSheet(); await refresh();
+  mTab="products"; render(); showProductForm(p.id);
+}
+async function delDesign(id){if(confirm(isAr()?"حذف التصميم؟":"Delete?")){await sb.from("design_projects").delete().eq("id",id); closeSheet(); await refresh();}}
 
 /* ---- الخارجي ---- */
 function tabExternal(){
@@ -1054,10 +1206,45 @@ function renderWorker(){
       ${!onBreak?`<button class="btn btn-line" onclick="startBreak()">${I.coffee} ${t("breakStart")}</button>`:""}
     </div>`;
   if(onBreak){ el("app").innerHTML=html; return; }
+  if(specs.includes("sample")) html+=workerSection("sample", sampleTasks(w));
   if(specs.includes("cut")) html+=workerSection("cut", cutTasks(w));
   if(specs.includes("sew")) html+=workerSection("sew", sewTasks(w));
   if(specs.includes("pack")) html+=workerSection("pack", packTasks(w));
   el("app").innerHTML=html;
+}
+function sampleTasks(w){
+  return DB.designs.filter(d=>d.stage==="sample" && d.sample_worker_id===w.id).map(d=>{
+    const running=d.sample_started_at&&!d.sample_finished_at;
+    const m=running? mins(d.sample_started_at,new Date().toISOString()):0;
+    const imgs=[...(d.sketches||[]),...(d.mood||[])];
+    const chart=d.size_chart||{}; const sizes=Object.keys(chart);
+    return `<div class="wcard">
+      <div class="wtop">
+        ${imgs[0]?`<img class="thumb" src="${esc(imgs[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+        <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
+        <div class="muted">${esc(collection_(d.collection_id).name||"")}</div></div>
+      </div>
+      ${imgs.length>1?`<div class="imgrow">${imgs.slice(1,5).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>`:""}
+      ${d.materials?`<div class="note-box"><b>${isAr()?"الخامات":"MATERIALS"}:</b> ${esc(d.materials)}</div>`:""}
+      ${sizes.length?`<div class="note-box"><b>${t("sizeChart")}</b>
+        <div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+        ${MEAS.filter(mm=>sizes.some(s=>chart[s]?.[mm[0]])).map(mm=>`<tr><td>${isAr()?mm[1]:mm[2]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[mm[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table></div></div>`:""}
+      ${(d.sample_notes||[]).length?`<div class="note-box"><b>${I.fix} ${isAr()?"مطلوب تعديل":"FIX LIST"}</b>
+        ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
+      ${running?`<div class="timer t-ok">⏱ ${m} ${t("minutes")}</div>`:""}
+      ${running? `<button class="btn btn-ok btn-big" onclick="sampleDone('${d.id}')">${I.done} ${t("done")}</button>`
+               : `<button class="btn btn-ink btn-big" onclick="sampleStart('${d.id}')">${I.play} ${t("start")}</button>`}
+    </div>`;
+  });
+}
+async function sampleStart(id){
+  if(myBreak()) return alert(t("onBreak"));
+  await sb.from("design_projects").update({sample_started_at:new Date().toISOString()}).eq("id",id);
+  await refresh();
+}
+async function sampleDone(id){
+  await sb.from("design_projects").update({sample_finished_at:new Date().toISOString(), stage:"notes"}).eq("id",id);
+  await refresh();
 }
 function cutTasks(w){
   return DB.lines.filter(l=>l.stage==="cut" && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id)).map(l=>workerCard(l,"cut",null));
