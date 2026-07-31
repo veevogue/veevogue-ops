@@ -463,7 +463,7 @@ function tabBoard(){
         const m=x.ev? mins(x.ev.started_at,new Date().toISOString()):0;
         const p=product(x.l.product_id);
         const est=(x.stage==="cut"?p.est_cut_min:x.stage==="sew"?p.est_sew_min:null);
-        const over=est? m>est*(x.l.qty||1) : false;
+        const over=est? m>est*(x.l.qty||1) : m>480;
         return `<div class="lineitem"><div><b>${esc(wname(x.w))}</b> — ${t(STAGE_KEY[x.stage]||x.stage)}${x.part?` (${esc(isAr()?x.part.part_ar:x.part.part_en)})`:""} — ${esc(pname(p))} <span class="muted">#${order(x.l.order_id).order_no}</span></div>
         <div class="timer ${over?'t-late':'t-ok'}">${m} ${t("minutes")}</div></div>`;}).join("")
       : `<div class="muted">${t("noOneWorking")}</div>`}
@@ -1044,7 +1044,7 @@ function workerCard(l, mode, part){
   const ev = DB.events.find(e=> (part? e.part_id===part.id : (e.line_id===l.id&&!e.part_id)) && e.stage===l.stage && e.started_at && !e.finished_at);
   const m = ev? mins(ev.started_at,new Date().toISOString()) : 0;
   const est = mode==="cut"? p.est_cut_min : mode==="sew"? p.est_sew_min : null;
-  const over = est? m > est*(l.qty||1) : false;
+  const over = est? m > est*(l.qty||1) : m > 480;
   const meta = `<div class="wmeta">
       ${mode==="cut"?`<div><div class="bignum">${esc(l.size||"—")}</div><div class="biglabel">${t("age")}</div></div>`:""}
       <div><div class="bignum">${l.qty}</div><div class="biglabel">${t("qty")}</div></div>
