@@ -2,29 +2,36 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --ink:#111111; --paper:#ffffff; --bg:#f6f6f4; --line:#e5e4e0;
-    --gray:#6b6b6b; --soft:#efeeea; --ok:#1e7a4f; --warn:#a86a00; --bad:#b3261e;
+    --ink:#1C1B1A; --paper:#ffffff; --cream:#F7F4EF; --bg:#F7F4EF;
+    --wine:#8E3B4C; --sage:#9FB39A;
+    --line:#E6E1D8; --gray:#6E6A64; --soft:#F0EDE6;
+    --ok:#2F7D57; --warn:#A8742A; --bad:#B23B3B;
   }
-  *{box-sizing:border-box;margin:0;padding:0;font-family:'Tajawal','Inter',sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Tajawal','Inter',sans-serif;
+    -webkit-tap-highlight-color:transparent;}
+  button,.pill,.tabs button,.stat,.chip{touch-action:manipulation;user-select:none;-webkit-user-select:none;}
   [dir="ltr"], [dir="ltr"] *{font-family:'Inter','Tajawal',sans-serif;}
-  body{background:var(--bg);color:var(--ink);min-height:100vh;}
+  body{background:var(--bg);color:var(--ink);min-height:100vh;touch-action:manipulation;}
   header{background:var(--paper);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
   .brand{display:flex;align-items:center;gap:10px;}
-  .brand .lgbox{width:34px;height:34px;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand .lgbox{width:36px;height:36px;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .brand .lgbox img{width:100%;height:100%;object-fit:cover;transform:scale(2.1);}
   .brand .bname{font-family:'Inter';font-weight:700;letter-spacing:4px;font-size:15px;}
-  header .who{font-size:13px;color:var(--gray);display:flex;gap:8px;align-items:center;}
-  header button{background:var(--ink);color:#fff;border:0;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;}
-  main{max-width:840px;margin:0 auto;padding:14px;}
+  header .right{display:flex;gap:8px;align-items:center;}
+  header .who{font-size:13px;color:var(--gray);}
+  .hbtn{background:var(--soft);color:var(--ink);border:0;border-radius:8px;padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;}
+  .hbtn.dark{background:var(--ink);color:#fff;}
+  main{max-width:900px;margin:0 auto;padding:14px;}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;}
   .btn-ink{background:var(--ink);color:#fff;}
+  .btn-wine{background:var(--wine);color:#fff;}
   .btn-line{background:var(--paper);color:var(--ink);border:1.5px solid var(--ink);}
   .btn-ghost{background:var(--soft);color:var(--ink);}
   .btn-ok{background:var(--ok);color:#fff;}
@@ -33,79 +40,149 @@
   .btn-big{width:100%;padding:15px;font-size:17px;border-radius:12px;margin-top:8px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
-  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:3px;}
-  .tabs button{flex-shrink:0;border:1px solid var(--line);background:var(--paper);border-radius:20px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;color:var(--gray);}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .tabs button{border:1px solid var(--line);background:var(--paper);border-radius:20px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;color:var(--gray);}
   .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink);}
-  .chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:12px;padding:3px 10px;background:var(--soft);color:#333;}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:12px;padding:3px 10px;background:var(--soft);color:#3a3a3a;}
   .chip svg{width:13px;height:13px;}
-  .chip.working{background:#111;color:#fff;}
+  .chip.working{background:var(--ok);color:#fff;}
+  .chip.wine{background:#f4e7ea;color:var(--wine);}
+  .chip.sage{background:#eaf0e8;color:#4a6b4d;}
   .late{color:var(--bad);font-weight:900;}
   label{display:block;font-size:13px;font-weight:700;margin:10px 0 4px;color:#4a4a4a;}
-  input,select,textarea{width:100%;border:1px solid #cfcec9;border-radius:9px;padding:10px;font-size:15px;background:var(--paper);color:var(--ink);}
+  input,select,textarea{width:100%;border:1px solid #D6D0C6;border-radius:9px;padding:10px;font-size:16px;background:var(--paper);color:var(--ink);}
   textarea{min-height:70px;}
   .muted{color:var(--gray);font-size:13px;}
   .title{font-weight:900;font-size:16px;margin-bottom:6px;}
   .lineitem{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px dashed var(--line);gap:8px;flex-wrap:wrap;}
-  .login-card{max-width:400px;margin:36px auto;text-align:center;}
+  .login-card{max-width:420px;margin:36px auto;text-align:center;}
   .login-card .btn{width:100%;margin-top:10px;}
   .thumb{width:62px;height:62px;border-radius:10px;object-fit:cover;background:var(--soft);border:1px solid var(--line);}
   .thumb-lg{width:100%;max-height:220px;border-radius:12px;object-fit:cover;background:var(--soft);}
   table{width:100%;border-collapse:collapse;font-size:14px;}
   th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;}
   [dir="ltr"] th,[dir="ltr"] td{text-align:left;}
-  th{color:#555;font-size:12px;letter-spacing:.4px;}
-  .empty{text-align:center;color:#999;padding:34px 10px;font-size:15px;}
+  th{color:#55514b;font-size:12px;letter-spacing:.4px;}
+  .empty{text-align:center;color:#9b968e;padding:34px 10px;font-size:15px;}
   .ico{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
   .sechead{display:flex;align-items:center;gap:10px;margin:18px 4px 10px;font-family:'Inter';font-weight:800;letter-spacing:2px;font-size:14px;}
   .sechead .ico{width:26px;height:26px;}
   .bignum{font-family:'Inter';font-weight:800;font-size:30px;line-height:1;}
   .biglabel{font-size:10px;letter-spacing:1px;color:var(--gray);font-weight:700;}
-  .statrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:12px;}
-  .stat{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;}
-  .stat .ico{margin:0 auto 4px;display:block;color:#444;}
-  .overlay{position:fixed;inset:0;background:rgba(20,20,20,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
+  .statrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;}
+  .stat{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 10px;text-align:center;}
+  .stat .ico{margin:0 auto 6px;display:block;color:#4a4a4a;width:26px;height:26px;}
+  .stat .nums{display:flex;justify-content:center;align-items:baseline;gap:10px;font-family:'Inter';font-weight:800;}
+  .stat .n-all{font-size:26px;color:var(--ink);}
+  .stat .n-go{font-size:19px;color:var(--ok);}
+  .stat .n-wait{font-size:19px;color:var(--bad);}
+  .stat .cap{font-size:11px;letter-spacing:.5px;color:var(--gray);font-weight:700;margin-top:5px;}
+  .overlay{position:fixed;inset:0;background:rgba(28,27,26,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
   .imgrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
-  .imgrow .rm{position:absolute;top:-6px;left:-6px;background:var(--bad);color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;}
+  .imgrow .rm{position:absolute;top:-6px;inset-inline-start:-6px;background:var(--bad);color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;}
   .imgwrap{position:relative;}
-  .timer{font-family:'Inter';font-size:13px;color:var(--bad);font-weight:700;}
+  .timer{font-family:'Inter';font-size:13px;font-weight:700;}
+  .t-ok{color:var(--ok);} .t-late{color:var(--bad);}
   .wcard{border:1px solid var(--line);border-radius:14px;background:var(--paper);padding:14px;margin-bottom:10px;}
   .wtop{display:flex;gap:12px;align-items:flex-start;}
   .wmeta{display:flex;gap:14px;margin:10px 0 2px;flex-wrap:wrap;}
   .wmeta>div{text-align:center;}
-  .note-box{background:var(--soft);border-radius:10px;padding:8px 10px;font-size:13px;margin-top:8px;}
+  .note-box{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;margin-top:8px;}
   .pillrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
   .pill{border:1.5px solid var(--ink);border-radius:16px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;background:var(--paper);}
   .pill.on{background:var(--ink);color:#fff;}
   .checkrow{display:flex;gap:10px;align-items:center;padding:6px 0;}
   .checkrow input{width:auto;}
+  .banner{background:var(--wine);color:#fff;border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .banner .btn{background:rgba(255,255,255,.2);color:#fff;}
+  .breakbar{background:var(--sage);color:#20301f;border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-weight:700;}
+  .breakbar.over{background:var(--bad);color:#fff;}
+  .keypad{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:280px;margin:8px auto;}
+  .keypad button{font-size:22px;padding:16px;}
   @media(max-width:520px){.grid3{grid-template-columns:1fr 1fr;}}
 </style>
 </head>
 <body>
 <header>
   <div class="brand"><span class="lgbox"><img src="veevogue%20logo.jpg" alt="V" onerror="this.parentElement.style.display='none'"></span><span class="bname">VEEVOGUE</span></div>
-  <div class="who"><span id="whoami"></span><button id="logoutBtn" style="display:none" onclick="logout()">خروج</button></div>
+  <div class="right">
+    <span class="who" id="whoami"></span>
+    <button class="hbtn" id="langBtn" onclick="toggleLang()">EN</button>
+    <button class="hbtn dark" id="logoutBtn" style="display:none" onclick="logout()">—</button>
+  </div>
 </header>
-<main id="app"><div class="empty">جاري التحميل...</div></main>
+<main id="app"><div class="empty">...</div></main>
 
 <script>
-/* ================= الإعدادات ================= */
+/* ================= الإعدادات الثابتة ================= */
 const SUPA_URL = "https://piivfnhnhwymhspiqqpq.supabase.co";
 const SUPA_KEY = "sb_publishable_EL5y8Utc62RgpvYeDAlBmQ_81smvXU3";
 const MANAGER_PIN = "9371";
 
-const STAGE_AR = {cut:"قص", emb:"تطريز/طباعة", sew:"خياطة", qc:"جودة", clean:"تنظيف", pack:"تجهيز", shipped:"أُرسل", ext:"تنفيذ خارجي"};
-const STAGE_EN = {cut:"CUT", emb:"EMBROIDERY", sew:"SEW", qc:"QUALITY", clean:"CLEAN", pack:"PACK", shipped:"SHIPPED", ext:"EXTERNAL"};
-const SPEC_LABEL = {cut:["قص","CUT"], sew:["خياطة","SEW"], pack:["تجهيز","PACK"]};
-const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الهيبس","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
-const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
+/* ================= الترجمة ================= */
+const T = {
+ ar:{
+  manager:"المدير", creative:"الإبداع والجودة", workers:"العمال", worker:"عامل",
+  whoAreYou:"منو أنت؟", noWorkers:"ما في عمال مسجلين", wrongPin:"الرقم غلط", pin:"الرقم السري",
+  logout:"خروج", refresh:"تحديث", close:"إغلاق", save:"حفظ", add:"إضافة", edit:"تعديل",
+  del:"حذف", cancel:"إلغاء", stop:"إيقاف", open:"فتح",
+  board:"لوحة", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
+  shoots:"التصوير", workersTab:"العمال", perf:"الأداء", settings:"الإعدادات", archive:"الأرشيف", quality:"الجودة",
+  cut:"قص", emb:"تطريز/طباعة", sew:"خياطة", qc:"جودة", pack:"تجهيز", shipped:"أُرسل", ext:"تنفيذ خارجي", sample:"عينة",
+  workingNow:"شغال الحين", noOneWorking:"ما في أحد شغال حالياً", noOrders:"ما في أوامر جارية",
+  order:"أمر", due:"تسليم", late:"متأخر", invoice:"فاتورة", reason:"سبب",
+  closeOrder:"إقفال الأمر", shippedBtn:"أُرسلت", qty:"الكمية", age:"العمر", color:"اللون",
+  start:"ابدأ", done:"خلصت", sizeChart:"جدول القياسات", noTasks:"ما في شغل حالياً",
+  breakStart:"بريك", breakEnd:"رجعت من البريك", onBreak:"أنت في بريك", breakOver:"تجاوزت وقت البريك!",
+  minutes:"دقيقة", ok:"سليم", clean:"نظافة", iron:"كي", fix:"تصليح", nothingToCheck:"ما في قطع بانتظار الفحص",
+  workHours:"أوقات العمل", from:"من", to:"إلى", workDays:"أيام العمل", breakMin:"مدة البريك المسموحة (دقيقة)",
+  creativePin:"الرقم السري للإبداع والجودة", savedOk:"انحفظت ✓",
+  sat:"السبت",sun:"الأحد",mon:"الاثنين",tue:"الثلاثاء",wed:"الأربعاء",thu:"الخميس",fri:"الجمعة",
+  total:"الإجمالي", sent:"مرسل", received:"مستلم", sample_:"عينة"
+ },
+ en:{
+  manager:"MANAGER", creative:"CREATIVE & QC", workers:"WORKERS", worker:"Worker",
+  whoAreYou:"Who are you?", noWorkers:"No workers yet", wrongPin:"Wrong PIN", pin:"PIN",
+  logout:"LOG OUT", refresh:"REFRESH", close:"CLOSE", save:"SAVE", add:"ADD", edit:"EDIT",
+  del:"DELETE", cancel:"CANCEL", stop:"DISABLE", open:"OPEN",
+  board:"Board", newOrder:"New Order", products:"Products", design:"Design", external:"External",
+  shoots:"Photoshoot", workersTab:"Workers", perf:"Performance", settings:"Settings", archive:"Archive", quality:"Quality",
+  cut:"CUT", emb:"EMBROIDERY", sew:"SEW", qc:"QUALITY", pack:"PACK", shipped:"SHIPPED", ext:"EXTERNAL", sample:"SAMPLE",
+  workingNow:"Working now", noOneWorking:"Nobody is working", noOrders:"No active orders",
+  order:"Order", due:"Due", late:"LATE", invoice:"Invoice", reason:"Reason",
+  closeOrder:"Close order", shippedBtn:"SHIPPED", qty:"QTY", age:"AGE", color:"COLOR",
+  start:"START", done:"DONE", sizeChart:"SIZE CHART", noTasks:"No tasks",
+  breakStart:"BREAK", breakEnd:"BACK FROM BREAK", onBreak:"You are on break", breakOver:"Break time exceeded!",
+  minutes:"min", ok:"OK", clean:"CLEAN", iron:"IRON", fix:"FIX", nothingToCheck:"Nothing to check",
+  workHours:"Working hours", from:"From", to:"To", workDays:"Working days", breakMin:"Allowed break (minutes)",
+  creativePin:"Creative & QC PIN", savedOk:"Saved ✓",
+  sat:"Sat",sun:"Sun",mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri",
+  total:"TOTAL", sent:"SENT", received:"RECEIVED", sample_:"SAMPLE"
+ }
+};
+let LANG = localStorage.getItem("vv_lang") || "ar";
+function t(k){return (T[LANG] && T[LANG][k]) || (T.ar[k]||k);}
+function isAr(){return LANG==="ar";}
+function toggleLang(){
+  LANG = isAr()? "en":"ar";
+  localStorage.setItem("vv_lang",LANG);
+  applyDir(); render();
+}
+function applyDir(){
+  const workerish = session && session.role==="worker";
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = isAr()? "rtl":"ltr";
+  document.getElementById("langBtn").textContent = isAr()? "EN":"ع";
+}
 
+/* ================= الرموز ================= */
 const I = {
   cut:'<svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="8.2" y1="7.8" x2="20" y2="19.5"/><line x1="8.2" y1="16.2" x2="20" y2="4.5"/></svg>',
   sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M20 4 8 16"/><path d="M20 4c-1 4-4 9-8 12l-5 3 3-5C13 10 16 6 20 4z"/><circle cx="18.4" cy="5.6" r="1.1"/></svg>',
   emb:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
   qc:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  iron:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 16h18v3H3z"/><path d="M4 16c0-5 3-8 8-8h8v8"/></svg>',
   clean:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3c3 4.5 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-6.5 6-11z"/></svg>',
   pack:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>',
   shipped:'<svg class="ico" viewBox="0 0 24 24"><path d="M1 7h13v9H1z"/><path d="M14 10h5l3 3v3h-8"/><circle cx="6" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>',
@@ -122,22 +199,39 @@ const I = {
   file:'<svg class="ico" viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>',
   user:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>',
   design:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
-  fix:'<svg class="ico" viewBox="0 0 24 24"><path d="M14 7l3 3"/><path d="M5 19l9-9"/><path d="M18.5 2.5a3 3 0 0 1 3 3L19 8l-3-3z"/></svg>'
+  fix:'<svg class="ico" viewBox="0 0 24 24"><path d="M14 7l3 3"/><path d="M5 19l9-9"/><path d="M18.5 2.5a3 3 0 0 1 3 3L19 8l-3-3z"/></svg>',
+  cog:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
+  coffee:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 9h14v6a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><path d="M17 10h2.5a2.5 2.5 0 0 1 0 5H17"/><path d="M7 2v3M11 2v3"/></svg>'
 };
 
+const STAGE_KEY = {cut:"cut", emb:"emb", sew:"sew", qc:"qc", pack:"pack", shipped:"shipped", ext:"ext"};
+const SPEC_LIST = ["cut","sew","sample","pack"];
+const SPEC_LABEL = {cut:["قص","CUT"], sew:["خياطة","SEW"], sample:["عينات","SAMPLES"], pack:["تجهيز","PACK"]};
+const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
+const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الهيبس","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
+const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
+
 let sb=null;
-let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[]};
+let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[]};
 let session=JSON.parse(localStorage.getItem("vv2_session")||"null");
-let mTab=localStorage.getItem("vv2_tab")||"لوحة";
+let mTab=localStorage.getItem("vv2_tab")||"board";
 let editProductId=null, newLines=[], customModels=[];
+let autoTimer=null;
 
 /* ================= تشغيل ================= */
 window.addEventListener("DOMContentLoaded", async ()=>{
   sb = supabase.createClient(SUPA_URL, SUPA_KEY);
-  await loadAll(); render();
+  checkDailyLogout();
+  applyDir();
+  await loadAll();
+  render();
 });
+function today(){return new Date().toISOString().slice(0,10);}
+function checkDailyLogout(){
+  if(session && session.day !== today()){ session=null; localStorage.removeItem("vv2_session"); }
+}
 async function loadAll(){
-  const [w,p,d,s,r,o,l,pa,e,j] = await Promise.all([
+  const [w,p,d,s,r,o,l,pa,e,j,st,br] = await Promise.all([
     sb.from("workers").select("*").order("name"),
     sb.from("products").select("*").order("created_at",{ascending:false}),
     sb.from("design_projects").select("*").order("created_at",{ascending:false}),
@@ -148,8 +242,13 @@ async function loadAll(){
     sb.from("line_parts").select("*"),
     sb.from("stage_events").select("*"),
     sb.from("ext_jobs").select("*").order("created_at",{ascending:false}),
+    sb.from("settings").select("*").eq("id",1).maybeSingle(),
+    sb.from("breaks").select("*"),
   ]);
-  DB={workers:w.data||[],products:p.data||[],designs:d.data||[],shoots:s.data||[],reasons:r.data||[],orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[]};
+  DB={workers:w.data||[],products:p.data||[],designs:d.data||[],shoots:s.data||[],reasons:r.data||[],
+      orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
+      settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
+      breaks:br.data||[]};
 }
 async function refresh(){await loadAll(); render();}
 
@@ -158,15 +257,16 @@ function el(id){return document.getElementById(id);}
 function product(id){return DB.products.find(p=>p.id===id)||{name:"؟",images:[]};}
 function order(id){return DB.orders.find(o=>o.id===id)||{};}
 function worker(id){return DB.workers.find(w=>w.id===id)||{name:"؟",name_en:"?"};}
+function wname(w){return isAr()? (w.name||w.name_en||"") : (w.name_en||w.name||"");}
+function pname(p){return isAr()? (p.name||p.name_en||"") : (p.name_en||p.name||"");}
 function esc(s){return (s??"").toString().replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));}
-function today(){return new Date().toISOString().slice(0,10);}
 function fmtD(d){if(!d)return"";const x=new Date(d);return x.getDate()+"/"+(x.getMonth()+1);}
 function isLate(o){return o.due_date && o.status==="جاري" && o.due_date < today();}
 function mins(a,b){return Math.round((new Date(b)-new Date(a))/60000);}
 function pimg(p){return (p.images&&p.images[0])||null;}
-function thumb(p,cls){const u=pimg(p);return u?`<img class="${cls||'thumb'}" src="${esc(u)}">`:`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#bbb">${I.design}</div>`;}
-function logout(){session=null;localStorage.removeItem("vv2_session");render();}
-function setSession(s){session=s;localStorage.setItem("vv2_session",JSON.stringify(s));render();}
+function thumb(p,cls){const u=pimg(p);return u?`<img class="${cls||'thumb'}" src="${esc(u)}">`:`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
+function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();applyDir();render();}
+function setSession(s){s.day=today();session=s;localStorage.setItem("vv2_session",JSON.stringify(s));applyDir();render();}
 async function uploadFile(file, folder){
   const ext=file.name.split(".").pop();
   const path=`${folder}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
@@ -174,10 +274,11 @@ async function uploadFile(file, folder){
   if(error){alert("فشل الرفع: "+error.message);return null;}
   return sb.storage.from("files").getPublicUrl(path).data.publicUrl;
 }
+function activeLine(l){return order(l.order_id).status==="جاري";}
 
 /* مسار المراحل */
-function startStageFor(line_productId, orderType){
-  const p=product(line_productId);
+function startStageFor(pid, orderType){
+  const p=product(pid);
   if(orderType==="تصليح") return "sew";
   if(p.external_make) return "ext";
   if(p.embroidery==="external_piece") return "emb";
@@ -187,7 +288,6 @@ function nextStage(stage, p){
   if(stage==="cut") return p.embroidery==="after_cut" ? "emb" : "sew";
   if(stage==="emb") return p.embroidery==="after_cut" ? "sew" : "qc";
   if(stage==="sew") return p.embroidery==="after_sew" ? "emb" : "qc";
-  if(stage==="clean") return "pack";
   if(stage==="pack") return "shipped";
   if(stage==="ext") return "qc";
   return stage;
@@ -197,19 +297,51 @@ async function moveLine(lineId, stage){
   if(stage==="sew") await genParts(lineId);
 }
 async function genParts(lineId, lineOpt, otype){
-  const l=lineOpt||DB.lines.find(x=>x.id===lineId); const o=order(l.order_id); const p=product(l.product_id);
-  const t=otype||o.order_type;
-  let comps=(t==="تصليح")? [{ar:"تصليح",en:"REPAIR"}] : (p.components&&p.components.length? p.components : [{ar:"القطعة",en:"PIECE"}]);
-  await sb.from("line_parts").insert(comps.map(c=>({line_id:lineId, part_ar:c.ar, part_en:c.en})));
+  const l=lineOpt||DB.lines.find(x=>x.id===lineId); if(!l) return;
+  const o=order(l.order_id); const p=product(l.product_id);
+  const ty=otype||o.order_type;
+  let comps=(ty==="تصليح")? [{ar:"تصليح",en:"REPAIR"}] : (p.components&&p.components.length? p.components : [{ar:"القطعة",en:"PIECE"}]);
+  await sb.from("line_parts").insert(comps.map(c=>({line_id:l.id, part_ar:c.ar, part_en:c.en})));
 }
+
+/* ================= البريك ================= */
+function myBreak(){
+  if(!session||session.role!=="worker") return null;
+  return DB.breaks.find(b=>b.worker_id===session.workerId && !b.ended_at);
+}
+async function startBreak(){
+  await sb.from("breaks").insert({worker_id:session.workerId});
+  await refresh();
+}
+async function endBreak(){
+  const b=myBreak(); if(!b) return;
+  await sb.from("breaks").update({ended_at:new Date().toISOString()}).eq("id",b.id);
+  await refresh();
+}
+function breakBar(){
+  const b=myBreak(); if(!b) return "";
+  const m=mins(b.started_at,new Date().toISOString());
+  const lim=DB.settings.break_minutes||30;
+  const over=m>lim;
+  return `<div class="breakbar ${over?'over':''}">
+    <div>${I.coffee} ${over? t("breakOver") : t("onBreak")} — <b>${m}</b>/${lim} ${t("minutes")}</div>
+    <button class="btn btn-ink" onclick="endBreak()">${t("breakEnd")}</button>
+  </div>`;
+}
+
+/* ================= التحديث التلقائي ================= */
+function startAuto(){ stopAuto(); autoTimer=setInterval(()=>{ if(!document.getElementById("ov")) refresh(); }, 30000); }
+function stopAuto(){ if(autoTimer){clearInterval(autoTimer); autoTimer=null;} }
 
 /* ================= العرض ================= */
 function render(){
-  el("logoutBtn").style.display = session? "inline-block":"none";
-  el("whoami").textContent = session? (session.role==="manager"?"المدير": session.role==="quality"?"QC": (worker(session.workerId).name_en||worker(session.workerId).name)) : "";
-  if(!session) return renderLogin();
-  if(session.role==="manager") return renderManager();
-  if(session.role==="quality") return renderQuality();
+  const lb=el("logoutBtn");
+  lb.style.display = session? "inline-block":"none";
+  lb.textContent = t("logout");
+  el("whoami").textContent = session? (session.role==="manager"?t("manager"): session.role==="creative"?t("creative"): wname(worker(session.workerId))) : "";
+  if(!session){ stopAuto(); return renderLogin(); }
+  if(session.role==="worker"||session.role==="creative") startAuto(); else stopAuto();
+  if(session.role==="manager"||session.role==="creative") return renderDesk();
   return renderWorker();
 }
 
@@ -217,19 +349,19 @@ function render(){
 function renderLogin(){
   const ws=DB.workers.filter(w=>w.active);
   el("app").innerHTML=`<div class="login-card card">
-    <div class="title" style="font-size:20px">منو أنت؟ / Who are you?</div>
-    <button class="btn btn-ink btn-big" onclick="loginManager()">${I.user} المدير</button>
-    <button class="btn btn-line btn-big" onclick="loginQuality()">${I.qc} QUALITY</button>
-    <div class="muted" style="margin-top:16px">WORKERS</div>
-    ${ws.map(w=>`<button class="btn btn-ghost btn-big" dir="ltr" onclick="loginWorker('${w.id}')">${I.user} ${esc(w.name_en||w.name)}</button>`).join("") || `<p class="muted">No workers yet</p>`}
+    <div class="title" style="font-size:20px">${t("whoAreYou")}</div>
+    <button class="btn btn-ink btn-big" onclick="loginManager()">${I.user} ${t("manager")}</button>
+    <button class="btn btn-wine btn-big" onclick="loginCreative()">${I.design} ${t("creative")}</button>
+    <div class="muted" style="margin-top:16px">${t("workers")}</div>
+    ${ws.map(w=>`<button class="btn btn-ghost btn-big" onclick="loginWorker('${w.id}')">${I.user} ${esc(wname(w))}</button>`).join("") || `<p class="muted">${t("noWorkers")}</p>`}
   </div>`;
 }
-function loginManager(){pinPad("المدير", MANAGER_PIN, ()=>setSession({role:"manager"}));}
-function loginQuality(){pinPad("QUALITY", MANAGER_PIN, ()=>setSession({role:"quality"}));}
+function loginManager(){pinPad(t("manager"), MANAGER_PIN, ()=>setSession({role:"manager"}));}
+function loginCreative(){pinPad(t("creative"), DB.settings.creative_pin||"4826", ()=>setSession({role:"creative"}));}
 function loginWorker(id){
   const w=worker(id);
   if(!w.pin) return setSession({role:"worker",workerId:id});
-  pinPad(w.name_en||w.name, w.pin, ()=>setSession({role:"worker",workerId:id}));
+  pinPad(wname(w), w.pin, ()=>setSession({role:"worker",workerId:id}));
 }
 let _pinBuf="";
 function pinPad(title, correct, onOk){
@@ -238,92 +370,707 @@ function pinPad(title, correct, onOk){
     <div class="title">${esc(title)}</div>
     <div id="pinDots" style="font-size:30px;letter-spacing:10px;height:42px;font-family:'Inter'">····</div>
     <div id="pinErr" class="muted" style="color:var(--bad);height:18px"></div>
-    <div dir="ltr" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:280px;margin:8px auto">
-      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="btn btn-ghost" style="font-size:22px;padding:16px" onclick="pinKey('${n}')">${n}</button>`).join("")}
-      <button class="btn btn-ghost" style="padding:16px" onclick="pinKey('del')">⌫</button>
-      <button class="btn btn-ghost" style="font-size:22px;padding:16px" onclick="pinKey('0')">0</button>
-      <button class="btn btn-ink" style="padding:16px" onclick="pinKey('ok')">✓</button>
+    <div class="keypad" dir="ltr">
+      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="btn btn-ghost" onclick="pinKey('${n}')">${n}</button>`).join("")}
+      <button class="btn btn-ghost" onclick="pinKey('del')">⌫</button>
+      <button class="btn btn-ghost" onclick="pinKey('0')">0</button>
+      <button class="btn btn-ink" onclick="pinKey('ok')">✓</button>
     </div></div>`);
   window._pinCorrect=correct; window._pinOk=onOk;
 }
 function pinKey(k){
   if(k==="del") _pinBuf=_pinBuf.slice(0,-1);
   else if(k==="ok"){
-    if(_pinBuf===window._pinCorrect){closeSheet(); window._pinOk();}
-    else{el("pinErr").textContent="الرقم غلط / Wrong PIN"; _pinBuf="";}
+    if(_pinBuf===String(window._pinCorrect)){closeSheet(); window._pinOk();}
+    else{el("pinErr").textContent=t("wrongPin"); _pinBuf="";}
   }
   else if(_pinBuf.length<8) _pinBuf+=k;
   const d=el("pinDots"); if(d) d.textContent = _pinBuf.replace(/./g,"●").padEnd(4,"·");
 }
 
-/* ================= شاشة العامل (EN) ================= */
+/* ================= أوراق منبثقة ================= */
+function openSheet(html){
+  const ov=document.createElement("div"); ov.className="overlay"; ov.id="ov";
+  ov.innerHTML=`<div class="sheet">${html}<button class="btn btn-ghost btn-big" onclick="closeSheet()">${t("close")}</button></div>`;
+  ov.addEventListener("click",e=>{if(e.target===ov)closeSheet();});
+  document.body.appendChild(ov);
+}
+function closeSheet(){const o=el("ov"); if(o)o.remove();}
+/* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
+const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","workersTab","perf","settings","archive"];
+const TABS_CREATIVE=["board","design","products","quality"];
+function myTabs(){return session.role==="manager"? TABS_MANAGER : TABS_CREATIVE;}
+function renderDesk(){
+  const tabs=myTabs();
+  if(!tabs.includes(mTab)) mTab=tabs[0];
+  el("app").innerHTML=`
+    <div class="tabs">${tabs.map(k=>`<button class="${mTab===k?'on':''}" onclick="mTab='${k}';localStorage.setItem('vv2_tab','${k}');render()">${t(k)}</button>`).join("")}</div>
+    <div id="tabbody"></div>`;
+  ({board:tabBoard,newOrder:tabNewOrder,products:tabProducts,design:tabDesign,external:tabExternal,
+    shoots:tabShoots,quality:tabQuality,workersTab:tabWorkers,perf:tabPerf,settings:tabSettings,archive:tabArchive})[mTab]();
+}
+
+/* ---- لوحة ---- */
+function stageStats(){
+  const act=DB.lines.filter(l=>activeLine(l));
+  const box=(key,icon,all,go,wait,alt)=>`<div class="stat">${icon}
+      <div class="nums">${alt? `<span class="n-go">${go}</span><span class="n-wait">${wait}</span>`
+        : `<span class="n-all">${all}</span><span class="n-go">${go}</span><span class="n-wait">${wait}</span>`}</div>
+      <div class="cap">${t(key)}</div></div>`;
+  const cnt=(st)=>{
+    const ls=act.filter(l=>l.stage===st);
+    if(st==="sew"){
+      let go=0,wait=0,all=0;
+      ls.forEach(l=>{const ps=DB.parts.filter(p=>p.line_id===l.id);
+        all+=ps.length||1; go+=ps.filter(p=>p.status==="working").length; wait+=ps.filter(p=>p.status==="waiting").length;});
+      return {all,go,wait};
+    }
+    return {all:ls.length, go:ls.filter(l=>l.stage_status==="working").length, wait:ls.filter(l=>l.stage_status!=="working").length};
+  };
+  const c=cnt("cut"), e=cnt("emb"), s=cnt("sew");
+  const qcN=act.filter(l=>l.stage==="qc").length;
+  const packN=act.filter(l=>l.stage==="pack").length;
+  const extSent=act.filter(l=>(l.stage==="ext"||l.stage==="emb")&&l.stage_status==="sent").length;
+  const extRec=DB.jobs.filter(j=>j.status==="received").reduce((a,j)=>a+(j.line_ids||[]).length,0);
+  return `<div class="statrow">
+    ${box("cut",I.cut,c.all,c.go,c.wait)}
+    ${box("emb",I.emb,e.all,e.go,e.wait)}
+    ${box("sew",I.sew,s.all,s.go,s.wait)}
+    <div class="stat">${I.qc}<div class="nums"><span class="n-all">${qcN}</span></div><div class="cap">${t("qc")}</div></div>
+    <div class="stat">${I.pack}<div class="nums"><span class="n-all">${packN}</span></div><div class="cap">${t("pack")}</div></div>
+    <div class="stat">${I.ext}<div class="nums"><span class="n-go">${extSent}</span><span class="n-all">${extRec}</span></div><div class="cap">${t("sent")} / ${t("received")}</div></div>
+  </div>`;
+}
+function tabBoard(){
+  const act=DB.lines.filter(l=>activeLine(l));
+  const workingNow=[];
+  act.forEach(l=>{
+    if(l.stage_status==="working"&&l.claimed_by) workingNow.push({w:worker(l.claimed_by),l,stage:l.stage,ev:DB.events.find(e=>e.line_id===l.id&&!e.part_id&&e.started_at&&!e.finished_at)});
+    DB.parts.filter(p=>p.line_id===l.id&&p.status==="working").forEach(p=>workingNow.push({w:worker(p.worker_id),l,stage:"sew",part:p,ev:DB.events.find(e=>e.part_id===p.id&&e.started_at&&!e.finished_at)}));
+  });
+  const embPool=act.filter(l=>l.stage==="emb"&&l.stage_status!=="sent").length;
+  const extPool=act.filter(l=>l.stage==="ext"&&l.stage_status!=="sent").length;
+  const activeOrders=DB.orders.filter(o=>o.status==="جاري");
+  const onBreakNow=DB.breaks.filter(b=>!b.ended_at);
+  el("tabbody").innerHTML=`
+    ${stageStats()}
+    ${(embPool||extPool)&&session.role==="manager"?`<div class="banner">
+      <div>${embPool?`${I.emb} <b>${embPool}</b> ${isAr()?"قطعة للتطريز/الطباعة":"pcs for embroidery"}`:""} ${extPool?` · ${I.ext} <b>${extPool}</b> ${isAr()?"للتنفيذ الخارجي":"for external"}`:""}</div>
+      <button class="btn" onclick="mTab='external';render()">${t("open")} ←</button></div>`:""}
+    ${onBreakNow.length?`<div class="breakbar">${I.coffee} ${onBreakNow.map(b=>`${esc(wname(worker(b.worker_id)))} (${mins(b.started_at,new Date().toISOString())}${t("minutes")})`).join(" · ")}</div>`:""}
+    <div class="card"><div class="title">${I.clock} ${t("workingNow")}</div>
+      ${workingNow.length? workingNow.map(x=>{
+        const m=x.ev? mins(x.ev.started_at,new Date().toISOString()):0;
+        const p=product(x.l.product_id);
+        const est=(x.stage==="cut"?p.est_cut_min:x.stage==="sew"?p.est_sew_min:null);
+        const over=est? m>est*(x.l.qty||1) : false;
+        return `<div class="lineitem"><div><b>${esc(wname(x.w))}</b> — ${t(STAGE_KEY[x.stage]||x.stage)}${x.part?` (${esc(isAr()?x.part.part_ar:x.part.part_en)})`:""} — ${esc(pname(p))} <span class="muted">#${order(x.l.order_id).order_no}</span></div>
+        <div class="timer ${over?'t-late':'t-ok'}">${m} ${t("minutes")}</div></div>`;}).join("")
+      : `<div class="muted">${t("noOneWorking")}</div>`}
+    </div>
+    ${activeOrders.length? activeOrders.map(orderCard).join("") : `<div class="empty">${t("noOrders")}</div>`}`;
+}
+function lineChip(l){
+  const w=l.claimed_by?worker(l.claimed_by):null;
+  const partsInfo=l.stage==="sew"? (()=>{const ps=DB.parts.filter(p=>p.line_id===l.id);const d=ps.filter(p=>p.status==="done").length;return ps.length>1?` ${d}/${ps.length}`:"";})():"";
+  return `<span class="chip ${l.stage_status==='working'?'working':''}">${I[l.stage]||""} ${t(STAGE_KEY[l.stage]||l.stage)}${partsInfo}${w?` · ${esc(wname(w))}`:""}</span>`;
+}
+function orderCard(o){
+  const ls=DB.lines.filter(l=>l.order_id===o.id);
+  const openIds=JSON.parse(localStorage.getItem("vv_open")||"[]");
+  const isOpen=openIds.includes(o.id);
+  const doneN=ls.filter(l=>l.stage==="shipped").length;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;cursor:pointer" onclick="toggleOrder('${o.id}')">
+      <div class="title">${t("order")} #${o.order_no} <span class="chip wine">${esc(o.order_type)}</span> <span class="muted">${doneN}/${ls.length}</span></div>
+      <div class="muted">${o.due_date?(isLate(o)?`<span class="late">${t("late")} ${fmtD(o.due_date)}</span>`:`${t("due")} ${fmtD(o.due_date)}`):""} ${isOpen?"▾":"▸"}</div>
+    </div>
+    ${isOpen?`
+      ${o.customer_ref?`<div class="muted">${t("invoice")}: ${esc(o.customer_ref)}</div>`:""}
+      ${o.repair_reason?`<div class="muted">${t("reason")}: ${esc(o.repair_reason)}</div>`:""}
+      ${ls.map(l=>`<div class="lineitem">
+        <div><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
+        <div>${lineChip(l)} ${l.stage==="pack"&&session.role==="manager"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped}</button>`:""}</div>
+      </div>`).join("")}
+      ${session.role==="manager"&&o.status==="جاري"&&ls.length&&ls.every(l=>l.stage==="shipped")?`<button class="btn btn-ink btn-big" onclick="closeOrder('${o.id}')">${t("closeOrder")} ✓</button>`:""}
+      ${session.role==="manager"&&o.status==="جاري"?`<div style="text-align:start;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="cancelOrder('${o.id}')">${t("cancel")}</button></div>`:""}
+    `:""}
+  </div>`;
+}
+function toggleOrder(id){
+  let a=JSON.parse(localStorage.getItem("vv_open")||"[]");
+  a = a.includes(id)? a.filter(x=>x!==id) : [...a,id];
+  localStorage.setItem("vv_open",JSON.stringify(a)); render();
+}
+async function shipLine(id){await moveLine(id,"shipped");await refresh();}
+async function closeOrder(id){await sb.from("orders").update({status:"مكتمل"}).eq("id",id);await refresh();}
+async function cancelOrder(id){if(confirm("إلغاء الأمر كامل؟")){await sb.from("orders").update({status:"ملغي"}).eq("id",id);await refresh();}}
+
+/* ---- الأرشيف ---- */
+function tabArchive(){
+  const q=(window._archQ||"").trim();
+  let list=DB.orders.filter(o=>o.status!=="جاري");
+  if(q) list=list.filter(o=>String(o.order_no).includes(q)||(o.customer_ref||"").includes(q)||
+    DB.lines.filter(l=>l.order_id===o.id).some(l=>pname(product(l.product_id)).includes(q)));
+  el("tabbody").innerHTML=`<div class="card">
+    <input id="archQ" placeholder="${isAr()?'بحث برقم الأمر أو الفاتورة أو المنتج...':'Search...'}" value="${esc(q)}"
+      oninput="window._archQ=this.value" onchange="render()">
+    <button class="btn btn-ghost btn-big" onclick="window._archQ=el('archQ').value;render()">${isAr()?"بحث":"Search"}</button>
+  </div>
+  ${list.length? list.map(orderCard).join("") : `<div class="empty">—</div>`}`;
+}
+
+/* ---- الإعدادات ---- */
+function tabSettings(){
+  const s=DB.settings||{};
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">${I.clock} ${t("workHours")}</div>
+    <div class="grid2">
+      <div><label>${t("from")}</label><input type="time" id="s_start" value="${esc(s.work_start||"09:00")}"></div>
+      <div><label>${t("to")}</label><input type="time" id="s_end" value="${esc(s.work_end||"18:00")}"></div>
+    </div>
+    <label>${t("workDays")}</label>
+    <div class="pillrow" id="dayPills">
+      ${DAYS.map(d=>`<span class="pill ${(s.work_days||[]).includes(d)?'on':''}" data-d="${d}" onclick="this.classList.toggle('on')">${t(d)}</span>`).join("")}
+    </div>
+    <label>${t("breakMin")}</label><input type="number" id="s_break" min="0" value="${s.break_minutes??30}">
+    ${session.role==="manager"?`<label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">`:""}
+    <button class="btn btn-wine btn-big" onclick="saveSettings()">${t("save")}</button>
+    <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
+  </div>`;
+}
+async function saveSettings(){
+  const days=[...document.querySelectorAll("#dayPills .pill.on")].map(x=>x.dataset.d);
+  const row={work_start:el("s_start").value, work_end:el("s_end").value, work_days:days, break_minutes:+el("s_break").value||0, updated_at:new Date().toISOString()};
+  if(el("s_cpin")) row.creative_pin=el("s_cpin").value||"4826";
+  const {error}=await sb.from("settings").update(row).eq("id",1);
+  if(error) return alert(error.message);
+  await loadAll(); el("setMsg").textContent=t("savedOk");
+}
+/* ---- أمر جديد ---- */
+function tabNewOrder(){
+  const prods=DB.products.filter(p=>p.active);
+  if(!prods.length){el("tabbody").innerHTML=`<div class="empty">${isAr()?"أضف منتجات أولاً":"Add products first"}</div>`;return;}
+  const ty=window._otype||"إنتاج كمي";
+  const dOpts=prods.map(p=>`<option value="${p.id}">${esc(pname(p))}</option>`).join("");
+  let body="";
+  if(ty==="قياسات خاصة"){
+    if(!customModels.length) customModels=[{}];
+    body=`<label>${t("invoice")}</label><input id="o_ref">
+      ${customModels.map((m,i)=>`<div class="card" style="background:var(--cream)">
+        <div class="lineitem" style="border:0"><b>${isAr()?"موديل":"Model"} ${i+1}</b> ${customModels.length>1?`<button class="btn btn-ghost" onclick="rmModel(${i})">✕</button>`:""}</div>
+        <label>${isAr()?"المنتج":"Product"}</label><select id="cm_p${i}">${dOpts}</select>
+        <div class="grid3">${MEAS.map(x=>`<div><label>${isAr()?x[1]:x[2]}</label><input id="cm_${x[0]}${i}" inputmode="decimal" value="${esc(m[x[0]]||"")}"></div>`).join("")}</div>
+        <div class="grid2">
+          <div><label>${isAr()?"الكم":"Sleeve"}</label><select id="cm_sl${i}"><option value="">—</option>${SLEEVES.map(s=>`<option>${s}</option>`).join("")}</select></div>
+          <div><label>${isAr()?"الأسفل":"Bottom"}</label><select id="cm_bt${i}"><option value="">—</option>${BOTTOMS.map(s=>`<option>${s}</option>`).join("")}</select></div>
+        </div>
+        <div class="grid2"><div><label>${t("color")}</label><input id="cm_c${i}" value="${esc(m.color||"")}"></div>
+        <div><label>${t("qty")}</label><input id="cm_q${i}" type="number" min="1" value="${m.qty||1}"></div></div>
+        <label>${isAr()?"ملاحظات خاصة":"Notes"}</label><input id="cm_n${i}" value="${esc(m.notes||"")}">
+      </div>`).join("")}
+      <button class="btn btn-ghost" onclick="addModel()">${I.plus} ${isAr()?"إضافة موديل":"Add model"}</button>`;
+  }else{
+    if(!newLines.length) newLines=[{}];
+    body=`${ty==="طلب"?`<label>${t("invoice")}</label><input id="o_ref">`:""}
+      ${ty==="تصليح"?`<label>${t("reason")}</label><select id="o_reason">${DB.reasons.filter(r=>r.active).map(r=>`<option>${esc(r.label)}</option>`).join("")}<option value="__other">${isAr()?"سبب جديد...":"New reason..."}</option></select>`:""}
+      <label>${isAr()?"القطع":"Items"}</label>
+      ${newLines.map((l,i)=>`<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;margin-top:6px;gap:6px">
+        <select id="ld${i}">${dOpts}</select>
+        <input id="ls${i}" placeholder="${t("age")}" value="${esc(l.size||"")}">
+        <input id="lc${i}" placeholder="${t("color")}" value="${esc(l.color||"")}">
+        <input id="lq${i}" type="number" min="1" value="${l.qty||1}">
+        <button class="btn btn-ghost" onclick="delLine(${i})">✕</button>
+      </div>`).join("")}
+      <button class="btn btn-ghost" style="margin-top:8px" onclick="addLine()">${I.plus}</button>`;
+  }
+  el("tabbody").innerHTML=`<div class="card">
+    <label>${isAr()?"نوع الأمر":"Order type"}</label>
+    <div class="pillrow">${["إنتاج كمي","طلب","تصليح","قياسات خاصة"].map(x=>`<span class="pill ${ty===x?'on':''}" onclick="window._otype='${x}';captureOrder();render()">${x}</span>`).join("")}</div>
+    <div id="obody">${body}</div>
+    <label>${t("due")}</label><input type="date" id="o_due">
+    <button class="btn btn-wine btn-big" onclick="saveOrder()">${t("save")}</button>
+  </div>`;
+  newLines.forEach((l,i)=>{if(l.product_id&&el("ld"+i))el("ld"+i).value=l.product_id;});
+  customModels.forEach((m,i)=>{if(m.product_id&&el("cm_p"+i))el("cm_p"+i).value=m.product_id;
+    if(m.sleeve&&el("cm_sl"+i))el("cm_sl"+i).value=m.sleeve; if(m.bottom&&el("cm_bt"+i))el("cm_bt"+i).value=m.bottom;});
+}
+function captureOrder(){
+  newLines=newLines.map((l,i)=>el("ld"+i)?{product_id:el("ld"+i).value,size:el("ls"+i).value,color:el("lc"+i).value,qty:+el("lq"+i).value||1}:l);
+  customModels=customModels.map((m,i)=>{
+    if(!el("cm_p"+i)) return m;
+    const o={product_id:el("cm_p"+i).value, qty:+el("cm_q"+i).value||1, color:el("cm_c"+i).value, sleeve:el("cm_sl"+i).value, bottom:el("cm_bt"+i).value, notes:el("cm_n"+i).value};
+    MEAS.forEach(x=>o[x[0]]=el("cm_"+x[0]+i).value);
+    return o;
+  });
+}
+function addLine(){captureOrder();newLines.push({});render();}
+function delLine(i){captureOrder();newLines.splice(i,1);render();}
+function addModel(){captureOrder();customModels.push({});render();}
+function rmModel(i){captureOrder();customModels.splice(i,1);render();}
+async function saveOrder(){
+  captureOrder();
+  const ty=window._otype||"إنتاج كمي";
+  let reason=null;
+  if(ty==="تصليح"){reason=el("o_reason").value; if(reason==="__other"){reason=prompt(isAr()?"اكتب السبب:":"Reason:"); if(!reason)return; await sb.from("repair_reasons").insert({label:reason});}}
+  const {data:o,error}=await sb.from("orders").insert({order_type:ty, customer_ref:(ty==="طلب"||ty==="قياسات خاصة")?(el("o_ref")?.value||null):null, repair_reason:reason, due_date:el("o_due").value||null}).select().single();
+  if(error) return alert(error.message);
+  let rows=[];
+  if(ty==="قياسات خاصة"){
+    rows=customModels.filter(m=>m.product_id).map(m=>({order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:isAr()?"خاص":"CUSTOM",
+      custom_specs:{chest:m.chest,waist:m.waist,hips:m.hips,shoulder:m.shoulder,length:m.length,sleeve:m.sleeve,bottom:m.bottom,notes:m.notes},
+      stage:startStageFor(m.product_id,ty)}));
+  }else{
+    rows=newLines.filter(l=>l.product_id).map(l=>({order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,stage:startStageFor(l.product_id,ty)}));
+  }
+  if(!rows.length){await sb.from("orders").delete().eq("id",o.id);return alert(isAr()?"أضف قطعة واحدة على الأقل":"Add at least one item");}
+  const {data:ins}=await sb.from("order_lines").insert(rows).select();
+  for(const l of (ins||[]).filter(x=>x.stage==="sew")) await genParts(l.id,l,ty);
+  newLines=[];customModels=[];window._otype="إنتاج كمي";mTab="board";localStorage.setItem("vv2_tab","board");
+  await refresh();
+}
+
+/* ---- المنتجات ---- */
+function tabProducts(){
+  el("tabbody").innerHTML=`
+    <button class="btn btn-wine btn-big" onclick="showProductForm(null)">${I.plus} ${t("products")}</button>
+    ${DB.products.filter(p=>p.active).map(p=>`<div class="card">
+      <div class="wtop">${thumb(p)}
+        <div style="flex:1"><div class="title">${esc(pname(p))}</div>
+        <div class="pillrow">
+          ${p.external_make?`<span class="chip wine">${I.ext}</span>`:""}
+          ${p.embroidery!=="none"?`<span class="chip wine">${I.emb} ${esc(p.embroidery_kind||"")}</span>`:""}
+          ${(p.components||[]).length>1?`<span class="chip sage">${(p.components||[]).length} ${isAr()?"قطع":"pcs"}</span>`:""}
+          ${(p.patterns||[]).length?`<span class="chip">${I.file} ${(p.patterns||[]).length}</span>`:""}
+        </div></div>
+      </div>
+      <div class="pillrow" style="margin-top:10px">
+        <button class="btn btn-ghost" onclick="showChart('${p.id}','')">${I.ruler}</button>
+        <button class="btn btn-ghost" onclick="showProductForm('${p.id}')">${I.edit} ${t("edit")}</button>
+        ${session.role==="manager"?`<button class="btn btn-ghost" onclick="delProduct('${p.id}')">${I.trash}</button>`:""}
+      </div>
+    </div>`).join("")||`<div class="empty">—</div>`}`;
+}
+function showProductForm(pid){
+  editProductId=pid;
+  const p=pid?product(pid):{images:[],patterns:[],components:[],embroidery:"none",size_chart:{}};
+  window._chart=JSON.parse(JSON.stringify(p.size_chart||{}));
+  const compsTxt=(p.components||[]).map(c=>`${c.ar} / ${c.en||""}`).join("\n");
+  openSheet(`
+    <div class="title">${pid?t("edit"):t("add")}</div>
+    <div class="grid2"><div><label>${isAr()?"الاسم (عربي)":"Name (AR)"}</label><input id="p_name" value="${esc(p.name||"")}"></div>
+    <div><label>${isAr()?"الاسم (إنجليزي)":"Name (EN)"}</label><input id="p_name_en" dir="ltr" value="${esc(p.name_en||"")}"></div></div>
+    <label>${isAr()?"صور المنتج":"Images"}</label>
+    <div class="imgrow">${(p.images||[]).map((u,i)=>`<div class="imgwrap"><img class="thumb" src="${esc(u)}"><button class="rm" onclick="rmProdImg(${i})">✕</button></div>`).join("")}</div>
+    <input type="file" id="p_imgs" accept="image/*" multiple>
+    <label>${isAr()?"ملفات الباترون":"Patterns"}</label>
+    <div class="pillrow">${(p.patterns||[]).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer" onclick="rmProdPat(${i})">✕</b></span>`).join("")}</div>
+    <input type="file" id="p_pats" multiple>
+    <label>${isAr()?"قطع التصميم — سطر لكل قطعة: عربي / EN":"Components — one per line: AR / EN"}</label>
+    <textarea id="p_comps" placeholder="توب / TOP&#10;بنطرون / PANTS">${esc(compsTxt)}</textarea>
+    <div class="grid3">
+      <div><label>${isAr()?"تطريز/طباعة؟":"Embroidery?"}</label><select id="p_embk"><option value="">${isAr()?"لا":"No"}</option><option ${p.embroidery_kind==="تطريز"?"selected":""}>تطريز</option><option ${p.embroidery_kind==="طباعة"?"selected":""}>طباعة</option></select></div>
+      <div><label>${isAr()?"موضعه":"When"}</label><select id="p_embp">
+        <option value="after_cut" ${p.embroidery==="after_cut"?"selected":""}>${isAr()?"بعد القص":"After cut"}</option>
+        <option value="after_sew" ${p.embroidery==="after_sew"?"selected":""}>${isAr()?"بعد الخياطة":"After sew"}</option>
+        <option value="external_piece" ${p.embroidery==="external_piece"?"selected":""}>${isAr()?"قطعة جاهزة":"Ready piece"}</option>
+      </select></div>
+      <div><label>${isAr()?"تنفيذ خارجي كامل؟":"Full external?"}</label><select id="p_ext"><option value="">${isAr()?"لا":"No"}</option><option value="1" ${p.external_make?"selected":""}>${isAr()?"نعم":"Yes"}</option></select></div>
+    </div>
+    <label>${isAr()?"الرسمة / صورة الموضع":"Artwork"}</label>
+    ${p.artwork_url?`<img class="thumb" src="${esc(p.artwork_url)}">`:""}<input type="file" id="p_art" accept="image/*">
+    <label>${isAr()?"ملاحظة التطريز":"Embroidery note"}</label><input id="p_embn" value="${esc(p.embroidery_note||"")}">
+    <div class="grid2"><div><label>${isAr()?"تقديري قص (د)":"Est. cut (min)"}</label><input id="p_ec" type="number" value="${p.est_cut_min||""}"></div>
+    <div><label>${isAr()?"تقديري خياطة (د)":"Est. sew (min)"}</label><input id="p_es" type="number" value="${p.est_sew_min||""}"></div></div>
+    <label>${isAr()?"الأعمار (افصل بفاصلة)":"Ages (comma separated)"}</label><input id="p_sizes" dir="ltr" value="${esc(Object.keys(p.size_chart||{}).join(","))}" onchange="captureChart();redrawChart()">
+    <div id="chartGrid"></div>
+    <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="p_notes">${esc(p.notes||"")}</textarea>
+    <button class="btn btn-wine btn-big" onclick="saveProduct()">${t("save")}</button>
+  `);
+  window._pimgs=[...(p.images||[])]; window._ppats=[...(p.patterns||[])];
+  redrawChart();
+}
+function rmProdImg(i){window._pimgs.splice(i,1);document.querySelectorAll(".imgwrap")[i]?.remove();}
+function rmProdPat(i){window._ppats[i]=null;event.target.parentElement.remove();}
+function chartSizes(){return el("p_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);}
+function captureChart(){Object.keys(window._chart||{}).forEach(s=>{MEAS.forEach(m=>{const inp=el(`sc_${s}_${m[0]}`); if(inp) window._chart[s][m[0]]=inp.value;});});}
+function redrawChart(){
+  const sizes=chartSizes();
+  sizes.forEach(s=>{window._chart[s]=window._chart[s]||{};});
+  el("chartGrid").innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>${isAr()?"القياس":"Measure"}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+    ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="sc_${s}_${m[0]}" style="min-width:58px;padding:6px" value="${esc(window._chart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
+}
+async function saveProduct(){
+  const name=el("p_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Enter name");
+  captureChart();
+  for(const f of el("p_imgs").files){const u=await uploadFile(f,"products"); if(u) window._pimgs.push(u);}
+  const pats=window._ppats.filter(Boolean);
+  for(const f of el("p_pats").files){const u=await uploadFile(f,"patterns"); if(u) pats.push({name:f.name,url:u});}
+  let artwork=editProductId?product(editProductId).artwork_url:null;
+  const af=el("p_art").files[0]; if(af){const u=await uploadFile(af,"artwork"); if(u) artwork=u;}
+  const comps=el("p_comps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(s=>{const[a,b]=s.split("/").map(x=>x.trim());return{ar:a,en:b||a};});
+  const chart={}; chartSizes().forEach(s=>chart[s]=window._chart[s]||{});
+  const row={name, name_en:el("p_name_en").value||null, images:window._pimgs, patterns:pats, components:comps,
+    embroidery_kind:el("p_embk").value||null, embroidery:el("p_embk").value? el("p_embp").value : "none",
+    embroidery_note:el("p_embn").value||null, artwork_url:artwork, external_make:!!el("p_ext").value,
+    est_cut_min:+el("p_ec").value||null, est_sew_min:+el("p_es").value||null, size_chart:chart, notes:el("p_notes").value||null};
+  if(editProductId) await sb.from("products").update(row).eq("id",editProductId);
+  else await sb.from("products").insert(row);
+  closeSheet(); await refresh();
+}
+async function delProduct(id){
+  const used=DB.lines.some(l=>l.product_id===id);
+  if(used){ if(confirm(isAr()?"المنتج مستخدم — أرشفته؟":"In use — archive?")){await sb.from("products").update({active:false}).eq("id",id); await refresh();} return;}
+  if(confirm(isAr()?"حذف نهائي؟":"Delete?")){await sb.from("products").delete().eq("id",id); await refresh();}
+}
+function showChart(pid, size){
+  const p=product(pid); const chart=p.size_chart||{}; const sizes=Object.keys(chart);
+  const rows=MEAS.map(m=>`<tr><td><b>${isAr()?m[1]:m[2]}</b></td>${sizes.map(s=>`<td style="${s===size?'background:var(--ink);color:#fff;font-weight:800':''}">${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("");
+  const pats=(p.patterns||[]).map(x=>`<a href="${esc(x.url)}" target="_blank" class="chip">${I.file} ${esc(x.name)}</a>`).join(" ");
+  openSheet(`<div>
+    <div class="title">${esc(pname(p))} — ${t("sizeChart")}</div>
+    ${pimg(p)?`<img class="thumb-lg" src="${esc(pimg(p))}">`:""}
+    <div style="overflow-x:auto;margin-top:10px"><table><tr><th>—</th>${sizes.map(s=>`<th style="${s===size?'background:var(--ink);color:#fff':''}">${esc(s)}</th>`).join("")}</tr>${rows}</table></div>
+    ${pats?`<div class="pillrow" style="margin-top:10px">${pats}</div>`:""}
+    ${p.notes?`<div class="note-box">${esc(p.notes)}</div>`:""}
+  </div>`);
+}
+
+/* ---- التصميم ---- */
+function tabDesign(){
+  el("tabbody").innerHTML=`
+    <button class="btn btn-wine btn-big" onclick="newDesign()">${I.plus} ${t("design")}</button>
+    ${DB.designs.map(d=>`<div class="card">
+      <div class="wtop">${(d.images&&d.images[0])?`<img class="thumb" src="${esc(d.images[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+        <div style="flex:1"><div class="title">${esc(d.name)}</div>
+        <span class="chip sage">${esc(d.status)}</span> <span class="muted">${(d.notes||[]).length}</span></div>
+      </div>
+      <button class="btn btn-ghost" style="margin-top:8px" onclick="openDesign('${d.id}')">${t("open")} ←</button>
+    </div>`).join("")||`<div class="empty">—</div>`}`;
+}
+function newDesign(){
+  openSheet(`<div class="title">${t("design")}</div><label>${isAr()?"اسم التصميم":"Name"}</label><input id="nd_name">
+    <button class="btn btn-wine btn-big" onclick="saveNewDesign()">${t("add")}</button>`);
+}
+async function saveNewDesign(){
+  const name=el("nd_name").value.trim(); if(!name) return;
+  await sb.from("design_projects").insert({name}); closeSheet(); await refresh();
+}
+function openDesign(id){
+  const d=DB.designs.find(x=>x.id===id);
+  openSheet(`
+    <div class="title">${esc(d.name)} <span class="chip sage">${esc(d.status)}</span></div>
+    <div class="imgrow">${(d.images||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>
+    <label>${isAr()?"صور وسكيتشات":"Images"}</label><input type="file" id="dj_imgs" accept="image/*" multiple onchange="addDesignImgs('${d.id}')">
+    <label>${isAr()?"الملاحظات":"Notes"}</label>
+    ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
+    <div style="display:flex;gap:6px;margin-top:8px"><input id="dj_note"><button class="btn btn-ghost" onclick="addDesignNote('${d.id}')">${t("add")}</button></div>
+    <div class="pillrow" style="margin-top:10px">${["فكرة","عينة","ملاحظات"].map(s=>`<span class="pill ${d.status===s?'on':''}" onclick="setDesignStatus('${d.id}','${s}')">${s}</span>`).join("")}</div>
+    ${d.status!=="معتمد"?`<button class="btn btn-wine btn-big" onclick="approveDesign('${d.id}')">${I.done} ${isAr()?"اعتماد → منتج":"Approve → product"}</button>`:`<div class="note-box">✓</div>`}
+    ${session.role==="manager"?`<button class="btn btn-ghost btn-big" onclick="delDesign('${d.id}')">${I.trash}</button>`:""}
+  `);
+}
+async function addDesignImgs(id){
+  const d=DB.designs.find(x=>x.id===id); const imgs=[...(d.images||[])];
+  for(const f of el("dj_imgs").files){const u=await uploadFile(f,"designs"); if(u) imgs.push(u);}
+  await sb.from("design_projects").update({images:imgs}).eq("id",id);
+  await refresh(); closeSheet(); openDesign(id);
+}
+async function addDesignNote(id){
+  const tx=el("dj_note").value.trim(); if(!tx) return;
+  const d=DB.designs.find(x=>x.id===id);
+  await sb.from("design_projects").update({notes:[...(d.notes||[]),{t:tx,d:today()}]}).eq("id",id);
+  await refresh(); closeSheet(); openDesign(id);
+}
+async function setDesignStatus(id,s){await sb.from("design_projects").update({status:s}).eq("id",id); await refresh(); closeSheet(); openDesign(id);}
+async function delDesign(id){if(confirm("?")){await sb.from("design_projects").delete().eq("id",id); closeSheet(); await refresh();}}
+async function approveDesign(id){
+  const d=DB.designs.find(x=>x.id===id);
+  const {data:p,error}=await sb.from("products").insert({name:d.name, images:d.images||[], notes:(d.notes||[]).map(n=>n.t).join(" | ")}).select().single();
+  if(error) return alert(error.message);
+  await sb.from("design_projects").update({status:"معتمد",product_id:p.id}).eq("id",id);
+  await sb.from("photoshoots").insert({product_id:p.id});
+  closeSheet(); await refresh(); mTab="products"; render(); showProductForm(p.id);
+}
+
+/* ---- الخارجي ---- */
+function tabExternal(){
+  const embPool=DB.lines.filter(l=>l.stage==="emb"&&l.stage_status!=="sent"&&activeLine(l));
+  const extPool=DB.lines.filter(l=>l.stage==="ext"&&l.stage_status!=="sent"&&activeLine(l));
+  const openJobs=DB.jobs.filter(j=>j.status==="sent");
+  const poolRow=l=>{const p=product(l.product_id),o=order(l.order_id);
+    return `<div class="checkrow"><input type="checkbox" class="poolchk" value="${l.id}"> ${thumb(p)}
+    <div style="flex:1"><b>${esc(pname(p))}</b> <span class="muted">#${o.order_no} — ${esc(l.size||"")} × ${l.qty}</span></div></div>`;};
+  el("tabbody").innerHTML=`
+    <div class="card"><div class="title">${I.emb} ${t("emb")} (${embPool.length})</div>
+      ${embPool.length? embPool.map(poolRow).join("")+`<div class="grid2" style="margin-top:8px"><input id="j_vendor" placeholder="${isAr()?"اسم المصدر":"Vendor"}"><button class="btn btn-ink" onclick="makeJob('emb')">${I.shipped}</button></div>`
+      : `<div class="muted">—</div>`}
+    </div>
+    <div class="card"><div class="title">${I.ext} ${t("ext")} (${extPool.length})</div>
+      ${extPool.length? extPool.map(poolRow).join("")+`<div class="grid2" style="margin-top:8px"><input id="x_vendor" placeholder="${isAr()?"اسم المشغل":"Vendor"}"><button class="btn btn-ink" onclick="makeJob('ext')">${I.shipped}</button></div>`
+      : `<div class="muted">—</div>`}
+    </div>
+    ${openJobs.map(j=>{
+      const days=Math.round((new Date()-new Date(j.sent_at))/86400000);
+      return `<div class="card">
+        <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b> — ${esc(j.vendor||"—")} <span class="muted">${days} ${isAr()?"يوم":"days"} · ${(j.line_ids||[]).length}</span></div></div>
+        <div class="pillrow"><button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print}</button>
+        <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button></div>
+      </div>`;}).join("")}`;
+}
+async function makeJob(mode){
+  const ids=[...document.querySelectorAll(".poolchk:checked")].map(c=>c.value);
+  if(!ids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
+  const vendor=el(mode==="emb"?"j_vendor":"x_vendor").value||null;
+  const kind=mode==="ext"?"تنفيذ خارجي":(product(DB.lines.find(l=>l.id===ids[0]).product_id).embroidery_kind||"تطريز");
+  const {data:j}=await sb.from("ext_jobs").insert({kind,vendor,line_ids:ids}).select().single();
+  for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
+  await refresh(); printJob(j.id);
+}
+async function receiveJob(jobId){
+  const j=DB.jobs.find(x=>x.id===jobId);
+  for(const id of (j.line_ids||[])){
+    const l=DB.lines.find(x=>x.id===id); if(!l) continue;
+    await moveLine(id, l.stage==="ext"? "qc" : nextStage("emb",product(l.product_id)));
+  }
+  await sb.from("ext_jobs").update({status:"received",returned_at:today()}).eq("id",jobId);
+  await refresh();
+}
+function printJob(jobId){
+  const j=DB.jobs.find(x=>x.id===jobId);
+  const lines=(j.line_ids||[]).map(id=>DB.lines.find(l=>l.id===id)).filter(Boolean);
+  const isExt=j.kind==="تنفيذ خارجي";
+  const rows=lines.map(l=>{const p=product(l.product_id),o=order(l.order_id);
+    return `<tr><td>${pimg(p)?`<img src="${esc(pimg(p))}" style="width:70px;height:70px;object-fit:cover;border-radius:8px">`:""}</td>
+      <td><b>${esc(p.name)}</b><br><span style="color:#666">${esc(p.name_en||"")}</span></td>
+      <td style="text-align:center;font-size:20px;font-weight:800">${esc(l.size||"—")}</td>
+      <td style="text-align:center;font-size:20px;font-weight:800">${l.qty}</td>
+      <td>#${o.order_no}</td></tr>`;}).join("");
+  const total=lines.reduce((a,l)=>a+l.qty,0);
+  const arts=[...new Set(lines.map(l=>product(l.product_id)).filter(p=>p.artwork_url).map(p=>p.id))].map(id=>{const p=product(id);
+    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)}:</b>${p.embroidery_note?`<div>${esc(p.embroidery_note)}</div>`:""}<img src="${esc(p.artwork_url)}" style="max-width:300px;border:1px solid #ddd;border-radius:8px;margin-top:6px"></div>`;}).join("");
+  const charts=isExt? [...new Set(lines.map(l=>l.product_id))].map(pid=>{const p=product(pid);const chart=p.size_chart||{};const sizes=Object.keys(chart);
+    if(!sizes.length) return "";
+    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (سم):</b>
+    <table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+    ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
+    ${(p.patterns||[]).length?`<div>الباترونات: ${(p.patterns||[]).map(x=>`<a href="${esc(x.url)}">${esc(x.name)}</a>`).join(" · ")}</div>`:""}</div>`;}).join("") : "";
+  const w=window.open("","_blank");
+  w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>Job Order</title>
+  <style>body{font-family:Tajawal,Arial,sans-serif;padding:28px;color:#1C1B1A}
+  table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}
+  .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px}
+  .lg{font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px}</style></head><body>
+  <div class="hd"><div class="lg">VEEVOGUE</div><div style="text-align:left">JOB ORDER<br><b>${esc(j.kind)}</b></div></div>
+  <p>المصدر: <b>${esc(j.vendor||"—")}</b> · التاريخ: ${esc(j.sent_at)} · الإجمالي: <b>${total}</b></p>
+  <table><tr><th></th><th>المنتج</th><th>العمر</th><th>الكمية</th><th>الأمر</th></tr>${rows}</table>
+  ${arts}${charts}
+  <script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+
+/* ---- التصوير ---- */
+function tabShoots(){
+  const pend=DB.shoots.filter(s=>s.status==="pending");
+  el("tabbody").innerHTML=`
+    <div class="sechead">${I.cam} ${t("shoots")} (${pend.length})</div>
+    ${pend.length? pend.map(s=>{const p=product(s.product_id);
+      return `<div class="card lineitem" style="border-top:0">
+        <div class="wtop">${thumb(p)}<div><b>${esc(pname(p))}</b></div></div>
+        <button class="btn btn-ok" onclick="shootDone('${s.id}')">${I.done}</button></div>`;}).join("") : `<div class="empty">—</div>`}`;
+}
+async function shootDone(id){await sb.from("photoshoots").update({status:"done",done_at:today()}).eq("id",id); await refresh();}
+
+/* ---- الجودة (تبويب للمكتب) ---- */
+function tabQuality(){
+  const ls=DB.lines.filter(l=>l.stage==="qc" && activeLine(l));
+  el("tabbody").innerHTML=`
+    <div class="sechead">${I.qc} ${t("qc")} (${ls.length})</div>
+    ${ls.length? ls.map(l=>{
+      const p=product(l.product_id), o=order(l.order_id);
+      return `<div class="wcard">
+        <div class="wtop">${thumb(p)}
+          <div><div class="title">${esc(pname(p))}</div>
+          <div class="muted">#${o.order_no} — ${t("age")} ${esc(l.size||"—")} — ${t("qty")} <b>${l.qty}</b></div></div>
+        </div>
+        <div class="grid2" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:10px">
+          <button class="btn btn-ok" onclick="qcResult('${l.id}','ok')">${I.done} ${t("ok")}</button>
+          <button class="btn btn-ghost" onclick="qcResult('${l.id}','clean')">${I.clean} ${t("clean")}</button>
+          <button class="btn btn-warn" onclick="qcResult('${l.id}','iron')">${I.iron} ${t("iron")}</button>
+          <button class="btn btn-bad" onclick="qcResult('${l.id}','fix')">${I.fix} ${t("fix")}</button>
+        </div>
+      </div>`;}).join("") : `<div class="empty">${t("nothingToCheck")}</div>`}`;
+}
+async function qcResult(lineId, result){
+  const now=new Date().toISOString();
+  await sb.from("stage_events").insert({line_id:lineId,stage:"qc",result,started_at:now,finished_at:now});
+  if(result==="fix"){
+    const l=DB.lines.find(x=>x.id===lineId);
+    const lastSew=DB.events.filter(e=>e.line_id===lineId&&e.stage==="sew"&&e.worker_id&&e.finished_at).slice(-1)[0];
+    await sb.from("order_lines").update({stage:"sew",stage_status:"waiting",claimed_by:null}).eq("id",lineId);
+    await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX",worker_id:lastSew?lastSew.worker_id:null});
+  } else {
+    await sb.from("order_lines").update({stage:"pack",stage_status:"waiting",claimed_by:null,
+      prep_note: result==="ok"? null : result}).eq("id",lineId);
+  }
+  await refresh();
+}
+
+/* ---- العمال ---- */
+function tabWorkers(){
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">${t("workers")}</div>
+    <div class="grid2"><div><label>${isAr()?"الاسم (عربي)":"Name (AR)"}</label><input id="w_name"></div>
+    <div><label>${isAr()?"الاسم (إنجليزي)":"Name (EN)"}</label><input id="w_name_en" dir="ltr"></div></div>
+    <label>${isAr()?"التخصصات":"Specialties"}</label>
+    <div class="pillrow" id="specPills">${SPEC_LIST.map(k=>`<span class="pill" data-k="${k}" onclick="this.classList.toggle('on')">${isAr()?SPEC_LABEL[k][0]:SPEC_LABEL[k][1]}</span>`).join("")}</div>
+    <label>${t("pin")}</label><input id="w_pin" inputmode="numeric">
+    <button class="btn btn-wine btn-big" onclick="saveWorker()">${t("add")}</button>
+  </div>
+  ${DB.workers.filter(w=>w.active).map(w=>`<div class="card lineitem" style="border-top:0">
+    <div><b>${esc(wname(w))}</b>
+    <div class="pillrow">${(w.specialties||[]).map(k=>`<span class="chip">${I[k]||""} ${SPEC_LABEL[k]?(isAr()?SPEC_LABEL[k][0]:SPEC_LABEL[k][1]):k}</span>`).join("")} ${w.pin?`<span class="chip">🔒</span>`:""}</div></div>
+    <div><button class="btn btn-ghost" onclick="editWorker('${w.id}')">${I.edit}</button>
+    <button class="btn btn-ghost" onclick="stopWorker('${w.id}')">${t("stop")}</button>
+    <button class="btn btn-ghost" onclick="delWorker('${w.id}')">${I.trash}</button></div>
+  </div>`).join("")}
+  <div class="card"><div class="title">${isAr()?"أسباب التصليح":"Repair reasons"}</div>
+    ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleReason('${r.id}',${r.active})">${r.active?t("stop"):t("add")}</button></div>`).join("")}
+    <div style="display:flex;gap:6px;margin-top:8px"><input id="newReason"><button class="btn btn-ghost" onclick="addReason()">${t("add")}</button></div>
+  </div>`;
+}
+async function saveWorker(){
+  const name=el("w_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Enter name");
+  const specs=[...document.querySelectorAll("#specPills .pill.on")].map(x=>x.dataset.k);
+  if(!specs.length) return alert(isAr()?"اختر تخصص":"Pick specialty");
+  await sb.from("workers").insert({name, name_en:el("w_name_en").value||null, specialties:specs, pin:el("w_pin").value||null});
+  await refresh();
+}
+function editWorker(id){
+  const w=worker(id);
+  openSheet(`<div class="title">${esc(wname(w))}</div>
+    <div class="grid2"><div><label>AR</label><input id="ew_name" value="${esc(w.name)}"></div>
+    <div><label>EN</label><input id="ew_name_en" dir="ltr" value="${esc(w.name_en||"")}"></div></div>
+    <label>${isAr()?"التخصصات":"Specialties"}</label>
+    <div class="pillrow" id="ewPills">${SPEC_LIST.map(k=>`<span class="pill ${(w.specialties||[]).includes(k)?'on':''}" data-k="${k}" onclick="this.classList.toggle('on')">${isAr()?SPEC_LABEL[k][0]:SPEC_LABEL[k][1]}</span>`).join("")}</div>
+    <label>${t("pin")}</label><input id="ew_pin" value="${esc(w.pin||"")}">
+    <button class="btn btn-wine btn-big" onclick="updateWorker('${id}')">${t("save")}</button>`);
+}
+async function updateWorker(id){
+  const specs=[...document.querySelectorAll("#ewPills .pill.on")].map(x=>x.dataset.k);
+  await sb.from("workers").update({name:el("ew_name").value, name_en:el("ew_name_en").value||null, specialties:specs, pin:el("ew_pin").value||null}).eq("id",id);
+  closeSheet(); await refresh();
+}
+async function stopWorker(id){if(confirm("?")){await sb.from("workers").update({active:false}).eq("id",id); await refresh();}}
+async function delWorker(id){if(confirm(isAr()?"حذف نهائي للعامل وكل بياناته؟":"Delete permanently?")){await sb.from("workers").delete().eq("id",id); await refresh();}}
+async function addReason(){const tx=el("newReason").value.trim(); if(!tx)return; await sb.from("repair_reasons").insert({label:tx}); await refresh();}
+async function toggleReason(id,cur){await sb.from("repair_reasons").update({active:!cur}).eq("id",id); await refresh();}
+
+/* ---- الأداء ---- */
+function tabPerf(){
+  const done=DB.events.filter(e=>e.started_at&&e.finished_at&&e.worker_id);
+  if(!done.length){el("tabbody").innerHTML=`<div class="empty">—</div>`; return;}
+  const rows={};
+  done.forEach(e=>{
+    const k=e.worker_id+"|"+e.stage;
+    rows[k]=rows[k]||{w:wname(worker(e.worker_id)), stage:t(STAGE_KEY[e.stage]||e.stage), n:0, total:0, est:0, estN:0};
+    const r=rows[k]; r.n++; r.total+=mins(e.started_at,e.finished_at);
+    const l=DB.lines.find(x=>x.id===e.line_id);
+    if(l){const p=product(l.product_id);
+      const est=e.stage==="cut"?p.est_cut_min: e.stage==="sew"?p.est_sew_min: null;
+      if(est){r.est+=est*l.qty; r.estN++;}}
+  });
+  const fixes={};
+  DB.events.filter(e=>e.result==="fix").forEach(e=>{
+    const sews=DB.events.filter(x=>x.line_id===e.line_id&&x.stage==="sew"&&x.finished_at&&x.worker_id);
+    if(sews.length){const wid=sews[sews.length-1].worker_id; fixes[wid]=(fixes[wid]||0)+1;}
+  });
+  const brk={};
+  DB.breaks.filter(b=>b.ended_at).forEach(b=>{brk[b.worker_id]=(brk[b.worker_id]||0)+mins(b.started_at,b.ended_at);});
+  el("tabbody").innerHTML=`<div class="card">
+    <div class="title">${t("perf")}</div>
+    <table><tr><th>${t("worker")}</th><th>—</th><th>#</th><th>${isAr()?"فعلي":"Actual"}</th><th>${isAr()?"تقديري":"Est."}</th></tr>
+    ${Object.values(rows).map(r=>`<tr><td>${esc(r.w)}</td><td>${r.stage}</td><td>${r.n}</td><td>${Math.round(r.total/r.n)}</td><td>${r.estN?Math.round(r.est/r.estN):"—"}</td></tr>`).join("")}</table>
+    ${Object.keys(fixes).length?`<div class="title" style="margin-top:14px">${t("fix")}</div>
+    <table>${Object.entries(fixes).map(([wid,n])=>`<tr><td>${esc(wname(worker(wid)))}</td><td>${n}</td></tr>`).join("")}</table>`:""}
+    ${Object.keys(brk).length?`<div class="title" style="margin-top:14px">${t("breakStart")}</div>
+    <table>${Object.entries(brk).map(([wid,m])=>`<tr><td>${esc(wname(worker(wid)))}</td><td>${m} ${t("minutes")}</td></tr>`).join("")}</table>`:""}
+  </div>`;
+}
+
+/* ================= شاشة العامل ================= */
 function renderWorker(){
   const w=worker(session.workerId);
   const specs=w.specialties||[];
-  let html=`<div dir="ltr"><button class="btn btn-ghost" style="margin-bottom:6px" onclick="refresh()">↻ REFRESH</button>`;
+  const onBreak=!!myBreak();
+  let html=`${breakBar()}
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-ghost" onclick="refresh()">↻ ${t("refresh")}</button>
+      ${!onBreak?`<button class="btn btn-line" onclick="startBreak()">${I.coffee} ${t("breakStart")}</button>`:""}
+    </div>`;
+  if(onBreak){ el("app").innerHTML=html; return; }
   if(specs.includes("cut")) html+=workerSection("cut", cutTasks(w));
   if(specs.includes("sew")) html+=workerSection("sew", sewTasks(w));
   if(specs.includes("pack")) html+=workerSection("pack", packTasks(w));
-  html+=`</div>`;
   el("app").innerHTML=html;
 }
-function activeLine(l){return order(l.order_id).status==="جاري";}
 function cutTasks(w){
-  return DB.lines.filter(l=>l.stage==="cut" && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id))
-    .map(l=>workerCard(l,"cut",null));
+  return DB.lines.filter(l=>l.stage==="cut" && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id)).map(l=>workerCard(l,"cut",null));
 }
 function sewTasks(w){
   const out=[];
   DB.lines.filter(l=>l.stage==="sew" && activeLine(l)).forEach(l=>{
-    DB.parts.filter(p=>p.line_id===l.id && p.status!=="done" && (!p.worker_id||p.worker_id===w.id))
-      .forEach(p=>out.push(workerCard(l,"sew",p)));
+    DB.parts.filter(p=>p.line_id===l.id && p.status!=="done" && (!p.worker_id||p.worker_id===w.id)).forEach(p=>out.push(workerCard(l,"sew",p)));
   });
   return out;
 }
 function packTasks(w){
-  return DB.lines.filter(l=>(l.stage==="clean"||l.stage==="pack") && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id))
-    .map(l=>workerCard(l,l.stage,null));
+  return DB.lines.filter(l=>l.stage==="pack" && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id)).map(l=>workerCard(l,"pack",null));
 }
 function workerSection(key, cards){
-  return `<div class="sechead">${I[key]} ${STAGE_EN[key]} <span class="muted" style="letter-spacing:0">(${cards.length})</span></div>`
-    + (cards.length? cards.join("") : `<div class="empty">No tasks 👌</div>`);
+  return `<div class="sechead">${I[key]} ${t(key)} <span class="muted" style="letter-spacing:0">(${cards.length})</span></div>`
+    + (cards.length? cards.join("") : `<div class="empty">${t("noTasks")} 👌</div>`);
 }
-function specsTableEN(cs){
+function specsTable(cs){
   if(!cs) return "";
-  const rows=MEAS.filter(m=>cs[m[0]]).map(m=>`<tr><td>${m[2]}</td><td><b>${esc(cs[m[0]])}</b></td></tr>`).join("");
-  const extra=[cs.sleeve?`Sleeve: <b>${esc(cs.sleeve)}</b>`:"",cs.bottom?`Bottom: <b>${esc(cs.bottom)}</b>`:""].filter(Boolean).join(" — ");
-  return `<div class="note-box"><b>CUSTOM SIZE</b><table>${rows}</table>${extra?`<div>${extra}</div>`:""}${cs.notes?`<div>📝 ${esc(cs.notes)}</div>`:""}</div>`;
+  const rows=MEAS.filter(m=>cs[m[0]]).map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td><td><b>${esc(cs[m[0]])}</b></td></tr>`).join("");
+  const extra=[cs.sleeve?`${isAr()?"الكم":"Sleeve"}: <b>${esc(cs.sleeve)}</b>`:"",cs.bottom?`${esc(cs.bottom)}`:""].filter(Boolean).join(" — ");
+  return `<div class="note-box"><b>${I.ruler}</b><table>${rows}</table>${extra?`<div>${extra}</div>`:""}${cs.notes?`<div>📝 ${esc(cs.notes)}</div>`:""}</div>`;
 }
 function workerCard(l, mode, part){
   const p=product(l.product_id), o=order(l.order_id);
   const working = part? part.status==="working" : (l.stage_status==="working" && l.claimed_by===session.workerId);
-  const mine = part? part.worker_id===session.workerId : l.claimed_by===session.workerId;
   const ev = DB.events.find(e=> (part? e.part_id===part.id : (e.line_id===l.id&&!e.part_id)) && e.stage===l.stage && e.started_at && !e.finished_at);
+  const m = ev? mins(ev.started_at,new Date().toISOString()) : 0;
+  const est = mode==="cut"? p.est_cut_min : mode==="sew"? p.est_sew_min : null;
+  const over = est? m > est*(l.qty||1) : false;
   const meta = `<div class="wmeta">
-      ${mode==="cut"?`<div><div class="bignum">${esc(l.size||"—")}</div><div class="biglabel">AGE / SIZE</div></div>`:""}
-      <div><div class="bignum">${l.qty}</div><div class="biglabel">QTY</div></div>
-      ${mode!=="cut"&&l.size?`<div><div class="bignum" style="font-size:22px">${esc(l.size)}</div><div class="biglabel">AGE</div></div>`:""}
-      ${o.due_date?`<div><div class="bignum" style="font-size:22px;${isLate(o)?'color:var(--bad)':''}">${fmtD(o.due_date)}</div><div class="biglabel">DUE</div></div>`:""}
-      ${l.color?`<div><div class="bignum" style="font-size:18px">${esc(l.color)}</div><div class="biglabel">COLOR</div></div>`:""}
+      ${mode==="cut"?`<div><div class="bignum">${esc(l.size||"—")}</div><div class="biglabel">${t("age")}</div></div>`:""}
+      <div><div class="bignum">${l.qty}</div><div class="biglabel">${t("qty")}</div></div>
+      ${mode!=="cut"&&l.size?`<div><div class="bignum" style="font-size:22px">${esc(l.size)}</div><div class="biglabel">${t("age")}</div></div>`:""}
+      ${o.due_date?`<div><div class="bignum" style="font-size:22px;${isLate(o)?'color:var(--bad)':''}">${fmtD(o.due_date)}</div><div class="biglabel">${t("due")}</div></div>`:""}
+      ${l.color?`<div><div class="bignum" style="font-size:18px">${esc(l.color)}</div><div class="biglabel">${t("color")}</div></div>`:""}
     </div>`;
   return `<div class="wcard">
-    <div class="wtop">
-      ${thumb(p)}
+    <div class="wtop">${thumb(p)}
       <div style="flex:1">
-        <div class="title" style="font-family:'Inter'">${esc(p.name_en||p.name)} ${part?`<span class="chip">${I.sew} ${esc(part.part_en||part.part_ar)}</span>`:""}</div>
-        <div class="muted">#${o.order_no} ${o.order_type==="تصليح"?"· REPAIR 🔧":""}</div>
-        ${mode==="cut"?`<button class="btn btn-ghost" style="padding:6px 12px;font-size:13px;margin-top:4px" onclick="showChart('${p.id}','${esc(l.size||"")}')">${I.ruler} SIZE CHART</button>`:""}
+        <div class="title">${esc(pname(p))} ${part?`<span class="chip">${I.sew} ${esc(isAr()?part.part_ar:part.part_en)}</span>`:""}</div>
+        <div class="muted">#${o.order_no} ${o.order_type==="تصليح"?"· "+I.fix:""}</div>
+        ${mode==="cut"?`<button class="btn btn-ghost" style="padding:6px 12px;font-size:13px;margin-top:4px" onclick="showChart('${p.id}','${esc(l.size||"")}')">${I.ruler} ${t("sizeChart")}</button>`:""}
       </div>
     </div>
     ${meta}
-    ${specsTableEN(l.custom_specs)}
-    ${o.order_type==="تصليح"&&o.repair_reason?`<div class="note-box">🔧 ${esc(o.repair_reason)}</div>`:""}
-    ${ev?`<div class="timer">⏱ ${mins(ev.started_at,new Date().toISOString())} min</div>`:""}
-    ${working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} DONE</button>`
-             : `<button class="btn btn-ink btn-big" onclick="wStart('${l.id}','${part?part.id:""}')">${I.play} START</button>`}
+    ${mode==="pack"&&l.prep_note?`<div class="note-box">${l.prep_note==="clean"?I.clean+" "+t("clean"):I.iron+" "+t("iron")}</div>`:""}
+    ${specsTable(l.custom_specs)}
+    ${o.repair_reason?`<div class="note-box">${I.fix} ${esc(o.repair_reason)}</div>`:""}
+    ${ev?`<div class="timer ${over?'t-late':'t-ok'}">⏱ ${m} ${t("minutes")}</div>`:""}
+    ${working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} ${t("done")}</button>`
+             : `<button class="btn btn-ink btn-big" onclick="wStart('${l.id}','${part?part.id:""}')">${I.play} ${t("start")}</button>`}
   </div>`;
 }
 async function wStart(lineId, partId){
+  if(myBreak()) return alert(t("onBreak"));
   const l=DB.lines.find(x=>x.id===lineId);
   if(partId){
     await sb.from("line_parts").update({status:"working",worker_id:session.workerId,started_at:new Date().toISOString()}).eq("id",partId);
@@ -346,542 +1093,13 @@ async function wDone(lineId, partId){
   }else{
     const ev=DB.events.find(e=>e.line_id===lineId&&!e.part_id&&e.stage===l.stage&&e.started_at&&!e.finished_at);
     if(ev) await sb.from("stage_events").update({finished_at:now}).eq("id",ev.id);
-    await moveLine(lineId, nextStage(l.stage,p));
+    if(l.stage==="pack" && l.prep_note){
+      await sb.from("order_lines").update({stage:"qc",stage_status:"waiting",claimed_by:null,prep_note:null}).eq("id",lineId);
+    } else {
+      await moveLine(lineId, nextStage(l.stage,p));
+    }
   }
   await refresh();
-}
-function showChart(pid, size){
-  const p=product(pid);
-  const chart=p.size_chart||{};
-  const sizes=Object.keys(chart);
-  const rows=MEAS.map(m=>`<tr><td><b>${m[2]}</b> / ${m[1]}</td>${sizes.map(s=>`<td style="${s===size?'background:#111;color:#fff;font-weight:800':''}">${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("");
-  const pats=(p.patterns||[]).map(x=>`<a href="${esc(x.url)}" target="_blank" class="chip">${I.file} ${esc(x.name)}</a>`).join(" ");
-  openSheet(`<div dir="ltr">
-    <div class="title" style="font-family:'Inter'">${esc(p.name_en||p.name)} — SIZE CHART</div>
-    ${pimg(p)?`<img class="thumb-lg" src="${esc(pimg(p))}">`:""}
-    <div style="overflow-x:auto;margin-top:10px"><table><tr><th>MEASURE</th>${sizes.map(s=>`<th style="${s===size?'background:#111;color:#fff':''}">${esc(s)}</th>`).join("")}</tr>${rows}</table></div>
-    ${pats?`<div class="pillrow" style="margin-top:10px">${pats}</div>`:""}
-    ${p.notes?`<div class="note-box">${esc(p.notes)}</div>`:""}
-  </div>`);
-}
-
-/* ================= شاشة الجودة (EN) ================= */
-function renderQuality(){
-  const ls=DB.lines.filter(l=>l.stage==="qc" && activeLine(l));
-  el("app").innerHTML=`<div dir="ltr">
-    <button class="btn btn-ghost" style="margin-bottom:6px" onclick="refresh()">↻ REFRESH</button>
-    <div class="sechead">${I.qc} QUALITY CHECK <span class="muted" style="letter-spacing:0">(${ls.length})</span></div>
-    ${ls.length? ls.map(l=>{
-      const p=product(l.product_id), o=order(l.order_id);
-      return `<div class="wcard">
-        <div class="wtop">${thumb(p)}
-          <div><div class="title" style="font-family:'Inter'">${esc(p.name_en||p.name)}</div>
-          <div class="muted">#${o.order_no} — AGE ${esc(l.size||"—")} — QTY <b>${l.qty}</b></div></div>
-        </div>
-        <div class="grid3" style="margin-top:10px">
-          <button class="btn btn-ok" onclick="qcResult('${l.id}','ok')">${I.done} OK</button>
-          <button class="btn btn-warn" onclick="qcResult('${l.id}','clean')">${I.clean} CLEAN</button>
-          <button class="btn btn-bad" onclick="qcResult('${l.id}','fix')">${I.fix} FIX</button>
-        </div>
-      </div>`;
-    }).join("") : `<div class="empty">Nothing to check</div>`}
-  </div>`;
-}
-async function qcResult(lineId, result){
-  const now=new Date().toISOString();
-  await sb.from("stage_events").insert({line_id:lineId,stage:"qc",result,started_at:now,finished_at:now});
-  if(result==="ok") await moveLine(lineId,"pack");
-  else if(result==="clean") await moveLine(lineId,"clean");
-  else{
-    await sb.from("order_lines").update({stage:"sew",stage_status:"waiting",claimed_by:null}).eq("id",lineId);
-    await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX"});
-  }
-  await refresh();
-}
-
-/* ================= أوراق منبثقة ================= */
-function openSheet(html){
-  const ov=document.createElement("div"); ov.className="overlay"; ov.id="ov";
-  ov.innerHTML=`<div class="sheet">${html}<button class="btn btn-ghost btn-big" onclick="closeSheet()">إغلاق / CLOSE</button></div>`;
-  ov.addEventListener("click",e=>{if(e.target===ov)closeSheet();});
-  document.body.appendChild(ov);
-}
-function closeSheet(){const o=el("ov"); if(o)o.remove();}
-
-/* ================= شاشة المدير ================= */
-const MTABS=["لوحة","أمر جديد","المنتجات","التصميم","الخارجي","التصوير","العمال","الأداء"];
-function renderManager(){
-  el("app").innerHTML=`
-    <div class="tabs">${MTABS.map(t=>`<button class="${mTab===t?'on':''}" onclick="mTab='${t}';localStorage.setItem('vv2_tab','${t}');render()">${t}</button>`).join("")}</div>
-    <div id="tabbody"></div>`;
-  ({"لوحة":tabBoard,"أمر جديد":tabNewOrder,"المنتجات":tabProducts,"التصميم":tabDesign,"الخارجي":tabExternal,"التصوير":tabShoots,"العمال":tabWorkers,"الأداء":tabPerf})[mTab]();
-}
-
-/* ---- لوحة ---- */
-function tabBoard(){
-  const act=DB.lines.filter(l=>activeLine(l));
-  const counts=["cut","emb","sew","qc","clean","pack","ext"].map(s=>({s,n:act.filter(l=>l.stage===s).length}));
-  const workingNow=[];
-  act.forEach(l=>{
-    if(l.stage_status==="working"&&l.claimed_by) workingNow.push({w:worker(l.claimed_by),l,stage:l.stage,ev:DB.events.find(e=>e.line_id===l.id&&!e.part_id&&e.started_at&&!e.finished_at)});
-    DB.parts.filter(p=>p.line_id===l.id&&p.status==="working").forEach(p=>workingNow.push({w:worker(p.worker_id),l,stage:"sew",part:p,ev:DB.events.find(e=>e.part_id===p.id&&e.started_at&&!e.finished_at)}));
-  });
-  const embPool=act.filter(l=>l.stage==="emb"&&l.stage_status!=="sent").length;
-  const extPool=act.filter(l=>l.stage==="ext"&&l.stage_status!=="sent").length;
-  const activeOrders=DB.orders.filter(o=>o.status==="جاري");
-  el("tabbody").innerHTML=`
-    <div class="statrow">${counts.map(c=>`<div class="stat">${I[c.s]}<div class="bignum" style="font-size:22px">${c.n}</div><div class="biglabel">${STAGE_AR[c.s]}</div></div>`).join("")}</div>
-    ${(embPool||extPool)?`<div class="card" style="border-color:#111">${embPool?`<div class="lineitem" style="border:0">${I.emb} <b>${embPool}</b> قطعة متجمعة للتطريز/الطباعة <button class="btn btn-ghost" onclick="mTab='الخارجي';render()">افتح ←</button></div>`:""}${extPool?`<div class="lineitem" style="border:0">${I.ext} <b>${extPool}</b> بانتظار الإرسال للتنفيذ الخارجي <button class="btn btn-ghost" onclick="mTab='الخارجي';render()">افتح ←</button></div>`:""}</div>`:""}
-    <div class="card"><div class="title">${I.clock} شغال الحين</div>
-      ${workingNow.length? workingNow.map(x=>`<div class="lineitem"><div><b>${esc(x.w.name)}</b> — ${STAGE_AR[x.stage]}${x.part?` (${esc(x.part.part_ar)})`:""} — ${esc(product(x.l.product_id).name)} <span class="muted">#${order(x.l.order_id).order_no}</span></div><div class="timer">${x.ev?mins(x.ev.started_at,new Date().toISOString())+" د":""}</div></div>`).join("") : `<div class="muted">ما في أحد شغال حالياً</div>`}
-    </div>
-    ${activeOrders.length? activeOrders.map(orderCard).join("") : `<div class="empty">ما في أوامر جارية</div>`}
-    ${DB.orders.filter(o=>o.status!=="جاري").slice(0,6).map(orderCard).join("")}`;
-}
-function lineChip(l){
-  const w=l.claimed_by?worker(l.claimed_by):null;
-  const partsInfo=l.stage==="sew"? (()=>{const ps=DB.parts.filter(p=>p.line_id===l.id);const d=ps.filter(p=>p.status==="done").length;return ps.length>1?` ${d}/${ps.length}`:"";})():"";
-  return `<span class="chip ${l.stage_status==='working'?'working':''}">${I[l.stage]||""} ${STAGE_AR[l.stage]}${partsInfo}${w?` · ${esc(w.name)}`:""}</span>`;
-}
-function orderCard(o){
-  const ls=DB.lines.filter(l=>l.order_id===o.id);
-  return `<div class="card" style="${o.status!=='جاري'?'opacity:.6':''}">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-      <div class="title">أمر #${o.order_no} <span class="chip">${esc(o.order_type)}</span> ${o.status!=="جاري"?`<span class="chip">${esc(o.status)}</span>`:""}</div>
-      <div class="muted">${o.due_date?(isLate(o)?`<span class="late">متأخر — ${fmtD(o.due_date)}</span>`:`تسليم ${fmtD(o.due_date)}`):""}</div>
-    </div>
-    ${o.customer_ref?`<div class="muted">فاتورة: ${esc(o.customer_ref)}</div>`:""}
-    ${o.repair_reason?`<div class="muted">سبب: ${esc(o.repair_reason)}</div>`:""}
-    ${ls.map(l=>`<div class="lineitem">
-      <div><b>${esc(product(l.product_id).name)}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip">${I.ruler} خاص</span>`:""}</div>
-      <div>${lineChip(l)} ${l.stage==="pack"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped} أُرسلت</button>`:""}</div>
-    </div>`).join("")}
-    ${o.status==="جاري"&&ls.length&&ls.every(l=>l.stage==="shipped")?`<button class="btn btn-ink btn-big" onclick="closeOrder('${o.id}')">إقفال الأمر ✓</button>`:""}
-    ${o.status==="جاري"?`<div style="text-align:left;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="cancelOrder('${o.id}')">إلغاء</button></div>`:""}
-  </div>`;
-}
-async function shipLine(id){await moveLine(id,"shipped");await refresh();}
-async function closeOrder(id){await sb.from("orders").update({status:"مكتمل"}).eq("id",id);await refresh();}
-async function cancelOrder(id){if(confirm("إلغاء الأمر كامل؟")){await sb.from("orders").update({status:"ملغي"}).eq("id",id);await refresh();}}
-
-/* ---- أمر جديد ---- */
-function tabNewOrder(){
-  const prods=DB.products.filter(p=>p.active);
-  if(!prods.length){el("tabbody").innerHTML=`<div class="empty">أضف منتجات أولاً من تبويب «المنتجات»</div>`;return;}
-  const t=window._otype||"كولكشن";
-  const dOpts=prods.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
-  let body="";
-  if(t==="قياسات خاصة"){
-    if(!customModels.length) customModels=[emptyModel()];
-    body=`<label>رقم فاتورة الزبونة</label><input id="o_ref">
-      ${customModels.map((m,i)=>`<div class="card" style="background:var(--soft)">
-        <div class="lineitem" style="border:0"><b>موديل ${i+1}</b> ${customModels.length>1?`<button class="btn btn-ghost" onclick="rmModel(${i})">✕</button>`:""}</div>
-        <label>المنتج</label><select id="cm_p${i}">${dOpts}</select>
-        <div class="grid3">${MEAS.map(x=>`<div><label>${x[1]}</label><input id="cm_${x[0]}${i}" inputmode="decimal" value="${esc(m[x[0]]||"")}"></div>`).join("")}</div>
-        <div class="grid2">
-          <div><label>الكم</label><select id="cm_sl${i}"><option value="">—</option>${SLEEVES.map(s=>`<option>${s}</option>`).join("")}</select></div>
-          <div><label>الأسفل</label><select id="cm_bt${i}"><option value="">—</option>${BOTTOMS.map(s=>`<option>${s}</option>`).join("")}</select></div>
-        </div>
-        <div class="grid2"><div><label>اللون</label><input id="cm_c${i}"></div><div><label>الكمية</label><input id="cm_q${i}" type="number" min="1" value="1"></div></div>
-        <label>ملاحظات خاصة</label><input id="cm_n${i}">
-      </div>`).join("")}
-      <button class="btn btn-ghost" onclick="addModel()">${I.plus} إضافة موديل</button>`;
-  }else{
-    if(!newLines.length) newLines=[{}];
-    body=`${t==="طلب"?`<label>رقم فاتورة الزبونة</label><input id="o_ref">`:""}
-      ${t==="تصليح"?`<label>سبب الرجوع</label><select id="o_reason">${DB.reasons.filter(r=>r.active).map(r=>`<option>${esc(r.label)}</option>`).join("")}<option value="__other">سبب آخر...</option></select>`:""}
-      <label>القطع</label>
-      ${newLines.map((l,i)=>`<div class="grid3" style="grid-template-columns:2fr 1fr 1fr 1fr auto;margin-top:6px;gap:6px">
-        <select id="ld${i}">${dOpts}</select>
-        <input id="ls${i}" placeholder="العمر/المقاس" value="${esc(l.size||"")}">
-        <input id="lc${i}" placeholder="لون" value="${esc(l.color||"")}">
-        <input id="lq${i}" type="number" min="1" value="${l.qty||1}">
-        <button class="btn btn-ghost" onclick="delLine(${i})">✕</button>
-      </div>`).join("")}
-      <button class="btn btn-ghost" style="margin-top:8px" onclick="addLine()">${I.plus} سطر</button>`;
-  }
-  el("tabbody").innerHTML=`<div class="card">
-    <label>نوع الأمر</label>
-    <div class="pillrow">${["كولكشن","طلب","تصليح","قياسات خاصة"].map(x=>`<span class="pill ${t===x?'on':''}" onclick="window._otype='${x}';captureOrder();render()">${x}</span>`).join("")}</div>
-    <div id="obody">${body}</div>
-    <label>تاريخ التسليم</label><input type="date" id="o_due">
-    <button class="btn btn-ink btn-big" onclick="saveOrder()">حفظ الأمر</button>
-  </div>`;
-  newLines.forEach((l,i)=>{if(l.product_id&&el("ld"+i))el("ld"+i).value=l.product_id;});
-  customModels.forEach((m,i)=>{if(m.product_id&&el("cm_p"+i))el("cm_p"+i).value=m.product_id; if(m.sleeve&&el("cm_sl"+i))el("cm_sl"+i).value=m.sleeve; if(m.bottom&&el("cm_bt"+i))el("cm_bt"+i).value=m.bottom;});
-}
-function emptyModel(){return {};}
-function captureOrder(){
-  newLines=newLines.map((l,i)=>el("ld"+i)?{product_id:el("ld"+i).value,size:el("ls"+i).value,color:el("lc"+i).value,qty:+el("lq"+i).value||1}:l);
-  customModels=customModels.map((m,i)=>{
-    if(!el("cm_p"+i)) return m;
-    const o={product_id:el("cm_p"+i).value, qty:+el("cm_q"+i).value||1, color:el("cm_c"+i).value, sleeve:el("cm_sl"+i).value, bottom:el("cm_bt"+i).value, notes:el("cm_n"+i).value};
-    MEAS.forEach(x=>o[x[0]]=el("cm_"+x[0]+i).value);
-    return o;
-  });
-}
-function addLine(){captureOrder();newLines.push({});render();}
-function delLine(i){captureOrder();newLines.splice(i,1);render();}
-function addModel(){captureOrder();customModels.push(emptyModel());render();}
-function rmModel(i){captureOrder();customModels.splice(i,1);render();}
-async function saveOrder(){
-  captureOrder();
-  const t=window._otype||"كولكشن";
-  let reason=null;
-  if(t==="تصليح"){reason=el("o_reason").value; if(reason==="__other"){reason=prompt("اكتب السبب:"); if(!reason)return; await sb.from("repair_reasons").insert({label:reason});}}
-  const {data:o,error}=await sb.from("orders").insert({order_type:t, customer_ref:(t==="طلب"||t==="قياسات خاصة")?(el("o_ref")?.value||null):null, repair_reason:reason, due_date:el("o_due").value||null}).select().single();
-  if(error) return alert("خطأ: "+error.message);
-  let rows=[];
-  if(t==="قياسات خاصة"){
-    rows=customModels.filter(m=>m.product_id).map(m=>({order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:"خاص",
-      custom_specs:{chest:m.chest,waist:m.waist,hips:m.hips,shoulder:m.shoulder,length:m.length,sleeve:m.sleeve,bottom:m.bottom,notes:m.notes},
-      stage:startStageFor(m.product_id,t)}));
-  }else{
-    rows=newLines.filter(l=>l.product_id).map(l=>({order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,stage:startStageFor(l.product_id,t)}));
-  }
-  if(!rows.length){await sb.from("orders").delete().eq("id",o.id);return alert("أضف قطعة واحدة على الأقل");}
-  const {data:inserted}=await sb.from("order_lines").insert(rows).select();
-  for(const l of (inserted||[]).filter(x=>x.stage==="sew")) await genParts(l.id, l, t);
-  newLines=[];customModels=[];window._otype="كولكشن";mTab="لوحة";localStorage.setItem("vv2_tab","لوحة");
-  await refresh();
-}
-/* ---- المنتجات (إضافة المنتج) ---- */
-function tabProducts(){
-  el("tabbody").innerHTML=`
-    <button class="btn btn-ink btn-big" onclick="showProductForm(null)">${I.plus} إضافة منتج</button>
-    ${DB.products.filter(p=>p.active).map(p=>`<div class="card">
-      <div class="wtop">${thumb(p)}
-        <div style="flex:1"><div class="title">${esc(p.name)} <span class="muted" style="font-family:'Inter'">${esc(p.name_en||"")}</span></div>
-        <div class="pillrow">
-          ${p.external_make?`<span class="chip">${I.ext} تنفيذ خارجي</span>`:""}
-          ${p.embroidery!=="none"?`<span class="chip">${I.emb} ${esc(p.embroidery_kind||"تطريز")}</span>`:""}
-          ${(p.components||[]).length>1?`<span class="chip">${(p.components||[]).length} قطع</span>`:""}
-          ${(p.patterns||[]).length?`<span class="chip">${I.file} ${(p.patterns||[]).length} باترون</span>`:""}
-        </div></div>
-      </div>
-      <div class="pillrow" style="margin-top:10px">
-        <button class="btn btn-ghost" onclick="showChart('${p.id}','')">${I.ruler} القياسات</button>
-        <button class="btn btn-ghost" onclick="showProductForm('${p.id}')">${I.edit} تعديل</button>
-        <button class="btn btn-ghost" onclick="delProduct('${p.id}')">${I.trash} حذف</button>
-      </div>
-    </div>`).join("")||`<div class="empty">ما في منتجات بعد</div>`}`;
-}
-function showProductForm(pid){
-  editProductId=pid;
-  const p=pid?product(pid):{images:[],patterns:[],components:[],embroidery:"none",size_chart:{}};
-  window._chart=JSON.parse(JSON.stringify(p.size_chart||{}));
-  const compsTxt=(p.components||[]).map(c=>`${c.ar} / ${c.en||""}`).join("\n");
-  openSheet(`
-    <div class="title">${pid?"تعديل منتج":"إضافة منتج"}</div>
-    <div class="grid2"><div><label>الاسم (عربي)</label><input id="p_name" value="${esc(p.name||"")}"></div>
-    <div><label>الاسم (إنجليزي)</label><input id="p_name_en" dir="ltr" value="${esc(p.name_en||"")}"></div></div>
-    <label>صور المنتج</label>
-    <div class="imgrow">${(p.images||[]).map((u,i)=>`<div class="imgwrap"><img class="thumb" src="${esc(u)}"><button class="rm" onclick="rmProdImg(${i})">✕</button></div>`).join("")}</div>
-    <input type="file" id="p_imgs" accept="image/*" multiple>
-    <label>ملفات الباترون</label>
-    <div class="pillrow">${(p.patterns||[]).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer" onclick="rmProdPat(${i})">✕</b></span>`).join("")}</div>
-    <input type="file" id="p_pats" multiple>
-    <label>قطع التصميم — سطر لكل قطعة بصيغة: عربي / EN (اتركه فاضي إذا قطعة وحدة)</label>
-    <textarea id="p_comps" placeholder="توب / TOP&#10;بنطرون / PANTS">${esc(compsTxt)}</textarea>
-    <div class="grid3">
-      <div><label>تطريز/طباعة؟</label><select id="p_embk"><option value="">لا</option><option ${p.embroidery_kind==="تطريز"?"selected":""}>تطريز</option><option ${p.embroidery_kind==="طباعة"?"selected":""}>طباعة</option></select></div>
-      <div><label>موضعه</label><select id="p_embp">
-        <option value="after_cut" ${p.embroidery==="after_cut"?"selected":""}>بعد القص</option>
-        <option value="after_sew" ${p.embroidery==="after_sew"?"selected":""}>بعد الخياطة</option>
-        <option value="external_piece" ${p.embroidery==="external_piece"?"selected":""}>قطعة جاهزة</option>
-      </select></div>
-      <div><label>تنفيذ خارجي كامل؟</label><select id="p_ext"><option value="">لا</option><option value="1" ${p.external_make?"selected":""}>نعم</option></select></div>
-    </div>
-    <label>الرسمة / صورة موضع التطريز</label>
-    ${p.artwork_url?`<img class="thumb" src="${esc(p.artwork_url)}">`:""}<input type="file" id="p_art" accept="image/*">
-    <label>ملاحظة التطريز (المكان، الخط، الحجم)</label><input id="p_embn" value="${esc(p.embroidery_note||"")}">
-    <div class="grid2"><div><label>تقديري قص (د)</label><input id="p_ec" type="number" value="${p.est_cut_min||""}"></div>
-    <div><label>تقديري خياطة (د)</label><input id="p_es" type="number" value="${p.est_sew_min||""}"></div></div>
-    <label>الأعمار المتوفرة (افصل بفاصلة)</label><input id="p_sizes" dir="ltr" value="${esc(Object.keys(p.size_chart||{}).join(","))}" onchange="captureChart();redrawChart()">
-    <div id="chartGrid"></div>
-    <label>ملاحظات</label><textarea id="p_notes">${esc(p.notes||"")}</textarea>
-    <button class="btn btn-ink btn-big" onclick="saveProduct()">حفظ المنتج</button>
-  `);
-  window._pimgs=[...(p.images||[])]; window._ppats=[...(p.patterns||[])];
-  redrawChart();
-}
-function rmProdImg(i){window._pimgs.splice(i,1);document.querySelectorAll(".imgwrap")[i]?.remove();}
-function rmProdPat(i){window._ppats[i]=null;event.target.parentElement.remove();}
-function chartSizes(){return el("p_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);}
-function captureChart(){
-  Object.keys(window._chart||{}).forEach(s=>{MEAS.forEach(m=>{const inp=el(`sc_${s}_${m[0]}`); if(inp) window._chart[s][m[0]]=inp.value;});});
-}
-function redrawChart(){
-  const sizes=chartSizes();
-  sizes.forEach(s=>{window._chart[s]=window._chart[s]||{};});
-  el("chartGrid").innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
-    ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td><input id="sc_${s}_${m[0]}" style="min-width:58px;padding:6px" value="${esc(window._chart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
-}
-async function saveProduct(){
-  const name=el("p_name").value.trim(); if(!name) return alert("اكتب اسم المنتج");
-  captureChart();
-  const imgFiles=el("p_imgs").files, patFiles=el("p_pats").files, artFile=el("p_art").files[0];
-  for(const f of imgFiles){const u=await uploadFile(f,"products"); if(u) window._pimgs.push(u);}
-  const pats=window._ppats.filter(Boolean);
-  for(const f of patFiles){const u=await uploadFile(f,"patterns"); if(u) pats.push({name:f.name,url:u});}
-  let artwork=editProductId?product(editProductId).artwork_url:null;
-  if(artFile){const u=await uploadFile(artFile,"artwork"); if(u) artwork=u;}
-  const comps=el("p_comps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(s=>{const[a,b]=s.split("/").map(x=>x.trim());return{ar:a,en:b||a};});
-  const chart={}; chartSizes().forEach(s=>chart[s]=window._chart[s]||{});
-  const row={name, name_en:el("p_name_en").value||null, images:window._pimgs, patterns:pats, components:comps,
-    embroidery_kind:el("p_embk").value||null, embroidery:el("p_embk").value? el("p_embp").value : "none",
-    embroidery_note:el("p_embn").value||null, artwork_url:artwork, external_make:!!el("p_ext").value,
-    est_cut_min:+el("p_ec").value||null, est_sew_min:+el("p_es").value||null, size_chart:chart, notes:el("p_notes").value||null};
-  if(editProductId) await sb.from("products").update(row).eq("id",editProductId);
-  else await sb.from("products").insert(row);
-  closeSheet(); await refresh();
-}
-async function delProduct(id){
-  const used=DB.lines.some(l=>l.product_id===id);
-  if(used){ if(confirm("المنتج مستخدم في أوامر — ما ينحذف. تبي أرشفته؟")){await sb.from("products").update({active:false}).eq("id",id); await refresh();} return;}
-  if(confirm("حذف المنتج نهائياً؟")){await sb.from("products").delete().eq("id",id); await refresh();}
-}
-
-/* ---- التصميم ---- */
-function tabDesign(){
-  el("tabbody").innerHTML=`
-    <button class="btn btn-ink btn-big" onclick="newDesign()">${I.plus} تصميم جديد</button>
-    ${DB.designs.map(d=>`<div class="card">
-      <div class="wtop">${d.images[0]?`<img class="thumb" src="${esc(d.images[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#bbb">${I.design}</div>`}
-        <div style="flex:1"><div class="title">${esc(d.name)}</div>
-        <span class="chip">${esc(d.status)}</span> <span class="muted">${(d.notes||[]).length} ملاحظة</span></div>
-      </div>
-      <button class="btn btn-ghost" style="margin-top:8px" onclick="openDesign('${d.id}')">فتح ←</button>
-    </div>`).join("")||`<div class="empty">ما في تصاميم قيد التطوير</div>`}`;
-}
-function newDesign(){
-  openSheet(`<div class="title">تصميم جديد</div>
-    <label>اسم التصميم</label><input id="nd_name">
-    <button class="btn btn-ink btn-big" onclick="saveNewDesign()">إنشاء</button>`);
-}
-async function saveNewDesign(){
-  const name=el("nd_name").value.trim(); if(!name) return alert("اكتب الاسم");
-  await sb.from("design_projects").insert({name});
-  closeSheet(); await refresh();
-}
-function openDesign(id){
-  const d=DB.designs.find(x=>x.id===id);
-  openSheet(`
-    <div class="title">${esc(d.name)} <span class="chip">${esc(d.status)}</span></div>
-    <div class="imgrow">${(d.images||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>
-    <label>إضافة صور / سكيتشات</label><input type="file" id="dj_imgs" accept="image/*" multiple onchange="addDesignImgs('${d.id}')">
-    <label>الملاحظات</label>
-    ${(d.notes||[]).map(n=>`<div class="note-box">${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">ما في ملاحظات</div>`}
-    <div style="display:flex;gap:6px;margin-top:8px"><input id="dj_note" placeholder="ملاحظة جديدة..."><button class="btn btn-ghost" onclick="addDesignNote('${d.id}')">أضف</button></div>
-    <label>الحالة</label>
-    <div class="pillrow">${["فكرة","عينة","ملاحظات"].map(s=>`<span class="pill ${d.status===s?'on':''}" onclick="setDesignStatus('${d.id}','${s}')">${s}</span>`).join("")}</div>
-    ${d.status!=="معتمد"?`<button class="btn btn-ink btn-big" onclick="approveDesign('${d.id}')">${I.done} اعتماد → تحويله منتج</button>`:`<div class="note-box">معتمد ✓ — موجود في المنتجات</div>`}
-    <button class="btn btn-ghost btn-big" onclick="delDesign('${d.id}')">${I.trash} حذف التصميم</button>
-  `);
-}
-async function addDesignImgs(id){
-  const d=DB.designs.find(x=>x.id===id);
-  const imgs=[...(d.images||[])];
-  for(const f of el("dj_imgs").files){const u=await uploadFile(f,"designs"); if(u) imgs.push(u);}
-  await sb.from("design_projects").update({images:imgs}).eq("id",id);
-  await refresh(); closeSheet(); openDesign(id);
-}
-async function addDesignNote(id){
-  const t=el("dj_note").value.trim(); if(!t) return;
-  const d=DB.designs.find(x=>x.id===id);
-  await sb.from("design_projects").update({notes:[...(d.notes||[]),{t,d:today()}]}).eq("id",id);
-  await refresh(); closeSheet(); openDesign(id);
-}
-async function setDesignStatus(id,s){await sb.from("design_projects").update({status:s}).eq("id",id); await refresh(); closeSheet(); openDesign(id);}
-async function delDesign(id){if(confirm("حذف التصميم؟")){await sb.from("design_projects").delete().eq("id",id); closeSheet(); await refresh();}}
-async function approveDesign(id){
-  const d=DB.designs.find(x=>x.id===id);
-  const {data:p,error}=await sb.from("products").insert({name:d.name, images:d.images||[], notes:(d.notes||[]).map(n=>n.t).join(" | ")}).select().single();
-  if(error) return alert(error.message);
-  await sb.from("design_projects").update({status:"معتمد",product_id:p.id}).eq("id",id);
-  await sb.from("photoshoots").insert({product_id:p.id});
-  closeSheet(); await refresh();
-  alert("انعتمد ✓ انضاف للمنتجات وطلبات التصوير — افتح «المنتجات» وكمّل بياناته (قياسات، باترونات، أوقات)");
-  mTab="المنتجات"; render(); showProductForm(p.id);
-}
-
-/* ---- الخارجي ---- */
-function tabExternal(){
-  const embPool=DB.lines.filter(l=>l.stage==="emb"&&l.stage_status!=="sent"&&activeLine(l));
-  const extPool=DB.lines.filter(l=>l.stage==="ext"&&l.stage_status!=="sent"&&activeLine(l));
-  const openJobs=DB.jobs.filter(j=>j.status==="sent");
-  const poolRow=l=>{const p=product(l.product_id),o=order(l.order_id);
-    return `<div class="checkrow"><input type="checkbox" class="poolchk" value="${l.id}"> ${thumb(p)}
-    <div style="flex:1"><b>${esc(p.name)}</b> <span class="muted">#${o.order_no} — ${esc(l.size||"")} × ${l.qty} — ${esc(p.embroidery_kind||"")}</span></div></div>`;};
-  el("tabbody").innerHTML=`
-    <div class="card"><div class="title">${I.emb} سلة التطريز والطباعة (${embPool.length})</div>
-      ${embPool.length? embPool.map(poolRow).join("")+`
-        <div class="grid2" style="margin-top:8px"><input id="j_vendor" placeholder="اسم المصدر"><button class="btn btn-ink" onclick="makeJob('emb')">${I.shipped} إنشاء إرسالية</button></div>`
-      : `<div class="muted">فاضية — القطع تتجمع هنا تلقائياً حسب موضعها في بطاقة المنتج</div>`}
-    </div>
-    <div class="card"><div class="title">${I.ext} تنفيذ خارجي كامل (${extPool.length})</div>
-      ${extPool.length? extPool.map(poolRow).join("")+`
-        <div class="grid2" style="margin-top:8px"><input id="x_vendor" placeholder="اسم المشغل/المصنع"><button class="btn btn-ink" onclick="makeJob('ext')">${I.shipped} إنشاء إرسالية</button></div>`
-      : `<div class="muted">ما في قطع بانتظار تنفيذ خارجي</div>`}
-    </div>
-    <div class="title" style="margin:14px 4px">الإرساليات المفتوحة</div>
-    ${openJobs.length? openJobs.map(j=>{
-      const days=Math.round((new Date()-new Date(j.sent_at))/86400000);
-      return `<div class="card">
-        <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b> — ${esc(j.vendor||"غير محدد")} <span class="muted">صار لها <b>${days}</b> يوم · ${(j.line_ids||[]).length} سطر</span></div></div>
-        <div class="pillrow">
-          <button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print} جوب أوردر</button>
-          <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done} استلمناها</button>
-        </div>
-      </div>`;}).join("") : `<div class="empty">ما في إرساليات برا حالياً</div>`}`;
-}
-async function makeJob(mode){
-  const ids=[...document.querySelectorAll(".poolchk:checked")].map(c=>c.value);
-  if(!ids.length) return alert("اختر القطع أولاً");
-  const vendor=el(mode==="emb"?"j_vendor":"x_vendor").value||null;
-  const kind=mode==="ext"?"تنفيذ خارجي":(product(DB.lines.find(l=>l.id===ids[0]).product_id).embroidery_kind||"تطريز");
-  const {data:j}=await sb.from("ext_jobs").insert({kind,vendor,line_ids:ids}).select().single();
-  for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
-  await refresh(); printJob(j.id);
-}
-async function receiveJob(jobId){
-  const j=DB.jobs.find(x=>x.id===jobId);
-  for(const id of (j.line_ids||[])){
-    const l=DB.lines.find(x=>x.id===id); if(!l) continue;
-    const p=product(l.product_id);
-    await moveLine(id, l.stage==="ext"? "qc" : nextStage("emb",p));
-  }
-  await sb.from("ext_jobs").update({status:"received",returned_at:today()}).eq("id",jobId);
-  await refresh();
-}
-
-/* ---- جوب أوردر للطباعة ---- */
-function printJob(jobId){
-  const j=DB.jobs.find(x=>x.id===jobId);
-  const lines=(j.line_ids||[]).map(id=>DB.lines.find(l=>l.id===id)).filter(Boolean);
-  const isExt=j.kind==="تنفيذ خارجي";
-  const rows=lines.map(l=>{const p=product(l.product_id),o=order(l.order_id);
-    const cs=l.custom_specs? MEAS.filter(m=>l.custom_specs[m[0]]).map(m=>`${m[1]}: ${l.custom_specs[m[0]]}`).join(" · ")+[l.custom_specs.sleeve?` · كم: ${l.custom_specs.sleeve}`:"",l.custom_specs.bottom?` · ${l.custom_specs.bottom}`:""].join("") : "";
-    return `<tr>
-      <td>${pimg(p)?`<img src="${esc(pimg(p))}" style="width:70px;height:70px;object-fit:cover;border-radius:8px">`:""}</td>
-      <td><b>${esc(p.name)}</b><br><span style="color:#666">${esc(p.name_en||"")}</span>${cs?`<br><small>${cs}</small>`:""}</td>
-      <td style="text-align:center;font-size:20px;font-weight:800">${esc(l.size||"—")}</td>
-      <td style="text-align:center;font-size:20px;font-weight:800">${l.qty}</td>
-      <td>#${o.order_no}</td></tr>`;}).join("");
-  const total=lines.reduce((a,l)=>a+l.qty,0);
-  const arts=[...new Set(lines.map(l=>product(l.product_id)).filter(p=>p.artwork_url).map(p=>p.id))].map(id=>{const p=product(id);
-    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — الرسمة/الموضع:</b><br>${p.embroidery_note?`<div>${esc(p.embroidery_note)}</div>`:""}<img src="${esc(p.artwork_url)}" style="max-width:300px;border:1px solid #ddd;border-radius:8px;margin-top:6px"></div>`;}).join("");
-  const charts=isExt? [...new Set(lines.map(l=>l.product_id))].map(pid=>{const p=product(pid);const chart=p.size_chart||{};const sizes=Object.keys(chart);
-    if(!sizes.length) return "";
-    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — جدول القياسات (سم):</b>
-    <table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
-    ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
-    ${(p.patterns||[]).length?`<div style="margin-top:4px">الباترونات: ${(p.patterns||[]).map(x=>`<a href="${esc(x.url)}">${esc(x.name)}</a>`).join(" · ")}</div>`:""}</div>`;}).join("") : "";
-  const w=window.open("","_blank");
-  w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>Job Order</title>
-  <style>body{font-family:'Tajawal',Arial,sans-serif;padding:28px;color:#111}
-  table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #ddd;padding:8px;text-align:right}
-  .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:12px}
-  .lg{font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px}</style></head><body>
-  <div class="hd"><div class="lg">VEEVOGUE</div><div style="text-align:left">JOB ORDER<br><b>${esc(j.kind)}</b></div></div>
-  <p>المصدر: <b>${esc(j.vendor||"—")}</b> &nbsp;·&nbsp; التاريخ: ${esc(j.sent_at)} &nbsp;·&nbsp; إجمالي القطع: <b>${total}</b></p>
-  <table><tr><th></th><th>المنتج</th><th>العمر/المقاس</th><th>الكمية</th><th>الأمر</th></tr>${rows}</table>
-  ${arts}${charts}
-  <p style="margin-top:26px;color:#666">ملاحظات: ${esc(j.notes||"—")}</p>
-  <script>window.onload=()=>window.print()<\/script></body></html>`);
-  w.document.close();
-}
-
-/* ---- التصوير ---- */
-function tabShoots(){
-  const pend=DB.shoots.filter(s=>s.status==="pending");
-  el("tabbody").innerHTML=`
-    <div class="sechead">${I.cam} طلبات التصوير (${pend.length})</div>
-    ${pend.length? pend.map(s=>{const p=product(s.product_id);
-      return `<div class="card lineitem" style="border-top:0">
-        <div class="wtop">${thumb(p)}<div><b>${esc(p.name)}</b><div class="muted">بانتظار التصوير</div></div></div>
-        <button class="btn btn-ok" onclick="shootDone('${s.id}')">${I.done} تم التصوير</button>
-      </div>`;}).join("") : `<div class="empty">ما في طلبات تصوير</div>`}
-    ${DB.shoots.filter(s=>s.status==="done").slice(0,5).map(s=>`<div class="muted" style="padding:4px 8px">✓ ${esc(product(s.product_id).name)} — ${esc(s.done_at||"")}</div>`).join("")}`;
-}
-async function shootDone(id){await sb.from("photoshoots").update({status:"done",done_at:today()}).eq("id",id); await refresh();}
-
-/* ---- العمال + الأسباب ---- */
-function tabWorkers(){
-  el("tabbody").innerHTML=`<div class="card">
-    <div class="title">عامل جديد</div>
-    <div class="grid2"><div><label>الاسم (عربي)</label><input id="w_name"></div>
-    <div><label>الاسم (إنجليزي)</label><input id="w_name_en" dir="ltr"></div></div>
-    <label>التخصصات (اختر أكثر من واحد)</label>
-    <div class="pillrow" id="specPills">${Object.keys(SPEC_LABEL).map(k=>`<span class="pill" data-k="${k}" onclick="this.classList.toggle('on')">${SPEC_LABEL[k][0]} ${SPEC_LABEL[k][1]}</span>`).join("")}</div>
-    <label>رقم سري (اختياري)</label><input id="w_pin" inputmode="numeric">
-    <button class="btn btn-ink btn-big" onclick="saveWorker()">إضافة</button>
-  </div>
-  ${DB.workers.filter(w=>w.active).map(w=>`<div class="card lineitem" style="border-top:0">
-    <div><b>${esc(w.name)}</b> <span class="muted" style="font-family:'Inter'">${esc(w.name_en||"")}</span>
-    <div class="pillrow">${(w.specialties||[]).map(k=>`<span class="chip">${I[k]||""} ${SPEC_LABEL[k]?SPEC_LABEL[k][0]:k}</span>`).join("")} ${w.pin?`<span class="chip">🔒</span>`:""}</div></div>
-    <div><button class="btn btn-ghost" onclick="editWorker('${w.id}')">${I.edit}</button>
-    <button class="btn btn-ghost" onclick="stopWorker('${w.id}')">إيقاف</button></div>
-  </div>`).join("")}
-  <div class="card"><div class="title">أسباب التصليح</div>
-    ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
-      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleReason('${r.id}',${r.active})">${r.active?"تعطيل":"تفعيل"}</button></div>`).join("")}
-    <div style="display:flex;gap:6px;margin-top:8px"><input id="newReason" placeholder="سبب جديد..."><button class="btn btn-ghost" onclick="addReason()">أضف</button></div>
-  </div>`;
-}
-async function saveWorker(){
-  const name=el("w_name").value.trim(); if(!name) return alert("اكتب الاسم");
-  const specs=[...document.querySelectorAll("#specPills .pill.on")].map(x=>x.dataset.k);
-  if(!specs.length) return alert("اختر تخصص واحد على الأقل");
-  await sb.from("workers").insert({name, name_en:el("w_name_en").value||null, specialties:specs, pin:el("w_pin").value||null});
-  await refresh();
-}
-function editWorker(id){
-  const w=worker(id);
-  openSheet(`<div class="title">تعديل: ${esc(w.name)}</div>
-    <div class="grid2"><div><label>الاسم</label><input id="ew_name" value="${esc(w.name)}"></div>
-    <div><label>إنجليزي</label><input id="ew_name_en" dir="ltr" value="${esc(w.name_en||"")}"></div></div>
-    <label>التخصصات</label>
-    <div class="pillrow" id="ewPills">${Object.keys(SPEC_LABEL).map(k=>`<span class="pill ${(w.specialties||[]).includes(k)?'on':''}" data-k="${k}" onclick="this.classList.toggle('on')">${SPEC_LABEL[k][0]}</span>`).join("")}</div>
-    <label>الرقم السري</label><input id="ew_pin" value="${esc(w.pin||"")}">
-    <button class="btn btn-ink btn-big" onclick="updateWorker('${id}')">حفظ</button>`);
-}
-async function updateWorker(id){
-  const specs=[...document.querySelectorAll("#ewPills .pill.on")].map(x=>x.dataset.k);
-  await sb.from("workers").update({name:el("ew_name").value, name_en:el("ew_name_en").value||null, specialties:specs, pin:el("ew_pin").value||null}).eq("id",id);
-  closeSheet(); await refresh();
-}
-async function stopWorker(id){if(confirm("إيقاف العامل؟")){await sb.from("workers").update({active:false}).eq("id",id); await refresh();}}
-async function addReason(){const t=el("newReason").value.trim(); if(!t)return; await sb.from("repair_reasons").insert({label:t}); await refresh();}
-async function toggleReason(id,cur){await sb.from("repair_reasons").update({active:!cur}).eq("id",id); await refresh();}
-
-/* ---- الأداء ---- */
-function tabPerf(){
-  const done=DB.events.filter(e=>e.started_at&&e.finished_at&&e.worker_id);
-  if(!done.length){el("tabbody").innerHTML=`<div class="empty">البيانات تتجمع مع الاستخدام</div>`; return;}
-  const rows={};
-  done.forEach(e=>{
-    const k=e.worker_id+"|"+e.stage;
-    rows[k]=rows[k]||{w:worker(e.worker_id).name, stage:STAGE_AR[e.stage]||e.stage, n:0, total:0, est:0, estN:0};
-    const r=rows[k]; r.n++; r.total+=mins(e.started_at,e.finished_at);
-    const l=DB.lines.find(x=>x.id===e.line_id);
-    if(l){const p=product(l.product_id);
-      const est=e.stage==="cut"?p.est_cut_min: e.stage==="sew"?p.est_sew_min: null;
-      if(est){r.est+=est*l.qty; r.estN++;}}
-  });
-  const fixes={};
-  DB.events.filter(e=>e.result==="fix").forEach(e=>{
-    const sews=DB.events.filter(x=>x.line_id===e.line_id&&x.stage==="sew"&&x.finished_at&&x.worker_id&&x.finished_at<e.started_at);
-    if(sews.length){const wid=sews[sews.length-1].worker_id; fixes[wid]=(fixes[wid]||0)+1;}
-  });
-  el("tabbody").innerHTML=`<div class="card">
-    <div class="title">الوقت الفعلي مقابل التقديري</div>
-    <table><tr><th>العامل</th><th>المرحلة</th><th>عدد</th><th>متوسط فعلي</th><th>متوسط تقديري</th></tr>
-    ${Object.values(rows).map(r=>`<tr><td>${esc(r.w)}</td><td>${r.stage}</td><td>${r.n}</td><td>${Math.round(r.total/r.n)} د</td><td>${r.estN?Math.round(r.est/r.estN)+" د":"—"}</td></tr>`).join("")}</table>
-    ${Object.keys(fixes).length?`<div class="title" style="margin-top:14px">قطع رجعت «تعديل»</div>
-    <table><tr><th>العامل</th><th>عدد</th></tr>${Object.entries(fixes).map(([wid,n])=>`<tr><td>${esc(worker(wid).name)}</td><td>${n}</td></tr>`).join("")}</table>`:""}
-    <p class="muted" style="margin-top:10px">أول شهر لضبط الأوقات التقديرية — لا تقيّم على أرقام غير مضبوطة.</p>
-  </div>`;
 }
 </script>
 </body>
