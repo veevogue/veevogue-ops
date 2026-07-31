@@ -85,6 +85,13 @@
   .stat .n-go{font-size:20px;color:var(--green);}
   .stat .n-wait{font-size:20px;color:var(--wine);}
   .stat .cap{font-size:11px;letter-spacing:.5px;color:var(--faint);font-weight:700;margin-top:6px;}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin:-6px 0 16px;font-size:12px;color:var(--gray);font-weight:700;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .d-all{background:var(--ink);} .d-go{background:var(--green);} .d-wait{background:var(--wine);}
+  .wperf{border:1px solid var(--line);background:var(--paper);border-radius:14px;padding:18px;margin-bottom:12px;}
+  .wperf h4{font-size:16px;margin-bottom:8px;}
+  .best{background:var(--green-lt);color:var(--green-dk);font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;}
   .overlay{position:fixed;inset:0;background:rgba(28,27,26,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
   .imgrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
@@ -405,7 +412,7 @@ function openSheet(html){
 }
 function closeSheet(){const o=el("ov"); if(o)o.remove();}
 /* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
-const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","workersTab","perf","settings","archive"];
+const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","perf","settings","archive"];
 const TABS_CREATIVE=["board","design","products","quality"];
 function myTabs(){return session.role==="manager"? TABS_MANAGER : TABS_CREATIVE;}
 function renderDesk(){
@@ -415,7 +422,7 @@ function renderDesk(){
     <div class="tabs">${tabs.map(k=>`<button class="${mTab===k?'on':''}" onclick="mTab='${k}';localStorage.setItem('vv2_tab','${k}');render()">${t(k)}</button>`).join("")}</div>
     <div id="tabbody"></div>`;
   ({board:tabBoard,newOrder:tabNewOrder,products:tabProducts,design:tabDesign,external:tabExternal,
-    shoots:tabShoots,quality:tabQuality,workersTab:tabWorkers,perf:tabPerf,settings:tabSettings,archive:tabArchive})[mTab]();
+    shoots:tabShoots,quality:tabQuality,perf:tabPerf,settings:tabSettings,archive:tabArchive})[mTab]();
 }
 
 /* ---- لوحة ---- */
@@ -447,6 +454,11 @@ function stageStats(){
     <div class="stat">${I.qc}<div class="nums"><span class="n-all">${qcN}</span></div><div class="cap">${t("qc")}</div></div>
     <div class="stat">${I.pack}<div class="nums"><span class="n-all">${packN}</span></div><div class="cap">${t("pack")}</div></div>
     <div class="stat">${I.ext}<div class="nums"><span class="n-go">${extSent}</span><span class="n-all">${extRec}</span></div><div class="cap">${t("sent")} / ${t("received")}</div></div>
+  </div>
+  <div class="legend">
+    <span><i class="dot d-all"></i>${t("total")}</span>
+    <span><i class="dot d-go"></i>${isAr()?"جاري العمل":"In progress"}</span>
+    <span><i class="dot d-wait"></i>${isAr()?"ما بدأ بعد":"Not started"}</span>
   </div>`;
 }
 function tabBoard(){
@@ -543,17 +555,21 @@ function tabSettings(){
     </div>
     <label>${t("breakMin")}</label><input type="number" id="s_break" min="0" value="${s.break_minutes??30}">
     ${session.role==="manager"?`<label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">`:""}
-    <button class="btn btn-wine btn-big" onclick="saveSettings()">${t("save")}</button>
+    <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
-  </div>`;
+  </div>
+  <div id="workersBox"></div>`;
+  if(session.role==="manager") renderWorkersBox();
 }
 async function saveSettings(){
+  const msg=el("setMsg"); if(msg) msg.textContent="...";
   const days=[...document.querySelectorAll("#dayPills .pill.on")].map(x=>x.dataset.d);
   const row={work_start:el("s_start").value, work_end:el("s_end").value, work_days:days, break_minutes:+el("s_break").value||0, updated_at:new Date().toISOString()};
   if(el("s_cpin")) row.creative_pin=el("s_cpin").value||"4826";
-  const {error}=await sb.from("settings").update(row).eq("id",1);
-  if(error) return alert(error.message);
-  await loadAll(); el("setMsg").textContent=t("savedOk");
+  const {data,error}=await sb.from("settings").upsert({id:1,...row}).select();
+  if(error){ if(msg){msg.style.color="var(--wine)"; msg.textContent="✕ "+error.message;} return; }
+  await loadAll();
+  if(msg){msg.style.color="var(--green)"; msg.textContent=t("savedOk");}
 }
 /* ---- أمر جديد ---- */
 function tabNewOrder(){
@@ -925,8 +941,8 @@ async function qcResult(lineId, result){
 }
 
 /* ---- العمال ---- */
-function tabWorkers(){
-  el("tabbody").innerHTML=`<div class="card">
+function renderWorkersBox(){
+  el("workersBox").innerHTML=`<div class="card">
     <div class="title">${t("workers")}</div>
     <div class="grid2"><div><label>${isAr()?"الاسم (عربي)":"Name (AR)"}</label><input id="w_name"></div>
     <div><label>${isAr()?"الاسم (إنجليزي)":"Name (EN)"}</label><input id="w_name_en" dir="ltr"></div></div>
@@ -942,18 +958,19 @@ function tabWorkers(){
     <button class="btn btn-ghost" onclick="stopWorker('${w.id}')">${t("stop")}</button>
     <button class="btn btn-ghost" onclick="delWorker('${w.id}')">${I.trash}</button></div>
   </div>`).join("")}
-  <div class="card"><div class="title">${isAr()?"أسباب التصليح":"Repair reasons"}</div>
+  <div class="card"><div class="title">${I.fix} ${isAr()?"أسباب التصليح":"Repair reasons"}</div>
     ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleReason('${r.id}',${r.active})">${r.active?t("stop"):t("add")}</button></div>`).join("")}
     <div style="display:flex;gap:6px;margin-top:8px"><input id="newReason"><button class="btn btn-ghost" onclick="addReason()">${t("add")}</button></div>
   </div>`;
 }
+async function reloadWorkers(){ await loadAll(); renderWorkersBox(); }
 async function saveWorker(){
   const name=el("w_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Enter name");
   const specs=[...document.querySelectorAll("#specPills .pill.on")].map(x=>x.dataset.k);
   if(!specs.length) return alert(isAr()?"اختر تخصص":"Pick specialty");
   await sb.from("workers").insert({name, name_en:el("w_name_en").value||null, specialties:specs, pin:el("w_pin").value||null});
-  await refresh();
+  await reloadWorkers();
 }
 function editWorker(id){
   const w=worker(id);
@@ -968,43 +985,62 @@ function editWorker(id){
 async function updateWorker(id){
   const specs=[...document.querySelectorAll("#ewPills .pill.on")].map(x=>x.dataset.k);
   await sb.from("workers").update({name:el("ew_name").value, name_en:el("ew_name_en").value||null, specialties:specs, pin:el("ew_pin").value||null}).eq("id",id);
-  closeSheet(); await refresh();
+  closeSheet(); await reloadWorkers();
 }
-async function stopWorker(id){if(confirm("?")){await sb.from("workers").update({active:false}).eq("id",id); await refresh();}}
-async function delWorker(id){if(confirm(isAr()?"حذف نهائي للعامل وكل بياناته؟":"Delete permanently?")){await sb.from("workers").delete().eq("id",id); await refresh();}}
-async function addReason(){const tx=el("newReason").value.trim(); if(!tx)return; await sb.from("repair_reasons").insert({label:tx}); await refresh();}
-async function toggleReason(id,cur){await sb.from("repair_reasons").update({active:!cur}).eq("id",id); await refresh();}
+async function stopWorker(id){if(confirm("?")){await sb.from("workers").update({active:false}).eq("id",id); await reloadWorkers();}}
+async function delWorker(id){if(confirm(isAr()?"حذف نهائي للعامل وكل بياناته؟":"Delete permanently?")){await sb.from("workers").delete().eq("id",id); await reloadWorkers();}}
+async function addReason(){const tx=el("newReason").value.trim(); if(!tx)return; await sb.from("repair_reasons").insert({label:tx}); await reloadWorkers();}
+async function toggleReason(id,cur){await sb.from("repair_reasons").update({active:!cur}).eq("id",id); await reloadWorkers();}
 
 /* ---- الأداء ---- */
 function tabPerf(){
   const done=DB.events.filter(e=>e.started_at&&e.finished_at&&e.worker_id);
   if(!done.length){el("tabbody").innerHTML=`<div class="empty">—</div>`; return;}
-  const rows={};
+  /* تجميع: عامل ← مراحل */
+  const byWorker={};
   done.forEach(e=>{
-    const k=e.worker_id+"|"+e.stage;
-    rows[k]=rows[k]||{w:wname(worker(e.worker_id)), stage:t(STAGE_KEY[e.stage]||e.stage), n:0, total:0, est:0, estN:0};
-    const r=rows[k]; r.n++; r.total+=mins(e.started_at,e.finished_at);
+    const wid=e.worker_id;
+    byWorker[wid]=byWorker[wid]||{stages:{}, fixes:0, brk:0};
+    const st=byWorker[wid].stages[e.stage]=byWorker[wid].stages[e.stage]||{n:0,total:0,est:0,estN:0};
+    st.n++; st.total+=mins(e.started_at,e.finished_at);
     const l=DB.lines.find(x=>x.id===e.line_id);
     if(l){const p=product(l.product_id);
       const est=e.stage==="cut"?p.est_cut_min: e.stage==="sew"?p.est_sew_min: null;
-      if(est){r.est+=est*l.qty; r.estN++;}}
+      if(est){st.est+=est*l.qty; st.estN++;}}
   });
-  const fixes={};
   DB.events.filter(e=>e.result==="fix").forEach(e=>{
     const sews=DB.events.filter(x=>x.line_id===e.line_id&&x.stage==="sew"&&x.finished_at&&x.worker_id);
-    if(sews.length){const wid=sews[sews.length-1].worker_id; fixes[wid]=(fixes[wid]||0)+1;}
+    if(sews.length){const wid=sews[sews.length-1].worker_id; if(byWorker[wid]) byWorker[wid].fixes++;}
   });
-  const brk={};
-  DB.breaks.filter(b=>b.ended_at).forEach(b=>{brk[b.worker_id]=(brk[b.worker_id]||0)+mins(b.started_at,b.ended_at);});
-  el("tabbody").innerHTML=`<div class="card">
-    <div class="title">${t("perf")}</div>
-    <table><tr><th>${t("worker")}</th><th>—</th><th>#</th><th>${isAr()?"فعلي":"Actual"}</th><th>${isAr()?"تقديري":"Est."}</th></tr>
-    ${Object.values(rows).map(r=>`<tr><td>${esc(r.w)}</td><td>${r.stage}</td><td>${r.n}</td><td>${Math.round(r.total/r.n)}</td><td>${r.estN?Math.round(r.est/r.estN):"—"}</td></tr>`).join("")}</table>
-    ${Object.keys(fixes).length?`<div class="title" style="margin-top:14px">${t("fix")}</div>
-    <table>${Object.entries(fixes).map(([wid,n])=>`<tr><td>${esc(wname(worker(wid)))}</td><td>${n}</td></tr>`).join("")}</table>`:""}
-    ${Object.keys(brk).length?`<div class="title" style="margin-top:14px">${t("breakStart")}</div>
-    <table>${Object.entries(brk).map(([wid,m])=>`<tr><td>${esc(wname(worker(wid)))}</td><td>${m} ${t("minutes")}</td></tr>`).join("")}</table>`:""}
-  </div>`;
+  DB.breaks.filter(b=>b.ended_at).forEach(b=>{ if(byWorker[b.worker_id]) byWorker[b.worker_id].brk+=mins(b.started_at,b.ended_at); });
+
+  el("tabbody").innerHTML = Object.entries(byWorker).map(([wid,d])=>{
+    const rows=Object.entries(d.stages).map(([stg,s])=>{
+      const avg=Math.round(s.total/s.n);
+      const est=s.estN? Math.round(s.est/s.estN) : null;
+      const ratio=est? avg/est : null;
+      return {stg,n:s.n,avg,est,ratio};
+    });
+    const rated=rows.filter(r=>r.ratio!==null);
+    const bestStg = rated.length? rated.reduce((a,b)=>a.ratio<=b.ratio?a:b).stg : null;
+    return `<div class="wperf">
+      <h4>${I.user} ${esc(wname(worker(wid)))}</h4>
+      <table>
+        <tr><th>${isAr()?"العمل":"Task"}</th><th>${isAr()?"عدد":"#"}</th><th>${isAr()?"متوسط فعلي":"Actual"}</th><th>${isAr()?"تقديري":"Est."}</th><th></th></tr>
+        ${rows.map(r=>`<tr>
+          <td>${t(STAGE_KEY[r.stg]||r.stg)}</td>
+          <td>${r.n}</td>
+          <td><b>${r.avg}</b> ${t("minutes")}</td>
+          <td>${r.est? r.est+" "+t("minutes") : "—"}</td>
+          <td>${r.stg===bestStg?`<span class="best">${isAr()?"أفضل مهارة":"BEST"}</span>`:""}</td>
+        </tr>`).join("")}
+      </table>
+      <div class="pillrow" style="margin-top:10px">
+        ${d.fixes?`<span class="chip wine">${I.fix} ${d.fixes} ${isAr()?"مرتجع":"rework"}</span>`:""}
+        ${d.brk?`<span class="chip">${I.coffee} ${d.brk} ${t("minutes")}</span>`:""}
+      </div>
+    </div>`;
+  }).join("") + `<p class="muted" style="text-align:center">${isAr()?"«أفضل مهارة» تُحسب بمقارنة الوقت الفعلي بالتقديري — تحتاج أوقات تقديرية في بطاقة المنتج":"Best skill = actual vs estimated"}</p>`;
 }
 
 /* ================= شاشة العامل ================= */
