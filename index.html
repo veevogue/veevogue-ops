@@ -92,6 +92,17 @@
   .wperf{border:1px solid var(--line);background:var(--paper);border-radius:14px;padding:18px;margin-bottom:12px;}
   .wperf h4{font-size:16px;margin-bottom:8px;}
   .best{background:var(--green-lt);color:var(--green-dk);font-size:11px;font-weight:800;border-radius:10px;padding:2px 8px;}
+  .badge{background:var(--wine);color:#fff;border-radius:10px;padding:1px 7px;font-size:12px;font-weight:800;margin-inline-start:4px;font-family:'Inter';}
+  .tabs button.on .badge{background:#fff;color:var(--ink);}
+  hr.sep{border:0;border-top:1px solid var(--line);margin:22px 0;}
+  /* مود بورد */
+  .moodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:8px;
+    background:var(--soft);padding:10px;border-radius:14px;border:1px solid var(--line);}
+  .moodgrid .imgwrap:nth-child(4n+1){grid-row:span 2;}
+  .moodimg{width:100%;height:100%;min-height:110px;object-fit:cover;border-radius:10px;display:block;}
+  .colcard{display:flex;gap:12px;align-items:center;cursor:pointer;}
+  .colbar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:8px;}
+  .colbar i{display:block;height:100%;background:var(--green);}
   .overlay{position:fixed;inset:0;background:rgba(28,27,26,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
   .imgrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
@@ -317,12 +328,47 @@ function pimg(p){return (p.images&&p.images[0])||null;}
 function thumb(p,cls){const u=pimg(p);return u?`<img class="${cls||'thumb'}" src="${esc(u)}">`:`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
 function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();applyDir();render();}
 function setSession(s){s.day=today();session=s;localStorage.setItem("vv2_session",JSON.stringify(s));applyDir();render();}
+/* ضغط الصور قبل الرفع — يوفر ~90% من المساحة */
+async function compressImage(file, maxDim=1600, quality=0.82){
+  if(!file.type.startsWith("image/") || file.type==="image/gif") return file;
+  try{
+    const bmp = await createImageBitmap(file);
+    let {width:w, height:h} = bmp;
+    if(Math.max(w,h) > maxDim){ const r=maxDim/Math.max(w,h); w=Math.round(w*r); h=Math.round(h*r); }
+    const c=document.createElement("canvas"); c.width=w; c.height=h;
+    c.getContext("2d").drawImage(bmp,0,0,w,h);
+    const blob = await new Promise(res=>c.toBlob(res,"image/jpeg",quality));
+    if(!blob || blob.size>=file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/,"")+".jpg", {type:"image/jpeg"});
+  }catch(e){ return file; }
+}
 async function uploadFile(file, folder){
-  const ext=file.name.split(".").pop();
+  const f = await compressImage(file);
+  const ext=(f.name.split(".").pop()||"bin");
   const path=`${folder}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
-  const {error}=await sb.storage.from("files").upload(path,file);
+  const {error}=await sb.storage.from("files").upload(path,f);
   if(error){alert("فشل الرفع: "+error.message);return null;}
   return sb.storage.from("files").getPublicUrl(path).data.publicUrl;
+}
+/* ===== النسخة الاحتياطية ===== */
+function toCSV(rows){
+  if(!rows.length) return "";
+  const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+  const esc2=v=>{ if(v===null||v===undefined) return ""; const s=typeof v==="object"?JSON.stringify(v):String(v);
+    return /[",\n]/.test(s)? '"'+s.replace(/"/g,'""')+'"' : s; };
+  return keys.join(",")+"\n"+rows.map(r=>keys.map(k=>esc2(r[k])).join(",")).join("\n");
+}
+function downloadBackup(){
+  const sets={workers:DB.workers,products:DB.products,materials:DB.materials,collections:DB.collections,
+    designs:DB.designs,orders:DB.orders,order_lines:DB.lines,line_parts:DB.parts,stage_events:DB.events,
+    ext_jobs:DB.jobs,photoshoots:DB.shoots,repair_reasons:DB.reasons,breaks:DB.breaks};
+  let out="";
+  Object.entries(sets).forEach(([name,rows])=>{ out+= "### "+name+"\n"+toCSV(rows||[])+"\n\n"; });
+  const blob=new Blob(["﻿"+out],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`veevogue-backup-${today()}.csv`;
+  a.click();
 }
 function activeLine(l){return order(l.order_id).status==="جاري";}
 
@@ -481,7 +527,8 @@ function renderDesk(){
 /* ---- لوحة ---- */
 function stageStats(){
   const act=DB.lines.filter(l=>activeLine(l));
-  const box=(key,icon,all,go,wait,alt)=>`<div class="stat">${icon}
+  const sel=window._bFilter;
+  const box=(key,icon,all,go,wait,alt)=>`<div class="stat" style="cursor:pointer;${sel===key?'border-color:var(--ink);border-width:2px;':''}" onclick="window._bFilter=(window._bFilter==='${key}'?null:'${key}');render()">${icon}
       <div class="nums">${alt? `<span class="n-go">${go}</span><span class="n-wait">${wait}</span>`
         : `<span class="n-all">${all}</span><span class="n-go">${go}</span><span class="n-wait">${wait}</span>`}</div>
       <div class="cap">${t(key)}</div></div>`;
@@ -504,9 +551,9 @@ function stageStats(){
     ${box("cut",I.cut,c.all,c.go,c.wait)}
     ${box("emb",I.emb,e.all,e.go,e.wait)}
     ${box("sew",I.sew,s.all,s.go,s.wait)}
-    <div class="stat">${I.qc}<div class="nums"><span class="n-all">${qcN}</span></div><div class="cap">${t("qc")}</div></div>
-    <div class="stat">${I.pack}<div class="nums"><span class="n-all">${packN}</span></div><div class="cap">${t("pack")}</div></div>
-    <div class="stat">${I.ext}<div class="nums"><span class="n-go">${extSent}</span><span class="n-all">${extRec}</span></div><div class="cap">${t("sent")} / ${t("received")}</div></div>
+    <div class="stat" style="cursor:pointer;${sel==='qc'?'border-color:var(--ink);border-width:2px;':''}" onclick="window._bFilter=(window._bFilter==='qc'?null:'qc');render()">${I.qc}<div class="nums"><span class="n-all">${qcN}</span></div><div class="cap">${t("qc")}</div></div>
+    <div class="stat" style="cursor:pointer;${sel==='pack'?'border-color:var(--ink);border-width:2px;':''}" onclick="window._bFilter=(window._bFilter==='pack'?null:'pack');render()">${I.pack}<div class="nums"><span class="n-all">${packN}</span></div><div class="cap">${t("pack")}</div></div>
+    <div class="stat" style="cursor:pointer;${sel==='ext'?'border-color:var(--ink);border-width:2px;':''}" onclick="window._bFilter=(window._bFilter==='ext'?null:'ext');render()">${I.ext}<div class="nums"><span class="n-go">${extSent}</span><span class="n-all">${extRec}</span></div><div class="cap">${t("sent")} / ${t("received")}</div></div>
   </div>
   <div class="legend">
     <span><i class="dot d-all"></i>${t("total")}</span>
@@ -541,7 +588,41 @@ function tabBoard(){
         <div class="timer ${over?'t-late':'t-ok'}">${m} ${t("minutes")}</div></div>`;}).join("")
       : `<div class="muted">${t("noOneWorking")}</div>`}
     </div>
-    ${activeOrders.length? activeOrders.map(orderCard).join("") : `<div class="empty">${t("noOrders")}</div>`}`;
+    <hr class="sep">
+    ${window._bFilter? stageFilterView(window._bFilter)
+      : (activeOrders.length? activeOrders.map(orderCard).join("") : `<div class="empty">${t("noOrders")}</div>`)}`;
+}
+/* عرض مفلتر لمرحلة واحدة: الشغال فوق ثم اللي ما بدأ */
+function stageFilterView(stg){
+  const act=DB.lines.filter(l=>activeLine(l)&&l.stage===stg);
+  const rows=[];
+  act.forEach(l=>{
+    if(stg==="cut"||stg==="sew"){
+      const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage||"sew")===stg&&p.status!=="done");
+      if(ps.length) ps.forEach(p=>rows.push({l,part:p,working:p.status==="working",who:p.worker_id}));
+      else rows.push({l,part:null,working:l.stage_status==="working",who:l.claimed_by});
+    } else rows.push({l,part:null,working:l.stage_status==="working",who:l.claimed_by});
+  });
+  const go=rows.filter(r=>r.working), wait=rows.filter(r=>!r.working);
+  const card=r=>{
+    const p=product(r.l.product_id), o=order(r.l.order_id);
+    const ev=r.part? DB.events.find(e=>e.part_id===r.part.id&&e.started_at&&!e.finished_at)
+                   : DB.events.find(e=>e.line_id===r.l.id&&!e.part_id&&e.started_at&&!e.finished_at);
+    const m=ev? workedMins(ev.started_at):0;
+    const estT=estFor(p,stg,r.part?r.part.part_ar:null,r.l.qty);
+    return `<div class="card"><div class="wtop">${thumb(p)}
+      <div style="flex:1"><div class="title">${esc(pname(p))} ${r.part?`<span class="chip">${esc(isAr()?r.part.part_ar:r.part.part_en)}</span>`:""}</div>
+      <div class="muted">#${o.order_no} · ${esc(r.l.size||"")} × ${r.l.qty} ${o.due_date?`· ${isLate(o)?`<span class="late">${t("late")}</span>`:t("due")+" "+fmtD(o.due_date)}`:""}</div>
+      ${r.who?`<span class="chip working">${I.user} ${esc(wname(worker(r.who)))}</span>`:""}
+      ${ev?`<span class="timer ${estT&&m>estT?'t-late':'t-ok'}"> ${m} ${t("minutes")}</span>`:""}
+      </div></div>
+      ${r.working&&session.role==="manager"?`<button class="btn btn-warn" style="margin-top:8px;padding:6px 12px;font-size:13px" onclick="undoStart('${r.l.id}','${r.part?r.part.id:""}')">↩ ${isAr()?"إلغاء البدء":"Undo start"}</button>`:""}
+    </div>`;};
+  return `<div class="sechead">${I[stg]||""} ${t(STAGE_KEY[stg]||stg)} — ${isAr()?"شغال الحين":"in progress"} (${go.length})</div>
+    ${go.length? go.map(card).join("") : `<div class="empty">—</div>`}
+    <hr class="sep">
+    <div class="sechead">${isAr()?"ما بدأ بعد":"not started"} (${wait.length})</div>
+    ${wait.length? wait.map(card).join("") : `<div class="empty">—</div>`}`;
 }
 function lineChip(l){
   const w=l.claimed_by?worker(l.claimed_by):null;
@@ -641,7 +722,14 @@ function tabSettings(){
     <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
   </div>
-  <div id="workersBox"></div>`;
+  <div id="workersBox"></div>
+  ${session.role==="manager"?`<div class="card">
+    <div class="title">${I.file} ${isAr()?"النسخ الاحتياطي والبيانات":"Backup & data"}</div>
+    <button class="btn btn-line btn-big" onclick="downloadBackup()">${I.file} ${isAr()?"تنزيل نسخة احتياطية (إكسل)":"Download backup"}</button>
+    <div class="muted" style="margin-top:6px">${isAr()?"نزّلها أسبوعياً واحفظها في درايفك":"Weekly"}</div>
+    <button class="btn btn-bad btn-big" style="margin-top:14px" onclick="wipeSheet()">${I.trash} ${isAr()?"مسح بيانات التجربة (بداية نظيفة)":"Wipe test data"}</button>
+    <div class="muted" style="margin-top:6px">${isAr()?"يمسح الأوامر والتصاميم والكولكشنات وسجلات العمل — ويبقي العمال والمنتجات والخامات والإعدادات":"Clears orders & design work"}</div>
+  </div>`:""}`;
   if(session.role==="manager") renderWorkersBox();
 }
 async function saveSettings(){
@@ -1013,12 +1101,17 @@ function tabDesign(){
       const ds=DB.designs.filter(d=>d.collection_id===c.id);
       const doneN=ds.filter(d=>d.stage==="approved").length;
       const late=c.target_date && c.target_date<today() && doneN<ds.length;
-      return `<div class="card">
-        <div class="lineitem" style="border:0;cursor:pointer" onclick="window._curCol='${c.id}';render()">
-          <div><div class="title">${esc(c.name)}</div>
-          <span class="muted">${ds.length} ${isAr()?"تصميم":"designs"} · ${doneN} ${isAr()?"معتمد":"approved"}</span></div>
-          <div class="muted">${c.target_date?(late?`<span class="late">${t("late")} ${fmtD(c.target_date)}</span>`:`${t("due")} ${fmtD(c.target_date)}`):""} ←</div>
+      const pct=ds.length? Math.round(doneN/ds.length*100):0;
+      const cover=(ds.find(x=>(x.mood||[]).length)||{}).mood?.[0] || (ds.find(x=>(x.sketches||[]).length)||{}).sketches?.[0];
+      return `<div class="card colcard" onclick="window._curCol='${c.id}';render()">
+        ${cover?`<img class="thumb" src="${esc(cover)}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+        <div style="flex:1">
+          <div class="title">${esc(c.name)}</div>
+          <div class="muted">${ds.length} ${isAr()?"تصميم":"designs"} · ${doneN} ${isAr()?"معتمد":"approved"}
+            ${c.target_date?` · ${late?`<span class="late">${t("late")} ${fmtD(c.target_date)}</span>`:`${t("due")} ${fmtD(c.target_date)}`}`:""}</div>
+          <div class="colbar"><i style="width:${pct}%"></i></div>
         </div>
+        <div class="muted" style="font-size:20px">←</div>
       </div>`;}).join("") || `<div class="empty">${isAr()?"ابدأ بإنشاء كولكشن":"Create a collection"}</div>`}`;
 }
 function newCollection(){
@@ -1079,37 +1172,59 @@ async function saveNewDesign(cid){
 }
 
 /* ---- ورقة التصميم حسب المرحلة ---- */
+function imgGrid(arr, id, field, cls){
+  return `<div class="${cls||'imgrow'}">${(arr||[]).map((u,i)=>`<div class="imgwrap">
+    <img class="${cls==='moodgrid'?'moodimg':'thumb'}" src="${esc(u)}" onclick="viewImg('${esc(u)}')">
+    <button class="rm" onclick="event.stopPropagation();rmDesignFile('${id}','${field}',${i})">✕</button></div>`).join("")}</div>`;
+}
+function viewImg(u){
+  const ov=document.createElement("div"); ov.className="overlay"; ov.style.zIndex=90;
+  ov.innerHTML=`<div style="max-width:900px;width:100%;text-align:center">
+    <img src="${esc(u)}" style="max-width:100%;max-height:80vh;border-radius:12px">
+    <button class="btn btn-ink btn-big" style="max-width:240px;margin:12px auto">${t("close")}</button></div>`;
+  ov.addEventListener("click",()=>ov.remove());
+  document.body.appendChild(ov);
+}
+async function rmDesignFile(id, field, idx){
+  const d=design_(id); const arr=[...(d[field]||[])]; arr.splice(idx,1);
+  await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  await refresh(); reopenDesign(id);
+}
+function reopenDesign(id){ closeSheet(); openDesign(id); }
 function openDesign(id){
   const d=design_(id); const st=d.stage||"idea";
-  const imgs=(arr,fld)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>`;
+  const imgs=(arr)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`;
   let body="";
-  if(st==="idea"){
-    body=`<label>${isAr()?"المود بورد — صور مرجعية":"Mood board"}</label>
-      ${imgs(d.mood)}<input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
-      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','sketch')">${isAr()?"التالي: السكيتشات":"Next: sketches"} ←</button>`;
-  } else if(st==="sketch"){
-    body=`${imgs(d.mood)}
-      <label>${isAr()?"السكيتشات":"Sketches"}</label>
-      ${imgs(d.sketches)}<input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
-      <label>${isAr()?"الملاحظات":"Notes"}</label>
-      ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
-      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
-      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${I.done} ${isAr()?"اعتماد الفكرة":"Approve idea"}</button>
-      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','idea')">← ${isAr()?"رجوع":"Back"}</button>`;
+  if(st==="idea"||st==="sketch"){
+    /* صفحة واحدة: المود بورد + السكيتشات + الملاحظات */
+    body=`<div class="sechead">${I.design} ${isAr()?"المود بورد":"MOOD BOARD"}</div>
+      ${imgGrid(d.mood,id,'mood','moodgrid')}
+      <input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
+      <hr class="sep">
+      <div class="sechead">${I.edit} ${isAr()?"السكيتشات والأمثلة":"SKETCHES & EXAMPLES"}</div>
+      ${imgGrid(d.sketches,id,'sketches')}
+      <input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
+      <hr class="sep">
+      <div class="sechead">${I.file} ${isAr()?"ملاحظات (داخلية)":"NOTES (internal)"}</div>
+      ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
+        <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','notes',${i})">✕</b></div>`).join("")||`<div class="muted">—</div>`}
+      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note" style="flex:1"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
+      <hr class="sep">
+      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${I.done} ${isAr()?"اعتماد الفكرة → تجهيز العينة":"Approve idea"}</button>`;
   } else if(st==="prep"){
     const ws=DB.workers.filter(w=>w.active&&(w.specialties||[]).includes("sample"));
     window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
     body=`${imgs(d.sketches)}
       <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
-      <label>${isAr()?"الأعمار (افصل بفاصلة)":"Ages"}</label>
-      <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()">
+      <label>${isAr()?"قياسات العينة (موديل واحد)":"Sample measurements"}</label>
+      <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{})[0]||(isAr()?"العينة":"SAMPLE"))}" onchange="captureDChart();redrawDChart()">
       <div id="dChartGrid"></div>
       <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
       <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
         : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
       ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
       <button class="btn btn-ok btn-big" onclick="sendToSample('${id}')">${isAr()?"إرسال لتنفيذ العينة":"Send to sample"} ←</button>
-      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','sketch')">← ${isAr()?"رجوع":"Back"}</button>`;
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','idea')">← ${isAr()?"رجوع للتصميم":"Back"}</button>`;
     setTimeout(redrawDChart,0);
   } else if(st==="sample"){
     const running=d.sample_started_at&&!d.sample_finished_at;
@@ -1121,9 +1236,16 @@ function openDesign(id){
     body=`<div class="note-box">${I.done} ${isAr()?"العينة انفذت":"Sample done"} — ${esc(wname(worker(d.sample_worker_id)))}
       ${d.sample_started_at&&d.sample_finished_at?` · ${mins(d.sample_started_at,d.sample_finished_at)} ${t("minutes")}`:""}</div>
       ${imgs(d.sketches)}
-      <label>${isAr()?"ملاحظات على العينة":"Sample notes"}</label>
-      ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span></div>`).join("")||`<div class="muted">—</div>`}
-      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note"><button class="btn btn-ghost" onclick="addDesignNote('${id}','sample_notes')">${t("add")}</button></div>
+      <hr class="sep">
+      <div class="sechead">${I.fix} ${isAr()?"ملاحظات على العينة":"SAMPLE NOTES"}</div>
+      ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
+        <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','sample_notes',${i})">✕</b>
+        ${n.img?`<div><img class="thumb" src="${esc(n.img)}" onclick="viewImg('${esc(n.img)}')"></div>`:""}</div>`).join("")||`<div class="muted">—</div>`}
+      <label>${isAr()?"ملاحظة جديدة":"New note"}</label>
+      <input id="d_note" placeholder="${isAr()?"اكتب الملاحظة...":"..."}">
+      <label>${isAr()?"صوّر المشكلة (اختياري)":"Photo (optional)"}</label>
+      <input type="file" id="d_note_img" accept="image/*" capture="environment">
+      <button class="btn btn-ghost btn-big" onclick="addDesignNote('${id}','sample_notes')">${I.plus} ${t("add")}</button>
       <button class="btn btn-bad btn-big" onclick="backToSample('${id}')">↩ ${isAr()?"إرجاع لنفس العامل للتعديل":"Back to worker"}</button>
       <button class="btn btn-ok btn-big" onclick="approveSample('${id}')">${I.done} ${isAr()?"اعتماد العينة":"Approve sample"}</button>`;
   } else {
@@ -1149,9 +1271,16 @@ async function addDesignFiles(id, field){
 }
 async function addDesignNote(id, field){
   const tx=el("d_note").value.trim(); if(!tx) return;
+  let img=null; const fi=el("d_note_img");
+  if(fi && fi.files[0]) img=await uploadFile(fi.files[0],"notes");
   const d=design_(id);
-  await sb.from("design_projects").update({[field]:[...(d[field]||[]),{t:tx,d:today()}]}).eq("id",id);
-  await refresh(); closeSheet(); openDesign(id);
+  await sb.from("design_projects").update({[field]:[...(d[field]||[]),{t:tx,d:today(),img}]}).eq("id",id);
+  await refresh(); reopenDesign(id);
+}
+async function rmDesignNote(id, field, idx){
+  const d=design_(id); const arr=[...(d[field]||[])]; arr.splice(idx,1);
+  await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  await refresh(); reopenDesign(id);
 }
 async function setDStage(id, st){
   await sb.from("design_projects").update({stage:st}).eq("id",id);
@@ -1381,6 +1510,30 @@ function renderWorkersBox(){
   </div>`;
 }
 async function reloadWorkers(){ await loadAll(); renderWorkersBox(); }
+function wipeSheet(){
+  openSheet(`<div class="title" style="color:var(--wine)">${I.trash} ${isAr()?"مسح بيانات التجربة":"Wipe test data"}</div>
+    <div class="note-box">${isAr()?"راح يُمسح نهائياً:":"Will be deleted:"} ${isAr()?"كل الأوامر وسطورها وسجلات العمل والبريك، كل التصاميم والكولكشنات، الإرساليات الخارجية، طلبات التصوير.":"..."}</div>
+    <div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${isAr()?"يبقى كما هو:":"Kept:"} ${isAr()?"العمال · المنتجات · الخامات · أسباب التصليح · الإعدادات":"..."}</div>
+    <label>${isAr()?"اكتب كلمة «مسح» للتأكيد":"Type DELETE"}</label><input id="wipe_ok" autocomplete="off">
+    <button class="btn btn-line btn-big" onclick="downloadBackup()">${I.file} ${isAr()?"نزّل نسخة احتياطية أولاً":"Backup first"}</button>
+    <button class="btn btn-bad btn-big" onclick="doWipe()">${isAr()?"تأكيد المسح":"Confirm"}</button>`);
+}
+async function doWipe(){
+  const v=el("wipe_ok").value.trim();
+  if(v!=="مسح" && v.toUpperCase()!=="DELETE") return alert(isAr()?"اكتب «مسح» للتأكيد":"Type DELETE");
+  const all="00000000-0000-0000-0000-000000000000";
+  await sb.from("stage_events").delete().neq("id",all);
+  await sb.from("line_parts").delete().neq("id",all);
+  await sb.from("order_lines").delete().neq("id",all);
+  await sb.from("orders").delete().neq("id",all);
+  await sb.from("ext_jobs").delete().neq("id",all);
+  await sb.from("photoshoots").delete().neq("id",all);
+  await sb.from("design_projects").delete().neq("id",all);
+  await sb.from("collections").delete().neq("id",all);
+  await sb.from("breaks").delete().neq("id",all);
+  closeSheet(); await refresh();
+  alert(isAr()?"انمسحت ✓ النظام جاهز للتشغيل الفعلي":"Done");
+}
 async function saveMaterial(){
   const name=el("m_name").value.trim(); if(!name) return alert(isAr()?"اكتب اسم الخام":"Name?");
   const {error}=await sb.from("materials").insert({sku:el("m_sku").value||null, name, color:el("m_color").value||null,
@@ -1508,10 +1661,19 @@ function renderWorker(){
       <div>${myNew.length?`${I.plus} <b>${myNew.length}</b> ${isAr()?"مهمة جديدة":"new tasks"}`:""}
       ${myLate.length?` ${myNew.length?"·":""} ${I.clock} <b>${myLate.length}</b> ${isAr()?"متأخرة":"late"}`:""}</div></div>`;
   }
-  if(specs.includes("sample")) html+=workerSection("sample", sampleTasks(w));
-  if(specs.includes("cut")) html+=workerSection("cut", cutTasks(w));
-  if(specs.includes("sew")) html+=workerSection("sew", sewTasks(w));
-  if(specs.includes("pack")) html+=workerSection("pack", packTasks(w));
+  /* تبويبات من فوق حسب تخصصاته */
+  const secs=[];
+  if(specs.includes("cut")) secs.push(["cut", cutTasks(w)]);
+  if(specs.includes("sew")) secs.push(["sew", sewTasks(w)]);
+  if(specs.includes("pack")) secs.push(["pack", packTasks(w)]);
+  if(specs.includes("sample")) secs.push(["sample", sampleTasks(w)]);
+  if(!secs.length){ el("app").innerHTML=html+`<div class="empty">${t("noTasks")}</div>`; return; }
+  let cur=window._wTab; if(!secs.some(s=>s[0]===cur)) cur=secs[0][0];
+  window._wTab=cur;
+  html+=`<div class="tabs">${secs.map(([k,cards])=>`<button class="${cur===k?'on':''}" onclick="window._wTab='${k}';render()">
+      ${I[k]} ${t(k)} ${cards.length?`<span class="badge">${cards.length}</span>`:""}</button>`).join("")}</div>`;
+  const cards=(secs.find(s=>s[0]===cur)||[null,[]])[1];
+  html+= cards.length? cards.join("") : `<div class="empty">${t("noTasks")} 👌</div>`;
   el("app").innerHTML=html;
 }
 function sampleTasks(w){
@@ -1611,6 +1773,7 @@ function workerCard(l, mode, part){
     ${ev?`<div class="timer ${over?'t-late':'t-ok'}">⏱ ${m} ${t("minutes")}</div>`:""}
     ${mode==="pack"&&!setReady(l)? `<button class="btn btn-ghost btn-big" disabled style="opacity:.55">${isAr()?"ناقص قطع الطقم":"Waiting for set pieces"}</button>`
      : working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} ${t("done")}</button>`
+              + (m<5? `<button class="btn btn-warn btn-big" onclick="undoStart('${l.id}','${part?part.id:""}')">↩ ${isAr()?"تراجع — بديت بالغلط":"Undo"}</button>`:"")
              : `<button class="btn btn-ink btn-big" onclick="wStart('${l.id}','${part?part.id:""}')">${I.play} ${t("start")}</button>`}
   </div>`;
 }
@@ -1641,6 +1804,15 @@ async function wStart(lineId, partId){
     await sb.from("order_lines").update({stage_status:"working",claimed_by:session.workerId}).eq("id",lineId);
     await sb.from("stage_events").insert({line_id:lineId,stage:l.stage,worker_id:session.workerId,started_at:new Date().toISOString()});
   }
+  await refresh();
+}
+async function undoStart(lineId, partId){
+  const ev=DB.events.find(e=> (partId? e.part_id===partId : (e.line_id===lineId&&!e.part_id)) && e.started_at && !e.finished_at);
+  if(ev && mins(ev.started_at,new Date().toISOString())>=5 && session.role==="worker")
+    return alert(isAr()?"فات وقت التراجع — كلّم المدير":"Undo window passed");
+  if(ev) await sb.from("stage_events").delete().eq("id",ev.id);
+  if(partId) await sb.from("line_parts").update({status:"waiting",worker_id:null,started_at:null}).eq("id",partId);
+  else await sb.from("order_lines").update({stage_status:"waiting",claimed_by:null}).eq("id",lineId);
   await refresh();
 }
 async function wDone(lineId, partId){
