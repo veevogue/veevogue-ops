@@ -226,6 +226,14 @@ const SPEC_LABEL = {cut:["قص","CUT"], sew:["خياطة","SEW"], sample:["عي�
 const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الهيبس","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
 const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
+/* قياسات إضافية للقياسات الخاصة */
+const MEAS2 = [["top_len","طول التوب","Top length"],["skirt_len","طول التنورة","Skirt length"],
+  ["pants_len","طول البنطرون","Pants length"],["corsage","الكورساج","Corsage"]];
+function allMeas(){return [...MEAS,...MEAS2];}
+/* قطع التصميم الجاهزة */
+const PARTS_PRESET = [["توب","TOP"],["بنطرون","PANTS"],["تنورة","SKIRT"],["شورت","SHORTS"],
+  ["فستان","DRESS"],["جاكيت","JACKET"],["كورساج","CORSAGE"],["كم","SLEEVE"],["حزام","BELT"],["إكسسوار","ACCESSORY"]];
+const AGES_PRESET = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 
 let sb=null;
 let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[]};
@@ -280,6 +288,15 @@ function esc(s){return (s??"").toString().replace(/[<>&"]/g,c=>({"<":"&lt;",">":
 function fmtD(d){if(!d)return"";const x=new Date(d);return x.getDate()+"/"+(x.getMonth()+1);}
 function isLate(o){return o.due_date && o.status==="جاري" && o.due_date < today();}
 function mins(a,b){return Math.round((new Date(b)-new Date(a))/60000);}
+/* الوقت المحتسب: يتوقف عند نهاية الدوام */
+function workedMins(startISO, endISO){
+  const s=new Date(startISO);
+  const end = endISO? new Date(endISO) : new Date();
+  const [eh,em]=(DB.settings.work_end||"18:00").split(":").map(Number);
+  const shiftEnd=new Date(s); shiftEnd.setHours(eh,em,0,0);
+  const stop = end>shiftEnd? shiftEnd : end;
+  return Math.max(0, Math.round((stop-s)/60000));
+}
 function pimg(p){return (p.images&&p.images[0])||null;}
 function thumb(p,cls){const u=pimg(p);return u?`<img class="${cls||'thumb'}" src="${esc(u)}">`:`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
 function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();applyDir();render();}
@@ -482,9 +499,9 @@ function tabBoard(){
     ${onBreakNow.length?`<div class="breakbar">${I.coffee} ${onBreakNow.map(b=>`${esc(wname(worker(b.worker_id)))} (${mins(b.started_at,new Date().toISOString())}${t("minutes")})`).join(" · ")}</div>`:""}
     <div class="card"><div class="title">${I.clock} ${t("workingNow")}</div>
       ${workingNow.length? workingNow.map(x=>{
-        const m=x.ev? mins(x.ev.started_at,new Date().toISOString()):0;
+        const m=x.ev? workedMins(x.ev.started_at):0;
         const p=product(x.l.product_id);
-        const est=(x.stage==="cut"?p.est_cut_min:x.stage==="sew"?p.est_sew_min:null);
+        const est=(x.stage==="cut"?p.est_cut_min:x.stage==="sew"?((x.part&&(p.est_parts||{})[x.part.part_ar])||p.est_sew_min):null);
         const over=est? m>est*(x.l.qty||1) : m>480;
         return `<div class="lineitem"><div><b>${esc(wname(x.w))}</b> — ${t(STAGE_KEY[x.stage]||x.stage)}${x.part?` (${esc(isAr()?x.part.part_ar:x.part.part_en)})`:""} — ${esc(pname(p))} <span class="muted">#${order(x.l.order_id).order_no}</span></div>
         <div class="timer ${over?'t-late':'t-ok'}">${m} ${t("minutes")}</div></div>`;}).join("")
@@ -586,7 +603,8 @@ function tabNewOrder(){
       ${customModels.map((m,i)=>`<div class="card" style="background:var(--cream)">
         <div class="lineitem" style="border:0"><b>${isAr()?"موديل":"Model"} ${i+1}</b> ${customModels.length>1?`<button class="btn btn-ghost" onclick="rmModel(${i})">✕</button>`:""}</div>
         <label>${isAr()?"المنتج":"Product"}</label><select id="cm_p${i}">${dOpts}</select>
-        <div class="grid3">${MEAS.map(x=>`<div><label>${isAr()?x[1]:x[2]}</label><input id="cm_${x[0]}${i}" inputmode="decimal" value="${esc(m[x[0]]||"")}"></div>`).join("")}</div>
+        <label>${t("age")}</label><input id="cm_age${i}" value="${esc(m.age||"")}">
+        <div class="grid3">${allMeas().map(x=>`<div><label>${isAr()?x[1]:x[2]}</label><input id="cm_${x[0]}${i}" inputmode="decimal" value="${esc(m[x[0]]||"")}"></div>`).join("")}</div>
         <div class="grid2">
           <div><label>${isAr()?"الكم":"Sleeve"}</label><select id="cm_sl${i}"><option value="">—</option>${SLEEVES.map(s=>`<option>${s}</option>`).join("")}</select></div>
           <div><label>${isAr()?"الأسفل":"Bottom"}</label><select id="cm_bt${i}"><option value="">—</option>${BOTTOMS.map(s=>`<option>${s}</option>`).join("")}</select></div>
@@ -599,8 +617,15 @@ function tabNewOrder(){
   }else{
     if(!newLines.length) newLines=[{}];
     body=`${ty==="طلب"?`<label>${t("invoice")}</label><input id="o_ref">`:""}
-      ${ty==="تصليح"?`<label>${t("reason")}</label><select id="o_reason">${DB.reasons.filter(r=>r.active).map(r=>`<option>${esc(r.label)}</option>`).join("")}<option value="__other">${isAr()?"سبب جديد...":"New reason..."}</option></select>`:""}
+      ${ty==="تصليح"?`<label>${t("reason")}</label>
+        <div class="pillrow" id="reasonPills">${DB.reasons.filter(r=>r.active).map((r,i)=>`<span class="pill ${i===0?'on':''}" data-r="${esc(r.label)}" onclick="[...document.querySelectorAll('#reasonPills .pill')].forEach(p=>p.classList.remove('on'));this.classList.add('on')">${esc(r.label)}</span>`).join("")}</div>
+        <div style="display:flex;gap:6px;margin-top:6px"><input id="o_newreason" placeholder="${isAr()?"سبب جديد...":"New reason..."}" style="flex:1"><button class="btn btn-ghost" onclick="addReasonInline()">${I.plus}</button></div>
+        <label>${isAr()?"شرح المشكلة":"Details"}</label><textarea id="o_rnote"></textarea>
+        <label>${isAr()?"صورة العيب (اختياري)":"Defect photo"}</label><input type="file" id="o_rimg" accept="image/*">`:""}
       <label>${isAr()?"القطع":"Items"}</label>
+      ${ty==="إنتاج كمي"?`<div style="display:flex;gap:6px;margin-bottom:8px">
+        <select id="bulk_p" style="flex:1">${dOpts}</select>
+        <button class="btn btn-ghost" onclick="fillAges()">${isAr()?"عبّي كل الأعمار":"Fill all ages"}</button></div>`:""}
       ${newLines.map((l,i)=>`<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;margin-top:6px;gap:6px">
         <select id="ld${i}">${dOpts}</select>
         <input id="ls${i}" placeholder="${t("age")}" value="${esc(l.size||"")}">
@@ -625,27 +650,53 @@ function captureOrder(){
   newLines=newLines.map((l,i)=>el("ld"+i)?{product_id:el("ld"+i).value,size:el("ls"+i).value,color:el("lc"+i).value,qty:+el("lq"+i).value||1}:l);
   customModels=customModels.map((m,i)=>{
     if(!el("cm_p"+i)) return m;
-    const o={product_id:el("cm_p"+i).value, qty:+el("cm_q"+i).value||1, color:el("cm_c"+i).value, sleeve:el("cm_sl"+i).value, bottom:el("cm_bt"+i).value, notes:el("cm_n"+i).value};
-    MEAS.forEach(x=>o[x[0]]=el("cm_"+x[0]+i).value);
+    const o={product_id:el("cm_p"+i).value, qty:+el("cm_q"+i).value||1, color:el("cm_c"+i).value,
+      sleeve:el("cm_sl"+i).value, bottom:el("cm_bt"+i).value, notes:el("cm_n"+i).value, age:el("cm_age"+i).value};
+    allMeas().forEach(x=>o[x[0]]=el("cm_"+x[0]+i).value);
     return o;
   });
 }
 function addLine(){captureOrder();newLines.push({});render();}
+function fillAges(){
+  captureOrder();
+  const pid=el("bulk_p").value; const p=product(pid);
+  const ages=Object.keys(p.size_chart||{});
+  if(!ages.length) return alert(isAr()?"هذا المنتج ما عنده أعمار مسجلة — أضفها من بطاقة المنتج":"No ages on this product");
+  const keep=newLines.filter(l=>l.product_id&&l.size);
+  newLines=[...keep, ...ages.map(a=>({product_id:pid,size:a,color:"",qty:1}))];
+  render();
+}
 function delLine(i){captureOrder();newLines.splice(i,1);render();}
-function addModel(){captureOrder();customModels.push({});render();}
+function addModel(){
+  captureOrder();
+  const src=customModels[0]||{};
+  const copy={age:src.age,color:src.color,sleeve:src.sleeve,bottom:src.bottom,qty:1};
+  allMeas().forEach(x=>copy[x[0]]=src[x[0]]);
+  customModels.push(copy); render();
+}
 function rmModel(i){captureOrder();customModels.splice(i,1);render();}
 async function saveOrder(){
   captureOrder();
   const ty=window._otype||"إنتاج كمي";
-  let reason=null;
-  if(ty==="تصليح"){reason=el("o_reason").value; if(reason==="__other"){reason=prompt(isAr()?"اكتب السبب:":"Reason:"); if(!reason)return; await sb.from("repair_reasons").insert({label:reason});}}
-  const {data:o,error}=await sb.from("orders").insert({order_type:ty, customer_ref:(ty==="طلب"||ty==="قياسات خاصة")?(el("o_ref")?.value||null):null, repair_reason:reason, due_date:el("o_due").value||null}).select().single();
+  let reason=null, rnote=null, rimg=null;
+  if(ty==="تصليح"){
+    const sel=document.querySelector("#reasonPills .pill.on");
+    reason = sel? sel.dataset.r : null;
+    if(!reason) return alert(isAr()?"اختر سبب الرجوع":"Pick a reason");
+    rnote=el("o_rnote").value||null;
+    const f=el("o_rimg").files[0]; if(f) rimg=await uploadFile(f,"repairs");
+  }
+  const {data:o,error}=await sb.from("orders").insert({order_type:ty, customer_ref:(ty==="طلب"||ty==="قياسات خاصة")?(el("o_ref")?.value||null):null,
+    repair_reason:reason, repair_note:rnote, repair_image:rimg, due_date:el("o_due").value||null}).select().single();
   if(error) return alert(error.message);
   let rows=[];
   if(ty==="قياسات خاصة"){
-    rows=customModels.filter(m=>m.product_id).map(m=>({order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:isAr()?"خاص":"CUSTOM",
-      custom_specs:{chest:m.chest,waist:m.waist,hips:m.hips,shoulder:m.shoulder,length:m.length,sleeve:m.sleeve,bottom:m.bottom,notes:m.notes},
-      stage:startStageFor(m.product_id,ty)}));
+    rows=customModels.filter(m=>m.product_id).map(m=>{
+      const cs={sleeve:m.sleeve,bottom:m.bottom,notes:m.notes,age:m.age};
+      allMeas().forEach(x=>{if(m[x[0]]) cs[x[0]]=m[x[0]];});
+      return {order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:m.age||(isAr()?"خاص":"CUSTOM"),
+        custom_specs:cs, stage:startStageFor(m.product_id,ty)};
+    });
   }else{
     rows=newLines.filter(l=>l.product_id).map(l=>({order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,stage:startStageFor(l.product_id,ty)}));
   }
@@ -662,7 +713,7 @@ function tabProducts(){
     <button class="btn btn-ink btn-big" onclick="showProductForm(null)">${I.plus} ${t("products")}</button>
     ${DB.products.filter(p=>p.active).map(p=>`<div class="card">
       <div class="wtop">${thumb(p)}
-        <div style="flex:1"><div class="title">${esc(pname(p))}</div>
+        <div style="flex:1"><div class="title">${esc(pname(p))} ${p.sku?`<span class="muted" style="font-family:'Inter';font-size:12px">${esc(p.sku)}</span>`:""}</div>
         <div class="pillrow">
           ${p.external_make?`<span class="chip wine">${I.ext}</span>`:""}
           ${p.embroidery!=="none"?`<span class="chip wine">${I.emb} ${esc(p.embroidery_kind||"")}</span>`:""}
@@ -692,8 +743,18 @@ function showProductForm(pid){
     <label>${isAr()?"ملفات الباترون":"Patterns"}</label>
     <div class="pillrow">${(p.patterns||[]).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer" onclick="rmProdPat(${i})">✕</b></span>`).join("")}</div>
     <input type="file" id="p_pats" multiple>
-    <label>${isAr()?"قطع التصميم — سطر لكل قطعة: عربي / EN":"Components — one per line: AR / EN"}</label>
-    <textarea id="p_comps" placeholder="توب / TOP&#10;بنطرون / PANTS">${esc(compsTxt)}</textarea>
+    <label>${isAr()?"كود المنتج (SKU)":"SKU"}</label><input id="p_sku" dir="ltr" value="${esc(p.sku||"")}">
+    <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="p_materials" placeholder="${isAr()?"مثال: قطن مطبوع 1.2م · ربطة 20سم":""}">${esc(p.materials||"")}</textarea>
+    <label>${isAr()?"قطع التصميم":"Components"}</label>
+    <div class="pillrow" id="partPills">${PARTS_PRESET.map(([a,e])=>`<span class="pill ${(p.components||[]).some(c=>c.ar===a)?'on':''}" data-ar="${a}" data-en="${e}" onclick="this.classList.toggle('on');redrawParts()">${isAr()?a:e}</span>`).join("")}
+      ${(p.components||[]).filter(c=>!PARTS_PRESET.some(x=>x[0]===c.ar)).map(c=>`<span class="pill on" data-ar="${esc(c.ar)}" data-en="${esc(c.en||c.ar)}" onclick="this.remove();redrawParts()">${esc(isAr()?c.ar:(c.en||c.ar))} ✕</span>`).join("")}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="p_newpart_ar" placeholder="${isAr()?"قطعة جديدة (عربي)":"New part AR"}" style="flex:1">
+      <input id="p_newpart_en" dir="ltr" placeholder="EN" style="flex:1">
+      <button class="btn btn-ghost" onclick="addCustomPart()">${I.plus}</button>
+    </div>
+    <div id="partTimes"></div>
     <div class="grid3">
       <div><label>${isAr()?"تطريز/طباعة؟":"Embroidery?"}</label><select id="p_embk"><option value="">${isAr()?"لا":"No"}</option><option ${p.embroidery_kind==="تطريز"?"selected":""}>تطريز</option><option ${p.embroidery_kind==="طباعة"?"selected":""}>طباعة</option></select></div>
       <div><label>${isAr()?"موضعه":"When"}</label><select id="p_embp">
@@ -706,15 +767,64 @@ function showProductForm(pid){
     <label>${isAr()?"الرسمة / صورة الموضع":"Artwork"}</label>
     ${p.artwork_url?`<img class="thumb" src="${esc(p.artwork_url)}">`:""}<input type="file" id="p_art" accept="image/*">
     <label>${isAr()?"ملاحظة التطريز":"Embroidery note"}</label><input id="p_embn" value="${esc(p.embroidery_note||"")}">
-    <div class="grid2"><div><label>${isAr()?"تقديري قص (د)":"Est. cut (min)"}</label><input id="p_ec" type="number" value="${p.est_cut_min||""}"></div>
-    <div><label>${isAr()?"تقديري خياطة (د)":"Est. sew (min)"}</label><input id="p_es" type="number" value="${p.est_sew_min||""}"></div></div>
-    <label>${isAr()?"الأعمار (افصل بفاصلة)":"Ages (comma separated)"}</label><input id="p_sizes" dir="ltr" value="${esc(Object.keys(p.size_chart||{}).join(","))}" onchange="captureChart();redrawChart()">
+    <div class="grid2"><div><label>${isAr()?"تقديري القص (د)":"Est. cut (min)"} ${histAvg(pid,"cut")}</label><input id="p_ec" type="number" value="${p.est_cut_min||""}"></div>
+    <div><label>${isAr()?"تقديري الخياطة الكلي (د)":"Est. sew total"} ${histAvg(pid,"sew")}</label><input id="p_es" type="number" value="${p.est_sew_min||""}"></div></div>
+    <label>${isAr()?"الأعمار المتوفرة":"Available ages"}</label>
+    <div class="pillrow" id="agePills">${AGES_PRESET.map(a=>`<span class="pill ${(p.size_chart||{})[a]!==undefined?'on':''}" data-a="${a}" onclick="this.classList.toggle('on');syncAges()">${a}</span>`).join("")}
+      ${Object.keys(p.size_chart||{}).filter(a=>!AGES_PRESET.includes(a)).map(a=>`<span class="pill on" data-a="${esc(a)}" onclick="this.remove();syncAges()">${esc(a)} ✕</span>`).join("")}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="p_newage" placeholder="${isAr()?"عمر/مقاس آخر":"Other size"}" style="flex:1">
+      <button class="btn btn-ghost" onclick="addCustomAge()">${I.plus}</button>
+    </div>
+    <input type="hidden" id="p_sizes" value="${esc(Object.keys(p.size_chart||{}).join(","))}">
     <div id="chartGrid"></div>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="p_notes">${esc(p.notes||"")}</textarea>
     <button class="btn btn-wine btn-big" onclick="saveProduct()">${t("save")}</button>
   `);
   window._pimgs=[...(p.images||[])]; window._ppats=[...(p.patterns||[])];
-  redrawChart();
+  window._estParts=JSON.parse(JSON.stringify(p.est_parts||{}));
+  redrawChart(); redrawParts();
+}
+/* متوسط فعلي تاريخي */
+function histAvg(pid, stage){
+  if(!pid) return "";
+  const ev=DB.events.filter(e=>e.stage===stage&&e.started_at&&e.finished_at&&DB.lines.some(l=>l.id===e.line_id&&l.product_id===pid));
+  if(!ev.length) return "";
+  const avg=Math.round(ev.reduce((a,e)=>a+mins(e.started_at,e.finished_at),0)/ev.length);
+  return `<span class="chip sage">${isAr()?"الفعلي":"actual"} ${avg}</span>`;
+}
+function currentParts(){
+  return [...document.querySelectorAll("#partPills .pill.on")].map(x=>({ar:x.dataset.ar,en:x.dataset.en}));
+}
+function captureEstParts(){
+  currentParts().forEach(c=>{const i=el("ep_"+c.ar); if(i) window._estParts[c.ar]=+i.value||null;});
+}
+function redrawParts(){
+  const box=el("partTimes"); if(!box) return;
+  captureEstParts();
+  const parts=currentParts();
+  box.innerHTML = parts.length? `<label>${isAr()?"وقت الخياطة التقديري لكل قطعة (دقيقة)":"Est. sew time per part"}</label>
+    <div class="grid2">${parts.map(c=>`<div><label style="margin:2px 0">${esc(isAr()?c.ar:c.en)}</label>
+      <input id="ep_${esc(c.ar)}" type="number" value="${window._estParts[c.ar]||""}"></div>`).join("")}</div>`:"";
+}
+function addCustomPart(){
+  const a=el("p_newpart_ar").value.trim(); if(!a) return;
+  const e=el("p_newpart_en").value.trim()||a;
+  el("partPills").insertAdjacentHTML("beforeend",
+    `<span class="pill on" data-ar="${esc(a)}" data-en="${esc(e)}" onclick="this.remove();redrawParts()">${esc(isAr()?a:e)} ✕</span>`);
+  el("p_newpart_ar").value=""; el("p_newpart_en").value=""; redrawParts();
+}
+function syncAges(){
+  captureChart();
+  const ages=[...document.querySelectorAll("#agePills .pill.on")].map(x=>x.dataset.a);
+  el("p_sizes").value=ages.join(","); redrawChart();
+}
+function addCustomAge(){
+  const a=el("p_newage").value.trim(); if(!a) return;
+  el("agePills").insertAdjacentHTML("beforeend",
+    `<span class="pill on" data-a="${esc(a)}" onclick="this.remove();syncAges()">${esc(a)} ✕</span>`);
+  el("p_newage").value=""; syncAges();
 }
 function rmProdImg(i){window._pimgs.splice(i,1);document.querySelectorAll(".imgwrap")[i]?.remove();}
 function rmProdPat(i){window._ppats[i]=null;event.target.parentElement.remove();}
@@ -734,9 +844,12 @@ async function saveProduct(){
   for(const f of el("p_pats").files){const u=await uploadFile(f,"patterns"); if(u) pats.push({name:f.name,url:u});}
   let artwork=editProductId?product(editProductId).artwork_url:null;
   const af=el("p_art").files[0]; if(af){const u=await uploadFile(af,"artwork"); if(u) artwork=u;}
-  const comps=el("p_comps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(s=>{const[a,b]=s.split("/").map(x=>x.trim());return{ar:a,en:b||a};});
+  captureEstParts();
+  const comps=currentParts();
+  const estParts={}; comps.forEach(c=>{if(window._estParts[c.ar]) estParts[c.ar]=window._estParts[c.ar];});
   const chart={}; chartSizes().forEach(s=>chart[s]=window._chart[s]||{});
   const row={name, name_en:el("p_name_en").value||null, images:window._pimgs, patterns:pats, components:comps,
+    sku:el("p_sku").value||null, materials:el("p_materials").value||null, est_parts:estParts,
     embroidery_kind:el("p_embk").value||null, embroidery:el("p_embk").value? el("p_embp").value : "none",
     embroidery_note:el("p_embn").value||null, artwork_url:artwork, external_make:!!el("p_ext").value,
     est_cut_min:+el("p_ec").value||null, est_sew_min:+el("p_es").value||null, size_chart:chart, notes:el("p_notes").value||null};
@@ -758,6 +871,7 @@ function showChart(pid, size){
     ${pimg(p)?`<img class="thumb-lg" src="${esc(pimg(p))}">`:""}
     <div style="overflow-x:auto;margin-top:10px"><table><tr><th>—</th>${sizes.map(s=>`<th style="${s===size?'background:var(--ink);color:#fff':''}">${esc(s)}</th>`).join("")}</tr>${rows}</table></div>
     ${pats?`<div class="pillrow" style="margin-top:10px">${pats}</div>`:""}
+    ${p.materials?`<div class="note-box"><b>${isAr()?"الخامات":"MATERIALS"}:</b> ${esc(p.materials)}</div>`:""}
     ${p.notes?`<div class="note-box">${esc(p.notes)}</div>`:""}
   </div>`);
 }
@@ -1079,18 +1193,32 @@ function tabQuality(){
       </div>`;}).join("") : `<div class="empty">${t("nothingToCheck")}</div>`}`;
 }
 async function qcResult(lineId, result){
+  if(result==="fix") return qcFixSheet(lineId);
   const now=new Date().toISOString();
   await sb.from("stage_events").insert({line_id:lineId,stage:"qc",result,started_at:now,finished_at:now});
-  if(result==="fix"){
-    const l=DB.lines.find(x=>x.id===lineId);
-    const lastSew=DB.events.filter(e=>e.line_id===lineId&&e.stage==="sew"&&e.worker_id&&e.finished_at).slice(-1)[0];
-    await sb.from("order_lines").update({stage:"sew",stage_status:"waiting",claimed_by:null}).eq("id",lineId);
-    await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX",worker_id:lastSew?lastSew.worker_id:null});
-  } else {
+  {
     await sb.from("order_lines").update({stage:"pack",stage_status:"waiting",claimed_by:null,
       prep_note: result==="ok"? null : result}).eq("id",lineId);
   }
   await refresh();
+}
+function qcFixSheet(lineId){
+  openSheet(`<div class="title">${I.fix} ${t("fix")}</div>
+    <label>${t("reason")}</label>
+    <div class="pillrow" id="qcReasons">${DB.reasons.filter(r=>r.active).map((r,i)=>`<span class="pill ${i===0?'on':''}" data-r="${esc(r.label)}" onclick="[...document.querySelectorAll('#qcReasons .pill')].forEach(p=>p.classList.remove('on'));this.classList.add('on')">${esc(r.label)}</span>`).join("")}</div>
+    <label>${isAr()?"صورة العيب (اختياري)":"Defect photo (optional)"}</label><input type="file" id="qc_img" accept="image/*">
+    <button class="btn btn-bad btn-big" onclick="sendFix('${lineId}')">${I.fix} ${isAr()?"إرجاع لنفس الخياط":"Back to same tailor"}</button>`);
+}
+async function sendFix(lineId){
+  const sel=document.querySelector("#qcReasons .pill.on");
+  const reason=sel?sel.dataset.r:null;
+  let img=null; const f=el("qc_img").files[0]; if(f) img=await uploadFile(f,"qc");
+  const now=new Date().toISOString();
+  await sb.from("stage_events").insert({line_id:lineId,stage:"qc",result:"fix",started_at:now,finished_at:now});
+  const lastSew=DB.events.filter(e=>e.line_id===lineId&&e.stage==="sew"&&e.worker_id&&e.finished_at).slice(-1)[0];
+  await sb.from("order_lines").update({stage:"sew",stage_status:"waiting",claimed_by:null,fix_reason:reason,fix_image:img}).eq("id",lineId);
+  await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX",worker_id:lastSew?lastSew.worker_id:null});
+  closeSheet(); await refresh();
 }
 
 /* ---- العمال ---- */
@@ -1155,10 +1283,11 @@ function tabPerf(){
     const wid=e.worker_id;
     byWorker[wid]=byWorker[wid]||{stages:{}, fixes:0, brk:0};
     const st=byWorker[wid].stages[e.stage]=byWorker[wid].stages[e.stage]||{n:0,total:0,est:0,estN:0};
-    st.n++; st.total+=mins(e.started_at,e.finished_at);
+    st.n++; st.total+=workedMins(e.started_at,e.finished_at);
     const l=DB.lines.find(x=>x.id===e.line_id);
     if(l){const p=product(l.product_id);
-      const est=e.stage==="cut"?p.est_cut_min: e.stage==="sew"?p.est_sew_min: null;
+      const pt=e.part_id? DB.parts.find(x=>x.id===e.part_id):null;
+      const est=e.stage==="cut"?p.est_cut_min: e.stage==="sew"?((pt&&(p.est_parts||{})[pt.part_ar])||p.est_sew_min): null;
       if(est){st.est+=est*l.qty; st.estN++;}}
   });
   DB.events.filter(e=>e.result==="fix").forEach(e=>{
@@ -1207,6 +1336,31 @@ function renderWorker(){
       ${!onBreak?`<button class="btn btn-line" onclick="startBreak()">${I.coffee} ${t("breakStart")}</button>`:""}
     </div>`;
   if(onBreak){ el("app").innerHTML=html; return; }
+  /* تنبيهات */
+  const myNew=[], myLate=[];
+  DB.lines.filter(l=>activeLine(l)).forEach(l=>{
+    const o=order(l.order_id);
+    const mine = (l.stage==="cut"&&specs.includes("cut")) || (l.stage==="pack"&&specs.includes("pack"));
+    if(mine && !l.claimed_by) myNew.push(l);
+    if(l.claimed_by===w.id && l.stage_status==="working"){
+      const ev=DB.events.find(e=>e.line_id===l.id&&!e.part_id&&e.started_at&&!e.finished_at);
+      const p=product(l.product_id);
+      const est=l.stage==="cut"?p.est_cut_min:null;
+      if(ev && est && workedMins(ev.started_at) > est*(l.qty||1)) myLate.push(l);
+    }
+    if(o.due_date && o.due_date<today()) { if(mine||(l.stage==="sew"&&specs.includes("sew"))) myLate.push(l); }
+  });
+  if(specs.includes("sew")){
+    DB.parts.filter(pt=>pt.status==="waiting"&&!pt.worker_id).forEach(pt=>{
+      const l=DB.lines.find(x=>x.id===pt.line_id); if(l&&activeLine(l)&&l.stage==="sew") myNew.push(pt);
+    });
+  }
+  if(specs.includes("sample")) DB.designs.filter(d=>d.stage==="sample"&&d.sample_worker_id===w.id&&!d.sample_started_at).forEach(d=>myNew.push(d));
+  if(myNew.length||myLate.length){
+    html+=`<div class="banner" style="${myLate.length?'':'background:var(--green-lt);color:var(--green-dk);border-color:#DCE5DA'}">
+      <div>${myNew.length?`${I.plus} <b>${myNew.length}</b> ${isAr()?"مهمة جديدة":"new tasks"}`:""}
+      ${myLate.length?` ${myNew.length?"·":""} ${I.clock} <b>${myLate.length}</b> ${isAr()?"متأخرة":"late"}`:""}</div></div>`;
+  }
   if(specs.includes("sample")) html+=workerSection("sample", sampleTasks(w));
   if(specs.includes("cut")) html+=workerSection("cut", cutTasks(w));
   if(specs.includes("sew")) html+=workerSection("sew", sewTasks(w));
@@ -1274,8 +1428,9 @@ function workerCard(l, mode, part){
   const p=product(l.product_id), o=order(l.order_id);
   const working = part? part.status==="working" : (l.stage_status==="working" && l.claimed_by===session.workerId);
   const ev = DB.events.find(e=> (part? e.part_id===part.id : (e.line_id===l.id&&!e.part_id)) && e.stage===l.stage && e.started_at && !e.finished_at);
-  const m = ev? mins(ev.started_at,new Date().toISOString()) : 0;
-  const est = mode==="cut"? p.est_cut_min : mode==="sew"? p.est_sew_min : null;
+  const m = ev? workedMins(ev.started_at) : 0;
+  const est = mode==="cut"? p.est_cut_min
+    : mode==="sew"? ((part&&(p.est_parts||{})[part.part_ar]) || p.est_sew_min) : null;
   const over = est? m > est*(l.qty||1) : m > 480;
   const meta = `<div class="wmeta">
       ${mode==="cut"?`<div><div class="bignum">${esc(l.size||"—")}</div><div class="biglabel">${t("age")}</div></div>`:""}
@@ -1294,12 +1449,34 @@ function workerCard(l, mode, part){
     </div>
     ${meta}
     ${mode==="pack"&&l.prep_note?`<div class="note-box">${l.prep_note==="clean"?I.clean+" "+t("clean"):I.iron+" "+t("iron")}</div>`:""}
+    ${mode==="pack"? setStatusBox(l) : ""}
     ${specsTable(l.custom_specs)}
-    ${o.repair_reason?`<div class="note-box">${I.fix} ${esc(o.repair_reason)}</div>`:""}
+    ${l.fix_reason?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.fix} <b>${esc(l.fix_reason)}</b>
+      ${l.fix_image?`<div><img class="thumb" src="${esc(l.fix_image)}" onclick="window.open('${esc(l.fix_image)}')"></div>`:""}</div>`:""}
+    ${o.repair_reason?`<div class="note-box">${I.fix} <b>${esc(o.repair_reason)}</b>
+      ${o.repair_note?`<div>${esc(o.repair_note)}</div>`:""}
+      ${o.repair_image?`<div><img class="thumb" src="${esc(o.repair_image)}" onclick="window.open('${esc(o.repair_image)}')"></div>`:""}</div>`:""}
     ${ev?`<div class="timer ${over?'t-late':'t-ok'}">⏱ ${m} ${t("minutes")}</div>`:""}
-    ${working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} ${t("done")}</button>`
+    ${mode==="pack"&&!setReady(l)? `<button class="btn btn-ghost btn-big" disabled style="opacity:.55">${isAr()?"ناقص قطع الطقم":"Waiting for set pieces"}</button>`
+     : working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} ${t("done")}</button>`
              : `<button class="btn btn-ink btn-big" onclick="wStart('${l.id}','${part?part.id:""}')">${I.play} ${t("start")}</button>`}
   </div>`;
+}
+/* تجميع الطقم: كل سطور نفس الأمر لنفس المنتج والمقاس لازم توصل التجهيز */
+function setSiblings(l){
+  return DB.lines.filter(x=>x.order_id===l.order_id && x.product_id===l.product_id && (x.size||"")===(l.size||""));
+}
+function setReady(l){
+  const sibs=setSiblings(l);
+  return sibs.every(x=>x.stage==="pack"||x.stage==="shipped");
+}
+function setStatusBox(l){
+  const sibs=setSiblings(l);
+  if(sibs.length<2) return "";
+  const missing=sibs.filter(x=>x.stage!=="pack"&&x.stage!=="shipped");
+  return missing.length
+    ? `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.pack} ${isAr()?"ناقص":"Missing"}: ${missing.map(x=>`${esc(pname(product(x.product_id)))} (${t(STAGE_KEY[x.stage]||x.stage)})`).join(" · ")}</div>`
+    : `<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${I.done} ${isAr()?"كل قطع الطقم جاهزة":"Set complete"}</div>`;
 }
 async function wStart(lineId, partId){
   if(myBreak()) return alert(t("onBreak"));
