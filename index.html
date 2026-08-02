@@ -103,6 +103,19 @@
   .moodgrid .imgwrap:nth-child(5n+1){grid-row:span 2;grid-column:span 2;}
   .moodgrid .imgwrap:nth-child(5n+4){grid-row:span 2;}
   .moodimg{width:100%;height:100%;object-fit:cover;display:block;}
+  /* شريط عنوان الكولكشن */
+  .colhead{display:flex;align-items:center;gap:10px;background:var(--wine);color:#fff;
+    border-radius:14px;padding:12px 14px;margin-bottom:16px;}
+  .colhead-mid{flex:1;text-align:center;min-width:0;}
+  .colhead-name{font-weight:800;font-size:19px;line-height:1.25;}
+  [dir="rtl"] .colhead-name{font-family:'Aref Ruqaa',serif;font-size:23px;}
+  .colhead-sub{font-size:12px;opacity:.85;margin-top:2px;}
+  .colback{background:rgba(255,255,255,.18);border:0;color:#fff;width:38px;height:38px;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .colback:hover{background:rgba(255,255,255,.3);}
+  [dir="rtl"] .colback svg{transform:scaleX(-1);}
+  .colhead .rowbtn{color:#fff;}
+  .colhead .rowbtn:hover{background:rgba(255,255,255,.2);color:#fff;}
   .colcard{display:flex;gap:12px;align-items:center;cursor:pointer;}
   .colbar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:8px;}
   .colbar i{display:block;height:100%;background:var(--green);}
@@ -221,7 +234,7 @@ function applyDir(){
 /* ================= الرموز ================= */
 const I = {
   cut:'<svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="8.2" y1="7.8" x2="20" y2="19.5"/><line x1="8.2" y1="16.2" x2="20" y2="4.5"/></svg>',
-  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M20 4 8 16"/><path d="M20 4c-1 4-4 9-8 12l-5 3 3-5C13 10 16 6 20 4z"/><circle cx="18.4" cy="5.6" r="1.1"/></svg>',
+  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M2.5 20.5h19"/><path d="M4.5 20.5v-2.5h15v2.5"/><path d="M17 18V7.5a1.5 1.5 0 0 0-1.5-1.5H8.5"/><path d="M8.5 6v5.5"/><path d="M8.5 11.5v3"/><path d="M7 15h3"/><circle cx="20.2" cy="9.2" r="1.8"/><path d="M13 6V4.5"/></svg>',
   emb:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
   qc:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
   iron:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 16h18v3H3z"/><path d="M4 16c0-5 3-8 8-8h8v8"/></svg>',
@@ -1287,18 +1300,19 @@ function renderCollection(cid){
   const c=collection_(cid);
   const ds=DB.designs.filter(d=>d.collection_id===cid);
   el("tabbody").innerHTML=`
-    <div class="lineitem" style="border:0">
-      <button class="btn btn-ghost" onclick="window._curCol=null;render()">← ${isAr()?"الكولكشنات":"Collections"}</button>
+    <div class="colhead">
+      <button class="colback" onclick="window._curCol=null;render()" title="${isAr()?"الكولكشنات":"Collections"}">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="colhead-mid">
+        <div class="colhead-name">${esc(c.name)}</div>
+        <div class="colhead-sub">${ds.length} ${isAr()?"تصميم":"designs"}${c.target_date?` · ${isAr()?"التسليم":"due"} ${fmtD(c.target_date)}`:""}</div>
+      </div>
       ${session.role==="manager"? rowMenu(esc(c.name),[
         {label:isAr()?"حذف الكولكشن فقط":"Delete collection", icon:I.trash, danger:true, fn:async()=>{await sb.from("collections").delete().eq("id",cid); window._curCol=null; await refresh();}},
         {label:isAr()?"حذف الكولكشن وكل تصاميمه":"Delete with designs", icon:I.trash, danger:true, fn:async()=>{await sb.from("design_projects").delete().eq("collection_id",cid); await sb.from("collections").delete().eq("id",cid); window._curCol=null; await refresh();}}
-      ]):""}
+      ]):`<span style="width:38px"></span>`}
     </div>
-    <div class="card">
-      <div class="title">${esc(c.name)}</div>
-      <div class="muted">${c.target_date?`${isAr()?"الانتهاء من التصميم":"Deadline"}: ${esc(c.target_date)}`:""}</div>
-      ${c.notes?`<div class="note-box">${esc(c.notes)}</div>`:""}
-    </div>
+    ${c.notes?`<div class="note-box">${esc(c.notes)}</div>`:""}
     <button class="btn btn-ink btn-big" onclick="newDesign('${cid}')">${I.plus} ${isAr()?"تصميم جديد":"New design"}</button>
     ${DSTAGES.map(st=>{
       const list=ds.filter(d=>(d.stage||"idea")===st);
