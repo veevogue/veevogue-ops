@@ -96,16 +96,25 @@
   .tabs button.on .badge{background:#fff;color:var(--ink);}
   hr.sep{border:0;border-top:1px solid var(--line);margin:22px 0;}
   /* مود بورد */
-  .moodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px;
-    background:var(--soft);padding:12px;border-radius:14px;border:1px solid var(--line);}
-  .moodgrid .imgwrap{display:block;}
-  .moodimg{width:100%;height:130px;object-fit:cover;border-radius:10px;display:block;}
+  /* مود بورد موزاييك — توزيع جميل مع أزرار حذف داخل كل صورة */
+  .moodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));grid-auto-rows:104px;gap:10px;margin-top:8px;
+    background:var(--soft);padding:12px;border-radius:16px;border:1px solid var(--line);}
+  .moodgrid .imgwrap{display:block;overflow:hidden;border-radius:12px;}
+  .moodgrid .imgwrap:nth-child(5n+1){grid-row:span 2;grid-column:span 2;}
+  .moodgrid .imgwrap:nth-child(5n+4){grid-row:span 2;}
+  .moodimg{width:100%;height:100%;object-fit:cover;display:block;}
   .colcard{display:flex;gap:12px;align-items:center;cursor:pointer;}
   .colbar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:8px;}
   .colbar i{display:block;height:100%;background:var(--green);}
   .rowbtn{background:transparent;border:0;font-size:20px;line-height:1;color:var(--gray);cursor:pointer;padding:4px 10px;border-radius:8px;}
   .rowbtn:hover{background:var(--soft);color:var(--ink);}
-  .swipe{position:relative;}
+  .swipe{position:relative;overflow:hidden;}
+  .swipefront{position:relative;z-index:2;background:var(--paper);display:flex;justify-content:space-between;
+    align-items:center;gap:8px;flex-wrap:wrap;width:100%;}
+  .swipeback{position:absolute;inset:0;background:var(--wine-lt);display:flex;align-items:center;
+    justify-content:flex-end;padding:0 18px;z-index:1;color:var(--wine);}
+  [dir="rtl"] .swipeback{justify-content:flex-start;}
+  .swipeback svg{width:26px;height:26px;}
   .overlay{position:fixed;inset:0;background:rgba(24,24,27,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
     z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
@@ -212,7 +221,7 @@ function applyDir(){
 /* ================= الرموز ================= */
 const I = {
   cut:'<svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="8.2" y1="7.8" x2="20" y2="19.5"/><line x1="8.2" y1="16.2" x2="20" y2="4.5"/></svg>',
-  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 19h16a2 2 0 0 0 2-2V8h-6"/><path d="M3 19V9a2 2 0 0 1 2-2h10v5"/><path d="M17 12v4"/><path d="M17 17.5v2"/><path d="M6 19v2M20 19v2"/></svg>',
+  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M20 4 8 16"/><path d="M20 4c-1 4-4 9-8 12l-5 3 3-5C13 10 16 6 20 4z"/><circle cx="18.4" cy="5.6" r="1.1"/></svg>',
   emb:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
   qc:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
   iron:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 16h18v3H3z"/><path d="M4 16c0-5 3-8 8-8h8v8"/></svg>',
@@ -332,7 +341,9 @@ function workedMins(startISO, endISO){
   return Math.max(0, Math.round((stop-s)/60000));
 }
 function pimg(p){return (p.images&&p.images[0])||null;}
-function thumb(p,cls){const u=pimg(p);return u?`<img class="${cls||'thumb'}" src="${esc(u)}">`:`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
+function thumb(p,cls){const u=pimg(p);
+  return u?`<img class="${cls||'thumb'}" src="${esc(u)}" onclick="event.stopPropagation();viewImg('${esc(u)}')" style="cursor:zoom-in">`
+         :`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
 function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();applyDir();render();}
 function setSession(s){s.day=today();session=s;localStorage.setItem("vv2_session",JSON.stringify(s));applyDir();render();}
 /* ضغط الصور قبل الرفع — يوفر ~90% من المساحة */
@@ -557,17 +568,38 @@ async function delRow(table, id, after){
   if(error) return alert(error.message);
   if(after) await after(); else await refresh();
 }
-/* دعم السحب على الصفوف في الجوال */
+/* سحب على الصف نفسه — يتحرك ويكشف الإجراءات خلفه (مثل واتساب) */
 function enableSwipe(){
   document.querySelectorAll(".swipe:not([data-sw])").forEach(row=>{
-    row.dataset.sw="1"; let x0=null;
-    row.addEventListener("touchstart",e=>{x0=e.touches[0].clientX;},{passive:true});
-    row.addEventListener("touchmove",e=>{
-      if(x0===null) return;
-      const dx=e.touches[0].clientX-x0;
-      if(Math.abs(dx)>40){ const b=row.querySelector(".rowbtn"); if(b){ x0=null; b.click(); } }
+    row.dataset.sw="1";
+    const btn=row.querySelector(".rowbtn"); if(!btn) return;
+    /* لوح الإجراءات خلف الصف */
+    const back=document.createElement("div");
+    back.className="swipeback";
+    back.innerHTML=`<span>${I.trash}</span>`;
+    row.appendChild(back);
+    const inner=document.createElement("div");
+    inner.className="swipefront";
+    while(row.firstChild && row.firstChild!==back) inner.appendChild(row.firstChild);
+    row.insertBefore(inner,back);
+
+    let x0=null,dx=0,active=false;
+    const rtl=document.documentElement.dir==="rtl";
+    inner.addEventListener("touchstart",e=>{x0=e.touches[0].clientX;active=true;inner.style.transition="none";},{passive:true});
+    inner.addEventListener("touchmove",e=>{
+      if(!active) return;
+      dx=e.touches[0].clientX-x0;
+      const open = rtl? Math.max(0,dx) : Math.min(0,dx);
+      if(Math.abs(open)>4) inner.style.transform=`translateX(${Math.max(-90,Math.min(90,open))}px)`;
     },{passive:true});
-    row.addEventListener("touchend",()=>{x0=null;},{passive:true});
+    inner.addEventListener("touchend",()=>{
+      if(!active) return; active=false;
+      inner.style.transition="transform .18s ease";
+      const passed = rtl? dx>60 : dx<-60;
+      inner.style.transform="translateX(0)";
+      if(passed) setTimeout(()=>btn.click(),120);
+      dx=0;
+    },{passive:true});
   });
 }
 /* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
@@ -1861,7 +1893,7 @@ function sampleTasks(w){
     const chart=d.size_chart||{}; const sizes=Object.keys(chart);
     return {working:!!running, html:`<div class="wcard">
       <div class="wtop">
-        ${imgs[0]?`<img class="thumb" src="${esc(imgs[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+        ${imgs[0]?`<img class="thumb" src="${esc(imgs[0])}" onclick="viewImg('${esc(imgs[0])}')" style="cursor:zoom-in">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
         <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}
           ${rev?`<span class="chip wine">${I.fix} ${isAr()?"تعديل":"REV"} ${rev}</span>`:""}</div>
         <div class="muted">${esc(collection_(d.collection_id).name||"")}</div></div>
