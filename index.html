@@ -96,21 +96,25 @@
   .tabs button.on .badge{background:#fff;color:var(--ink);}
   hr.sep{border:0;border-top:1px solid var(--line);margin:22px 0;}
   /* مود بورد */
-  .moodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:8px;
-    background:var(--soft);padding:10px;border-radius:14px;border:1px solid var(--line);}
-  .moodgrid .imgwrap:nth-child(4n+1){grid-row:span 2;}
-  .moodimg{width:100%;height:100%;min-height:110px;object-fit:cover;border-radius:10px;display:block;}
+  .moodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:8px;
+    background:var(--soft);padding:12px;border-radius:14px;border:1px solid var(--line);}
+  .moodgrid .imgwrap{display:block;}
+  .moodimg{width:100%;height:130px;object-fit:cover;border-radius:10px;display:block;}
   .colcard{display:flex;gap:12px;align-items:center;cursor:pointer;}
   .colbar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:8px;}
   .colbar i{display:block;height:100%;background:var(--green);}
   .rowbtn{background:transparent;border:0;font-size:20px;line-height:1;color:var(--gray);cursor:pointer;padding:4px 10px;border-radius:8px;}
   .rowbtn:hover{background:var(--soft);color:var(--ink);}
   .swipe{position:relative;}
-  .overlay{position:fixed;inset:0;background:rgba(28,27,26,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
+  .overlay{position:fixed;inset:0;background:rgba(24,24,27,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
-  .imgrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
-  .imgrow .rm{position:absolute;top:-6px;inset-inline-start:-6px;background:var(--bad);color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;}
-  .imgwrap{position:relative;}
+  .imgrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+  .imgwrap{position:relative;display:inline-block;line-height:0;}
+  .rm{position:absolute;top:6px;inset-inline-end:6px;background:var(--wine);color:#fff;border:2px solid #fff;
+    border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:15px;font-weight:800;line-height:1;
+    display:flex;align-items:center;justify-content:center;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.35);padding:0;}
+  .rm:hover{background:var(--wine-dk);transform:scale(1.08);}
   .timer{font-family:'Inter';font-size:13px;font-weight:700;}
   .t-ok{color:var(--green);} .t-late{color:var(--wine);}
   .wcard{border:1px solid var(--line);border-radius:14px;background:var(--paper);padding:14px;margin-bottom:10px;}
@@ -208,7 +212,7 @@ function applyDir(){
 /* ================= الرموز ================= */
 const I = {
   cut:'<svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="8.2" y1="7.8" x2="20" y2="19.5"/><line x1="8.2" y1="16.2" x2="20" y2="4.5"/></svg>',
-  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M20 4 8 16"/><path d="M20 4c-1 4-4 9-8 12l-5 3 3-5C13 10 16 6 20 4z"/><circle cx="18.4" cy="5.6" r="1.1"/></svg>',
+  sew:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 19h16a2 2 0 0 0 2-2V8h-6"/><path d="M3 19V9a2 2 0 0 1 2-2h10v5"/><path d="M17 12v4"/><path d="M17 17.5v2"/><path d="M6 19v2M20 19v2"/></svg>',
   emb:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>',
   qc:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
   iron:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 16h18v3H3z"/><path d="M4 16c0-5 3-8 8-8h8v8"/></svg>',
@@ -230,7 +234,7 @@ const I = {
   design:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   fix:'<svg class="ico" viewBox="0 0 24 24"><path d="M14 7l3 3"/><path d="M5 19l9-9"/><path d="M18.5 2.5a3 3 0 0 1 3 3L19 8l-3-3z"/></svg>',
   cog:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
-  sample:'<svg class="ico" viewBox="0 0 24 24"><path d="M9 3h6v4l4 14H5L9 7z"/><path d="M8 12h8"/></svg>',
+  sample:'<svg class="ico" viewBox="0 0 24 24"><path d="M9 3h6l3 3-3 2v2l3 11H6l3-11V8L6 6z"/><path d="M9 3a3 3 0 0 0 6 0"/></svg>',
   coffee:'<svg class="ico" viewBox="0 0 24 24"><path d="M3 9h14v6a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><path d="M17 10h2.5a2.5 2.5 0 0 1 0 5H17"/><path d="M7 2v3M11 2v3"/></svg>'
 };
 
@@ -997,10 +1001,10 @@ function showProductForm(pid){
     <div class="grid2"><div><label>${isAr()?"الاسم (عربي)":"Name (AR)"}</label><input id="p_name" value="${esc(p.name||"")}"></div>
     <div><label>${isAr()?"الاسم (إنجليزي)":"Name (EN)"}</label><input id="p_name_en" dir="ltr" value="${esc(p.name_en||"")}"></div></div>
     <label>${isAr()?"صور المنتج":"Images"}</label>
-    <div class="imgrow">${(p.images||[]).map((u,i)=>`<div class="imgwrap"><img class="thumb" src="${esc(u)}"><button class="rm" onclick="rmProdImg(${i})">✕</button></div>`).join("")}</div>
+    <div class="imgrow" id="pimgRow"></div>
     <input type="file" id="p_imgs" accept="image/*" multiple>
     <label>${isAr()?"ملفات الباترون":"Patterns"}</label>
-    <div class="pillrow">${(p.patterns||[]).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer" onclick="rmProdPat(${i})">✕</b></span>`).join("")}</div>
+    <div class="pillrow" id="ppatRow"></div>
     <input type="file" id="p_pats" multiple>
     <label>${isAr()?"كود المنتج (SKU)":"SKU"}</label><input id="p_sku" dir="ltr" value="${esc(p.sku||"")}">
     <label>${isAr()?"الخامات المطلوبة لكل قطعة":"Bill of materials"}</label>
@@ -1060,7 +1064,7 @@ function showProductForm(pid){
   window._pimgs=[...(p.images||[])]; window._ppats=[...(p.patterns||[])];
   window._estParts=JSON.parse(JSON.stringify(p.est_parts||{}));
   window._bom=JSON.parse(JSON.stringify(p.bom||[]));
-  redrawChart(); redrawParts(); redrawBom();
+  redrawChart(); redrawParts(); redrawBom(); redrawPimgs(); redrawPats();
 }
 /* ===== الخامات في بطاقة المنتج ===== */
 function material(id){return (DB.materials||[]).find(m=>m.id===id)||{name:"؟",unit:""};}
@@ -1118,8 +1122,19 @@ function addCustomAge(){
     `<span class="pill on" data-a="${esc(a)}" onclick="this.remove();syncAges()">${esc(a)} ✕</span>`);
   el("p_newage").value=""; syncAges();
 }
-function rmProdImg(i){window._pimgs.splice(i,1);document.querySelectorAll(".imgwrap")[i]?.remove();}
-function rmProdPat(i){window._ppats[i]=null;event.target.parentElement.remove();}
+function redrawPimgs(){
+  const box=el("pimgRow"); if(!box) return;
+  box.innerHTML=(window._pimgs||[]).map((u,i)=>`<div class="imgwrap">
+    <img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">
+    <button class="rm" onclick="event.stopPropagation();rmProdImg(${i})">✕</button></div>`).join("");
+}
+function rmProdImg(i){ window._pimgs.splice(i,1); redrawPimgs(); }
+function redrawPats(){
+  const box=el("ppatRow"); if(!box) return;
+  box.innerHTML=(window._ppats||[]).filter(Boolean).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)}
+    <b style="cursor:pointer;color:var(--wine)" onclick="rmProdPat(${i})">✕</b></span>`).join("");
+}
+function rmProdPat(i){ const arr=(window._ppats||[]).filter(Boolean); arr.splice(i,1); window._ppats=arr; redrawPats(); }
 function chartSizes(){return el("p_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);}
 function activeRows(){return [...document.querySelectorAll("#rowPills .pill.on")].map(x=>x.dataset.k);}
 function captureChart(){
@@ -1343,14 +1358,23 @@ function openDesign(id){
     setTimeout(redrawDChart,0);
   } else if(st==="sample"){
     const running=d.sample_started_at&&!d.sample_finished_at;
-    body=`<div class="note-box">${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${mins(d.sample_started_at,new Date().toISOString())} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}</div>
+    const rev=(d.revisions||[]).length;
+    body=`<div class="note-box" ${rev?'style="background:var(--wine-lt);color:var(--wine-dk)"':''}>
+      ${rev? `${I.fix} <b>${isAr()?`أُرسلت للتعديل — الجولة ${rev+1}`:`Revision ${rev+1}`}</b><br>`:""}
+      ${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${workedMins(d.sample_started_at)} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}</div>
+      ${rev?`<div class="note-box"><b>${isAr()?"الملاحظات المرسلة له:":"Notes sent:"}</b>
+        ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
       ${imgs(d.sketches)}
       ${d.materials?`<div class="note-box">${esc(d.materials)}</div>`:""}
-      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">← ${isAr()?"تعديل التجهيز":"Edit prep"}</button>`;
+      ${designHistory(d)}
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">← ${isAr()?"تعديل الخامات والقياسات":"Edit prep"}</button>`;
   } else if(st==="notes"){
-    body=`<div class="note-box">${I.done} ${isAr()?"العينة انفذت":"Sample done"} — ${esc(wname(worker(d.sample_worker_id)))}
+    const rev=(d.revisions||[]).length;
+    body=`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${I.done}
+      <b>${isAr()?(rev? `خلّص التعديل — الجولة ${rev+1}`:"خلّص العينة"):"Sample done"}</b> — ${esc(wname(worker(d.sample_worker_id)))}
       ${d.sample_started_at&&d.sample_finished_at?` · ${mins(d.sample_started_at,d.sample_finished_at)} ${t("minutes")}`:""}</div>
       ${imgs(d.sketches)}
+      ${designHistory(d)}
       <hr class="sep">
       <div class="sechead">${I.fix} ${isAr()?"ملاحظات على العينة":"SAMPLE NOTES"}</div>
       ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
@@ -1411,8 +1435,29 @@ async function sendToSample(id){
   closeSheet(); await refresh();
 }
 async function backToSample(id){
-  await sb.from("design_projects").update({stage:"sample", sample_started_at:null, sample_finished_at:null}).eq("id",id);
+  const d=design_(id);
+  const notes=(d.sample_notes||[]);
+  if(!notes.length) return alert(isAr()?"اكتب الملاحظات المطلوب تعديلها أولاً":"Add notes first");
+  const rev={n:(d.revisions||[]).length+1, sent_at:new Date().toISOString(),
+    worked:(d.sample_started_at&&d.sample_finished_at)? mins(d.sample_started_at,d.sample_finished_at):null,
+    notes:notes.map(n=>n.t)};
+  await sb.from("design_projects").update({
+    stage:"sample", sample_started_at:null, sample_finished_at:null,
+    revisions:[...(d.revisions||[]), rev]
+  }).eq("id",id);
   closeSheet(); await refresh();
+}
+/* سجل التصميم */
+function designHistory(d){
+  const rows=[];
+  (d.revisions||[]).forEach(r=>{
+    rows.push(`<div class="note-box"><b>${I.done} ${isAr()?"تنفيذ العينة":"Sample"} ${r.n}</b>
+      ${r.worked?` — ${r.worked} ${t("minutes")}`:""} <span class="muted">${esc((r.sent_at||"").slice(0,10))}</span>
+      <div style="margin-top:4px">${I.fix} ${isAr()?"أُرسلت للتعديل بالملاحظات:":"Sent back:"}</div>
+      ${(r.notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n)}</div>`).join("")}</div>`);
+  });
+  if(!rows.length) return "";
+  return `<hr class="sep"><div class="sechead">${I.clock} ${isAr()?"سجل العينة":"HISTORY"}</div>${rows.join("")}`;
 }
 function approveSample(id){
   const d=design_(id);
@@ -1811,21 +1856,25 @@ function sampleTasks(w){
   return DB.designs.filter(d=>d.stage==="sample" && d.sample_worker_id===w.id).map(d=>{
     const running=d.sample_started_at&&!d.sample_finished_at;
     const m=running? mins(d.sample_started_at,new Date().toISOString()):0;
-    const imgs=[...(d.sketches||[]),...(d.mood||[])];
+    const imgs=[...(d.sketches||[])];  /* السكيتشات والأمثلة فقط — بدون المود بورد */
+    const rev=(d.revisions||[]).length;
     const chart=d.size_chart||{}; const sizes=Object.keys(chart);
     return {working:!!running, html:`<div class="wcard">
       <div class="wtop">
         ${imgs[0]?`<img class="thumb" src="${esc(imgs[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
-        <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
+        <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}
+          ${rev?`<span class="chip wine">${I.fix} ${isAr()?"تعديل":"REV"} ${rev}</span>`:""}</div>
         <div class="muted">${esc(collection_(d.collection_id).name||"")}</div></div>
       </div>
-      ${imgs.length>1?`<div class="imgrow">${imgs.slice(1,5).map(u=>`<img class="thumb" src="${esc(u)}" onclick="window.open('${esc(u)}')">`).join("")}</div>`:""}
+      ${imgs.length>1?`<div class="imgrow">${imgs.slice(1,5).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`:""}
       ${d.materials?`<div class="note-box"><b>${isAr()?"الخامات":"MATERIALS"}:</b> ${esc(d.materials)}</div>`:""}
       ${sizes.length?`<div class="note-box"><b>${t("sizeChart")}</b>
         <div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
         ${MEAS.filter(mm=>sizes.some(s=>chart[s]?.[mm[0]])).map(mm=>`<tr><td>${isAr()?mm[1]:mm[2]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[mm[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table></div></div>`:""}
-      ${(d.sample_notes||[]).length?`<div class="note-box"><b>${I.fix} ${isAr()?"مطلوب تعديل":"FIX LIST"}</b>
-        ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
+      ${(d.sample_notes||[]).length?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">
+        <b>${I.fix} ${isAr()?"مطلوب تعديل":"FIX LIST"}</b>
+        ${(d.sample_notes||[]).map((n,i)=>`<div style="margin-top:6px">${i+1}. ${esc(n.t)}
+          ${n.img?`<div><img class="thumb" src="${esc(n.img)}" onclick="viewImg('${esc(n.img)}')"></div>`:""}</div>`).join("")}</div>`:""}
       ${running?`<div class="timer t-ok">⏱ ${m} ${t("minutes")}</div>`:""}
       ${running? `<button class="btn btn-ok btn-big" onclick="sampleDone('${d.id}')">${I.done} ${t("done")}</button>`
                : `<button class="btn btn-ink btn-big" onclick="sampleStart('${d.id}')">${I.play} ${t("start")}</button>`}
