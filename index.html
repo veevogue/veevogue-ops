@@ -103,6 +103,9 @@
   .colcard{display:flex;gap:12px;align-items:center;cursor:pointer;}
   .colbar{height:6px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:8px;}
   .colbar i{display:block;height:100%;background:var(--green);}
+  .rowbtn{background:transparent;border:0;font-size:20px;line-height:1;color:var(--gray);cursor:pointer;padding:4px 10px;border-radius:8px;}
+  .rowbtn:hover{background:var(--soft);color:var(--ink);}
+  .swipe{position:relative;}
   .overlay{position:fixed;inset:0;background:rgba(28,27,26,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
   .sheet{background:var(--paper);border-radius:16px;max-width:640px;width:100%;padding:18px;margin:10px 0 40px;}
   .imgrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
@@ -455,8 +458,8 @@ function render(){
   el("whoami").textContent = session? (session.role==="manager"?t("manager"): session.role==="creative"?t("creative"): wname(worker(session.workerId))) : "";
   if(!session){ stopAuto(); return renderLogin(); }
   if(session.role==="worker"||session.role==="creative") startAuto(); else stopAuto();
-  if(session.role==="manager"||session.role==="creative") return renderDesk();
-  return renderWorker();
+  if(session.role==="manager"||session.role==="creative"){ renderDesk(); setTimeout(enableSwipe,0); return; }
+  renderWorker();
 }
 
 /* ================= الدخول ================= */
@@ -510,10 +513,67 @@ function openSheet(html){
   document.body.appendChild(ov);
 }
 function closeSheet(){const o=el("ov"); if(o)o.remove();}
+
+/* ================= نظام الإجراءات والحذف الموحّد ================= */
+let ACT={};
+/* rowMenu(title, [{label,icon,fn,danger}]) → زر ⋮ + سحب على الصف */
+function rowMenu(title, actions){
+  const key="a"+Math.random().toString(36).slice(2,9);
+  ACT[key]={title, actions};
+  return `<button class="rowbtn" onclick="event.stopPropagation();openActions('${key}')" title="${esc(title)}">⋮</button>`;
+}
+function openActions(key){
+  const a=ACT[key]; if(!a) return;
+  openSheet(`<div class="title">${esc(a.title)}</div>
+    ${a.actions.map((x,i)=>`<button class="btn ${x.danger?'btn-bad':'btn-ghost'} btn-big" onclick="runAction('${key}',${i})">${x.icon||""} ${esc(x.label)}</button>`).join("")}`);
+}
+function runAction(key,i){
+  const a=ACT[key]; if(!a) return;
+  const act=a.actions[i];
+  closeSheet();
+  if(act.danger) confirmDelete(a.title, act.fn);
+  else act.fn();
+}
+function confirmDelete(label, fn){
+  openSheet(`<div style="text-align:center">
+    <div class="title" style="color:var(--wine)">${I.trash} ${isAr()?"تأكيد الحذف":"Confirm delete"}</div>
+    <div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${esc(label)}</div>
+    <p class="muted">${isAr()?"متأكد؟ ما تقدر ترجع بعد الحذف.":"This cannot be undone."}</p>
+    <button class="btn btn-bad btn-big" onclick="closeSheet();(${fn.name||'window._delFn'})()">${isAr()?"نعم، احذف":"Yes, delete"}</button>
+    <button class="btn btn-ghost btn-big" onclick="closeSheet()">${isAr()?"لا، رجوع":"Cancel"}</button>
+  </div>`);
+  window._delFn=async()=>{ await fn(); };
+  /* استبدال الاستدعاء ليعمل دائماً */
+  const b=document.querySelector("#ov .btn-bad");
+  if(b) b.onclick=async()=>{ closeSheet(); await fn(); };
+}
+/* حذف عام لأي صف */
+async function delRow(table, id, after){
+  const {error}=await sb.from(table).delete().eq("id",id);
+  if(error) return alert(error.message);
+  if(after) await after(); else await refresh();
+}
+/* دعم السحب على الصفوف في الجوال */
+function enableSwipe(){
+  document.querySelectorAll(".swipe:not([data-sw])").forEach(row=>{
+    row.dataset.sw="1"; let x0=null;
+    row.addEventListener("touchstart",e=>{x0=e.touches[0].clientX;},{passive:true});
+    row.addEventListener("touchmove",e=>{
+      if(x0===null) return;
+      const dx=e.touches[0].clientX-x0;
+      if(Math.abs(dx)>40){ const b=row.querySelector(".rowbtn"); if(b){ x0=null; b.click(); } }
+    },{passive:true});
+    row.addEventListener("touchend",()=>{x0=null;},{passive:true});
+  });
+}
 /* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
 const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","perf","settings","archive"];
 const TABS_CREATIVE=["board","design","products","quality"];
-function myTabs(){return session.role==="manager"? TABS_MANAGER : TABS_CREATIVE;}
+function myTabs(){
+  if(session.role==="manager") return TABS_MANAGER;
+  const custom=(DB.settings||{}).creative_tabs;
+  return (custom&&custom.length)? custom : TABS_CREATIVE;
+}
 function renderDesk(){
   const tabs=myTabs();
   if(!tabs.includes(mTab)) mTab=tabs[0];
@@ -547,7 +607,13 @@ function stageStats(){
   const packN=act.filter(l=>l.stage==="pack").length;
   const extSent=act.filter(l=>(l.stage==="ext"||l.stage==="emb")&&l.stage_status==="sent").length;
   const extRec=DB.jobs.filter(j=>j.status==="received").reduce((a,j)=>a+(j.line_ids||[]).length,0);
+  const dActive=DB.designs.filter(d=>(d.stage||"idea")!=="approved");
+  const dGo=DB.designs.filter(d=>d.stage==="sample"&&d.sample_started_at&&!d.sample_finished_at).length;
+  const dWait=DB.designs.filter(d=>d.stage==="sample"&&!d.sample_started_at).length;
   return `<div class="statrow">
+    <div class="stat" style="cursor:pointer;${sel==='design'?'border-color:var(--ink);border-width:2px;':''}" onclick="window._bFilter=(window._bFilter==='design'?null:'design');render()">${I.design}
+      <div class="nums"><span class="n-all">${dActive.length}</span><span class="n-go">${dGo}</span><span class="n-wait">${dWait}</span></div>
+      <div class="cap">${t("design")}</div></div>
     ${box("cut",I.cut,c.all,c.go,c.wait)}
     ${box("emb",I.emb,e.all,e.go,e.wait)}
     ${box("sew",I.sew,s.all,s.go,s.wait)}
@@ -594,6 +660,19 @@ function tabBoard(){
 }
 /* عرض مفلتر لمرحلة واحدة: الشغال فوق ثم اللي ما بدأ */
 function stageFilterView(stg){
+  if(stg==="design"){
+    const ds=DB.designs.filter(d=>(d.stage||"idea")!=="approved");
+    if(!ds.length) return `<div class="empty">—</div>`;
+    return DSTAGES.filter(s=>s!=="approved").map(st=>{
+      const list=ds.filter(d=>(d.stage||"idea")===st); if(!list.length) return "";
+      return `<div class="sechead">${dlab(st)} (${list.length})</div>`+list.map(d=>`<div class="card">
+        <div class="wtop">${(d.mood&&d.mood[0])||(d.sketches&&d.sketches[0])?`<img class="thumb" src="${esc((d.sketches&&d.sketches[0])||d.mood[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
+        <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
+        <div class="muted">${esc(collection_(d.collection_id).name||"")}${d.sample_worker_id?` · ${esc(wname(worker(d.sample_worker_id)))}`:""}</div></div></div>
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="mTab='design';window._curCol='${d.collection_id||""}';render();openDesign('${d.id}')">${t("open")} ←</button>
+      </div>`).join("");
+    }).join("");
+  }
   const act=DB.lines.filter(l=>activeLine(l)&&l.stage===stg);
   const rows=[];
   act.forEach(l=>{
@@ -634,23 +713,31 @@ function orderCard(o){
   const openIds=JSON.parse(localStorage.getItem("vv_open")||"[]");
   const isOpen=openIds.includes(o.id);
   const doneN=ls.filter(l=>l.stage==="shipped").length;
-  return `<div class="card">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;cursor:pointer" onclick="toggleOrder('${o.id}')">
-      <div class="title">${t("order")} #${o.order_no} <span class="chip wine">${esc(o.order_type)}</span> <span class="muted">${doneN}/${ls.length}</span></div>
-      <div class="muted">${o.due_date?(isLate(o)?`<span class="late">${t("late")} ${fmtD(o.due_date)}</span>`:`${t("due")} ${fmtD(o.due_date)}`):""} ${isOpen?"▾":"▸"}</div>
+  return `<div class="card swipe">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
+      <div style="flex:1;cursor:pointer" onclick="toggleOrder('${o.id}')">
+        <div class="title">${t("order")} #${o.order_no} <span class="chip wine">${esc(o.order_type)}</span> <span class="muted">${doneN}/${ls.length}</span></div>
+        <div class="muted">${o.due_date?(isLate(o)?`<span class="late">${t("late")} ${fmtD(o.due_date)}</span>`:`${t("due")} ${fmtD(o.due_date)}`):""} ${isOpen?"▾":"▸"}</div>
+      </div>
+      ${session.role==="manager"? rowMenu(`${t("order")} #${o.order_no}`,[
+        {label:isAr()?"قائمة الشراء":"Purchase list", icon:I.pack, fn:()=>showPurchase(o.id)},
+        {label:isAr()?"إلغاء الأمر":"Cancel order", icon:I.fix, fn:()=>cancelOrder(o.id)},
+        {label:isAr()?"حذف الأمر نهائياً":"Delete order", icon:I.trash, danger:true, fn:()=>delRow("orders",o.id)}
+      ]):""}
     </div>
     ${isOpen?`
       ${o.customer_ref?`<div class="muted">${t("invoice")}: ${esc(o.customer_ref)}</div>`:""}
       ${o.repair_reason?`<div class="muted">${t("reason")}: ${esc(o.repair_reason)}</div>`:""}
-      ${ls.map(l=>`<div class="lineitem">
-        <div><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
-        <div>${lineChip(l)} ${l.stage==="pack"&&session.role==="manager"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped}</button>`:""}</div>
+      ${ls.map(l=>`<div class="lineitem swipe">
+        <div style="flex:1"><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
+        <div>${lineChip(l)} ${l.stage==="pack"&&session.role==="manager"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped}</button>`:""}
+        ${session.role==="manager"? rowMenu(esc(pname(product(l.product_id)))+" "+esc(l.size||""),[
+          {label:isAr()?"إرجاع للقص":"Back to cut", icon:I.cut, fn:async()=>{await moveLine(l.id,"cut");await refresh();}},
+          {label:isAr()?"إرجاع للخياطة":"Back to sew", icon:I.sew, fn:async()=>{await moveLine(l.id,"sew");await refresh();}},
+          {label:isAr()?"حذف هذا السطر":"Delete line", icon:I.trash, danger:true, fn:()=>delRow("order_lines",l.id)}
+        ]):""}</div>
       </div>`).join("")}
       ${session.role==="manager"&&o.status==="جاري"&&ls.length&&ls.every(l=>l.stage==="shipped")?`<button class="btn btn-ink btn-big" onclick="closeOrder('${o.id}')">${t("closeOrder")} ✓</button>`:""}
-      ${session.role==="manager"?`<div class="pillrow" style="margin-top:8px">
-        <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="showPurchase('${o.id}')">${I.pack} ${isAr()?"قائمة الشراء":"Purchase list"}</button>
-        ${o.status==="جاري"?`<button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="cancelOrder('${o.id}')">${t("cancel")}</button>`:""}
-      </div>`:""}
     `:""}
   </div>`;
 }
@@ -718,7 +805,13 @@ function tabSettings(){
       ${DAYS.map(d=>`<span class="pill ${(s.work_days||[]).includes(d)?'on':''}" data-d="${d}" onclick="this.classList.toggle('on')">${t(d)}</span>`).join("")}
     </div>
     <label>${t("breakMin")}</label><input type="number" id="s_break" min="0" value="${s.break_minutes??30}">
-    ${session.role==="manager"?`<label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">`:""}
+    ${session.role==="manager"?`<hr class="sep">
+    <div class="title">${I.design} ${isAr()?"صلاحيات «الإبداع والجودة»":"Creative & QC access"}</div>
+    <div class="muted">${isAr()?"اختر التبويبات اللي تظهر لهم":"Pick their tabs"}</div>
+    <div class="pillrow" id="ctabPills">${TABS_MANAGER.map(k=>{
+      const on=((s.creative_tabs&&s.creative_tabs.length)?s.creative_tabs:TABS_CREATIVE).includes(k);
+      return `<span class="pill ${on?'on':''}" data-k="${k}" onclick="this.classList.toggle('on')">${t(k)}</span>`;}).join("")}</div>
+    <label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">`:""}
     <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
   </div>
@@ -737,6 +830,7 @@ async function saveSettings(){
   const days=[...document.querySelectorAll("#dayPills .pill.on")].map(x=>x.dataset.d);
   const row={work_start:el("s_start").value, work_end:el("s_end").value, work_days:days, break_minutes:+el("s_break").value||0, updated_at:new Date().toISOString()};
   if(el("s_cpin")) row.creative_pin=el("s_cpin").value||"4826";
+  if(el("ctabPills")) row.creative_tabs=[...document.querySelectorAll("#ctabPills .pill.on")].map(x=>x.dataset.k);
   const {data,error}=await sb.from("settings").upsert({id:1,...row}).select();
   if(error){ if(msg){msg.style.color="var(--wine)"; msg.textContent="✕ "+error.message;} return; }
   await loadAll();
@@ -885,7 +979,11 @@ function tabProducts(){
       <div class="pillrow" style="margin-top:10px">
         <button class="btn btn-ghost" onclick="showChart('${p.id}','')">${I.ruler}</button>
         <button class="btn btn-ghost" onclick="showProductForm('${p.id}')">${I.edit} ${t("edit")}</button>
-        ${session.role==="manager"?`<button class="btn btn-ghost" onclick="delProduct('${p.id}')">${I.trash}</button>`:""}
+        ${session.role==="manager"? rowMenu(esc(pname(p)),[
+          {label:isAr()?"تعديل":"Edit", icon:I.edit, fn:()=>showProductForm(p.id)},
+          {label:isAr()?"أرشفة (يختفي من القوائم)":"Archive", icon:I.file, fn:async()=>{await sb.from("products").update({active:false}).eq("id",p.id);await refresh();}},
+          {label:isAr()?"حذف المنتج نهائياً":"Delete product", icon:I.trash, danger:true, fn:()=>delProduct(p.id,true)}
+        ]):""}
       </div>
     </div>`).join("")||`<div class="empty">—</div>`}`;
 }
@@ -1064,10 +1162,21 @@ async function saveProduct(){
   else await sb.from("products").insert(row);
   closeSheet(); await refresh();
 }
-async function delProduct(id){
+async function delProduct(id, force){
   const used=DB.lines.some(l=>l.product_id===id);
-  if(used){ if(confirm(isAr()?"المنتج مستخدم — أرشفته؟":"In use — archive?")){await sb.from("products").update({active:false}).eq("id",id); await refresh();} return;}
-  if(confirm(isAr()?"حذف نهائي؟":"Delete?")){await sb.from("products").delete().eq("id",id); await refresh();}
+  if(used && !force){ await sb.from("products").update({active:false}).eq("id",id); await refresh(); return; }
+  if(used){
+    /* حذف كل ما يرتبط به أولاً */
+    const lids=DB.lines.filter(l=>l.product_id===id).map(l=>l.id);
+    for(const lid of lids){
+      await sb.from("stage_events").delete().eq("line_id",lid);
+      await sb.from("line_parts").delete().eq("line_id",lid);
+      await sb.from("order_lines").delete().eq("id",lid);
+    }
+    await sb.from("photoshoots").delete().eq("product_id",id);
+  }
+  await sb.from("products").delete().eq("id",id);
+  await refresh();
 }
 function showChart(pid, size){
   const p=product(pid); const chart=p.size_chart||{}; const sizes=Object.keys(chart);
@@ -1133,7 +1242,10 @@ function renderCollection(cid){
   el("tabbody").innerHTML=`
     <div class="lineitem" style="border:0">
       <button class="btn btn-ghost" onclick="window._curCol=null;render()">← ${isAr()?"الكولكشنات":"Collections"}</button>
-      ${session.role==="manager"?`<button class="btn btn-ghost" onclick="delCollection('${cid}')">${I.trash}</button>`:""}
+      ${session.role==="manager"? rowMenu(esc(c.name),[
+        {label:isAr()?"حذف الكولكشن فقط":"Delete collection", icon:I.trash, danger:true, fn:async()=>{await sb.from("collections").delete().eq("id",cid); window._curCol=null; await refresh();}},
+        {label:isAr()?"حذف الكولكشن وكل تصاميمه":"Delete with designs", icon:I.trash, danger:true, fn:async()=>{await sb.from("design_projects").delete().eq("collection_id",cid); await sb.from("collections").delete().eq("id",cid); window._curCol=null; await refresh();}}
+      ]):""}
     </div>
     <div class="card">
       <div class="title">${esc(c.name)}</div>
@@ -1145,9 +1257,12 @@ function renderCollection(cid){
       const list=ds.filter(d=>(d.stage||"idea")===st);
       if(!list.length) return "";
       return `<div class="sechead">${dlab(st)} <span class="muted" style="letter-spacing:0">(${list.length})</span></div>
-      ${list.map(d=>`<div class="card">
+      ${list.map(d=>`<div class="card swipe">
         <div class="wtop">${(d.mood&&d.mood[0])?`<img class="thumb" src="${esc(d.mood[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
-          <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
+          <div style="flex:1"><div class="title">${esc(d.final_name||d.name)} ${rowMenu(esc(d.final_name||d.name),[
+            {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
+            {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delRow("design_projects",d.id)}
+          ])}</div>
           ${d.sample_worker_id?`<span class="chip">${I.user} ${esc(wname(worker(d.sample_worker_id)))}</span>`:""}
           ${(d.sample_notes||[]).length?`<span class="chip wine">${(d.sample_notes||[]).length} ${isAr()?"ملاحظة":"notes"}</span>`:""}
           </div>
@@ -1354,7 +1469,12 @@ function tabExternal(){
       return `<div class="card">
         <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b> — ${esc(j.vendor||"—")} <span class="muted">${days} ${isAr()?"يوم":"days"} · ${(j.line_ids||[]).length}</span></div></div>
         <div class="pillrow"><button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print}</button>
-        <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button></div>
+        <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button>
+        ${rowMenu(esc(j.kind)+" — "+esc(j.vendor||""),[
+          {label:isAr()?"إلغاء الإرسالية (ترجع القطع للسلة)":"Cancel job", icon:I.fix, danger:true, fn:async()=>{
+            for(const id of (j.line_ids||[])) await sb.from("order_lines").update({stage_status:"waiting"}).eq("id",id);
+            await sb.from("ext_jobs").delete().eq("id",j.id); await refresh();}}
+        ])}</div>
       </div>`;}).join("")}`;
 }
 async function makeJob(mode){
@@ -1480,13 +1600,20 @@ function renderWorkersBox(){
     <label>${t("pin")}</label><input id="w_pin" inputmode="numeric">
     <button class="btn btn-wine btn-big" onclick="saveWorker()">${t("add")}</button>
   </div>
-  ${DB.workers.filter(w=>w.active).map(w=>`<div class="card lineitem" style="border-top:0">
-    <div><b>${esc(wname(w))}</b>
-    <div class="pillrow">${(w.specialties||[]).map(k=>`<span class="chip">${I[k]||""} ${SPEC_LABEL[k]?(isAr()?SPEC_LABEL[k][0]:SPEC_LABEL[k][1]):k}</span>`).join("")} ${w.pin?`<span class="chip">🔒</span>`:""}</div></div>
+  ${DB.workers.filter(w=>w.active).map(w=>{
+    const evN=DB.events.filter(e=>e.worker_id===w.id).length;
+    return `<div class="card lineitem swipe" style="border-top:0">
+    <div style="flex:1"><b>${esc(wname(w))}</b>
+    <div class="pillrow">${(w.specialties||[]).map(k=>`<span class="chip">${I[k]||""} ${SPEC_LABEL[k]?(isAr()?SPEC_LABEL[k][0]:SPEC_LABEL[k][1]):k}</span>`).join("")} ${w.pin?`<span class="chip">🔒</span>`:""}
+    ${evN?`<span class="chip sage">${evN} ${isAr()?"سجل":"records"}</span>`:""}</div></div>
     <div><button class="btn btn-ghost" onclick="editWorker('${w.id}')">${I.edit}</button>
-    <button class="btn btn-ghost" onclick="stopWorker('${w.id}')">${t("stop")}</button>
-    <button class="btn btn-ghost" onclick="delWorker('${w.id}')">${I.trash}</button></div>
-  </div>`).join("")}
+    ${rowMenu(esc(wname(w)),[
+      {label:isAr()?"تعديل":"Edit", icon:I.edit, fn:()=>editWorker(w.id)},
+      {label:isAr()?"إيقاف (يبقى سجله)":"Disable", icon:I.file, fn:()=>stopWorker(w.id)},
+      {label:isAr()?`مسح سجل عمله (${evN})`:"Clear history", icon:I.clock, danger:true, fn:async()=>{await sb.from("stage_events").delete().eq("worker_id",w.id); await sb.from("breaks").delete().eq("worker_id",w.id); await reloadWorkers();}},
+      {label:isAr()?"حذف العامل نهائياً":"Delete worker", icon:I.trash, danger:true, fn:()=>delRow("workers",w.id,reloadWorkers)}
+    ])}</div>
+  </div>`;}).join("")}
   <div class="card"><div class="title">${I.pack} ${isAr()?"سجل الخامات":"Materials"}</div>
     <div class="grid3">
       <div><label>${isAr()?"الكود":"SKU"}</label><input id="m_sku" dir="ltr"></div>
@@ -1499,9 +1626,9 @@ function renderWorkersBox(){
       <div><label>${isAr()?"السعر":"Price"}</label><input id="m_price" type="number" step="0.01"></div>
     </div>
     <button class="btn btn-ok btn-big" onclick="saveMaterial()">${t("add")}</button>
-    ${(DB.materials||[]).filter(m=>m.active).map(m=>`<div class="lineitem">
-      <div><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}${m.supplier?` · ${esc(m.supplier)}`:""}</span></div>
-      <button class="btn btn-ghost" style="padding:4px 10px" onclick="delMaterial('${m.id}')">${I.trash}</button></div>`).join("")}
+    ${(DB.materials||[]).filter(m=>m.active).map(m=>`<div class="lineitem swipe">
+      <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}${m.supplier?` · ${esc(m.supplier)}`:""}</span></div>
+      ${rowMenu(esc(m.name),[{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delRow("materials",m.id,reloadWorkers)}])}</div>`).join("")}
   </div>
   <div class="card"><div class="title">${I.fix} ${isAr()?"أسباب التصليح":"Repair reasons"}</div>
     ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
@@ -1671,9 +1798,13 @@ function renderWorker(){
   let cur=window._wTab; if(!secs.some(s=>s[0]===cur)) cur=secs[0][0];
   window._wTab=cur;
   html+=`<div class="tabs">${secs.map(([k,cards])=>`<button class="${cur===k?'on':''}" onclick="window._wTab='${k}';render()">
-      ${I[k]} ${t(k)} ${cards.length?`<span class="badge">${cards.length}</span>`:""}</button>`).join("")}</div>`;
+      ${I[k]} ${t(k)} ${cards.filter(c=>!c.working).length?`<span class="badge">${cards.filter(c=>!c.working).length}</span>`:""}</button>`).join("")}</div>`;
   const cards=(secs.find(s=>s[0]===cur)||[null,[]])[1];
-  html+= cards.length? cards.join("") : `<div class="empty">${t("noTasks")} 👌</div>`;
+  const go=cards.filter(c=>c.working), wait=cards.filter(c=>!c.working);
+  html+= go.length? `<div class="sechead">${I.clock} ${isAr()?"شغال عليه الحين":"IN PROGRESS"} (${go.length})</div>`+go.map(c=>c.html).join("") : "";
+  if(go.length && wait.length) html+=`<hr class="sep">`;
+  html+= wait.length? `<div class="sechead">${I.play} ${isAr()?"بانتظار البدء":"NOT STARTED"} (${wait.length})</div>`+wait.map(c=>c.html).join("")
+       : (go.length? "" : `<div class="empty">${t("noTasks")} 👌</div>`);
   el("app").innerHTML=html;
 }
 function sampleTasks(w){
@@ -1682,7 +1813,7 @@ function sampleTasks(w){
     const m=running? mins(d.sample_started_at,new Date().toISOString()):0;
     const imgs=[...(d.sketches||[]),...(d.mood||[])];
     const chart=d.size_chart||{}; const sizes=Object.keys(chart);
-    return `<div class="wcard">
+    return {working:!!running, html:`<div class="wcard">
       <div class="wtop">
         ${imgs[0]?`<img class="thumb" src="${esc(imgs[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
         <div style="flex:1"><div class="title">${esc(d.final_name||d.name)}</div>
@@ -1698,7 +1829,7 @@ function sampleTasks(w){
       ${running?`<div class="timer t-ok">⏱ ${m} ${t("minutes")}</div>`:""}
       ${running? `<button class="btn btn-ok btn-big" onclick="sampleDone('${d.id}')">${I.done} ${t("done")}</button>`
                : `<button class="btn btn-ink btn-big" onclick="sampleStart('${d.id}')">${I.play} ${t("start")}</button>`}
-    </div>`;
+    </div>`};
   });
 }
 async function sampleStart(id){
@@ -1729,10 +1860,6 @@ function sewTasks(w){
 function packTasks(w){
   return DB.lines.filter(l=>l.stage==="pack" && activeLine(l) && (!l.claimed_by||l.claimed_by===w.id)).map(l=>workerCard(l,"pack",null));
 }
-function workerSection(key, cards){
-  return `<div class="sechead">${I[key]} ${t(key)} <span class="muted" style="letter-spacing:0">(${cards.length})</span></div>`
-    + (cards.length? cards.join("") : `<div class="empty">${t("noTasks")} 👌</div>`);
-}
 function specsTable(cs){
   if(!cs) return "";
   const rows=MEAS.filter(m=>cs[m[0]]).map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td><td><b>${esc(cs[m[0]])}</b></td></tr>`).join("");
@@ -1753,10 +1880,10 @@ function workerCard(l, mode, part){
       ${o.due_date?`<div><div class="bignum" style="font-size:22px;${isLate(o)?'color:var(--bad)':''}">${fmtD(o.due_date)}</div><div class="biglabel">${t("due")}</div></div>`:""}
       ${l.color?`<div><div class="bignum" style="font-size:18px">${esc(l.color)}</div><div class="biglabel">${t("color")}</div></div>`:""}
     </div>`;
-  return `<div class="wcard">
+  return {working, html:`<div class="wcard">
     <div class="wtop">${thumb(p)}
       <div style="flex:1">
-        <div class="title">${esc(pname(p))} ${part?`<span class="chip">${I.sew} ${esc(isAr()?part.part_ar:part.part_en)}</span>`:""}</div>
+        <div class="title">${esc(pname(p))} ${part?`<span class="chip">${I[mode]||I.sew} ${esc(isAr()?part.part_ar:part.part_en)}</span>`:""}</div>
         <div class="muted">#${o.order_no} ${o.order_type==="تصليح"?"· "+I.fix:""}</div>
         ${mode==="cut"?`<button class="btn btn-ghost" style="padding:6px 12px;font-size:13px;margin-top:4px" onclick="showChart('${p.id}','${esc(l.size||"")}')">${I.ruler} ${t("sizeChart")}</button>`:""}
       </div>
@@ -1775,7 +1902,7 @@ function workerCard(l, mode, part){
      : working? `<button class="btn btn-ok btn-big" onclick="wDone('${l.id}','${part?part.id:""}')">${I.done} ${t("done")}</button>`
               + (m<5? `<button class="btn btn-warn btn-big" onclick="undoStart('${l.id}','${part?part.id:""}')">↩ ${isAr()?"تراجع — بديت بالغلط":"Undo"}</button>`:"")
              : `<button class="btn btn-ink btn-big" onclick="wStart('${l.id}','${part?part.id:""}')">${I.play} ${t("start")}</button>`}
-  </div>`;
+  </div>`};
 }
 /* تجميع الطقم: كل سطور نفس الأمر لنفس المنتج والمقاس لازم توصل التجهيز */
 function setSiblings(l){
