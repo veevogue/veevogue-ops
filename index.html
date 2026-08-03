@@ -166,6 +166,7 @@
   .partcard-h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
   .partcard-h svg{width:18px;height:18px;}
   .partcard label{margin-top:8px;}
+  .embcard{border:1px dashed var(--line);border-radius:12px;padding:12px;margin-top:8px;background:var(--soft);}
   .extbar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:14px 0;background:var(--paper);}
   .extbar.on{background:var(--wine-lt);border-color:#E8D4D8;color:var(--wine-dk);}
   .sw input{display:none;}
@@ -671,11 +672,14 @@ function startStageFor(pid, orderType, forceExt){
 }
 /* التطريز صار لكل قطعة تصميم: after_cut يوقف مرحلة القص، after_sew يوقف مرحلة الخياطة */
 const WHEN2STAGE={after_cut:"cut", after_sew:"sew"};
+/* قد يكون على القطعة أكثر من تطريز/طباعة — نرجّعها دايماً كقائمة */
 function embOf(p, partAr){
-  const e=(p.emb_parts||{})[partAr];
-  return (e && e.kind)? e : null;
+  let v=(p.emb_parts||{})[partAr];
+  if(!v) return [];
+  if(!Array.isArray(v)) v=[v];
+  return v.filter(x=>x&&x.kind);
 }
-function lineNeedsEmb(p){ return Object.values(p.emb_parts||{}).some(e=>e&&e.kind); }
+function lineNeedsEmb(p){ return Object.keys(p.emb_parts||{}).some(k=>embOf(p,k).length); }
 function nextStage(stage, p){
   if(stage==="cut") return "sew";
   if(stage==="sew") return "qc";
@@ -691,7 +695,7 @@ function stageBlocked(lineId, stage, doneId, justAddedEmb){
   const own=DB.parts.filter(x=>x.line_id===lineId && (x.stage||"sew")===stage && x.id!==doneId && x.status!=="done");
   if(own.length) return true;
   const emb=DB.parts.filter(x=>x.line_id===lineId && x.stage==="emb" && x.id!==doneId && x.status!=="done"
-    && WHEN2STAGE[(embOf(p,x.part_ar)||{}).when]===stage);
+    && WHEN2STAGE[x.emb_when||"after_sew"]===stage);
   return emb.length>0;
 }
 async function moveLine(lineId, stage){
@@ -707,9 +711,10 @@ async function genParts(lineId, lineOpt, otype, stage){
   await sb.from("line_parts").insert(comps.map(c=>({line_id:l.id, part_ar:c.ar, part_en:c.en, stage:st})));
 }
 /* ينشئ مهمة تطريز لقطعة واحدة بعد ما تخلص مرحلتها */
-async function spawnEmb(l, pt, e){
+async function spawnEmb(l, pt, e, isFix){
   await sb.from("line_parts").insert({line_id:l.id, part_ar:pt.part_ar, part_en:pt.part_en, stage:"emb",
-    status:"waiting", emb_kind:e.kind, emb_note:e.note||null, emb_artwork:e.artwork||null});
+    status:"waiting", emb_kind:e.kind, emb_when:e.when||"after_sew", emb_note:e.note||null,
+    emb_artwork:e.artwork||null, is_fix:!!isFix});
 }
 /* ===== التقدير = متوسط أداء كل العمال، لا تقدير المدير ===== */
 const EST_MIN_SAMPLE = 3;    /* أقل عدد قراءات سليمة قبل ما نعتمد المتوسط كتقدير */
@@ -1367,8 +1372,8 @@ function tabProducts(){
         <div style="flex:1"><div class="title">${esc(pname(p))} ${p.sku?`<span class="muted" style="font-family:'Inter';font-size:12px">${esc(p.sku)}</span>`:""}</div>
         <div class="pillrow">
           ${p.external_make?`<span class="chip wine">${I.ext}</span>`:""}
-          ${Object.entries(p.emb_parts||{}).filter(([,e])=>e&&e.kind).map(([part,e])=>
-            `<span class="chip wine">${I.emb} ${esc(e.kind)} · ${esc(part)}</span>`).join("")}
+          ${Object.keys(p.emb_parts||{}).flatMap(part=>embOf(p,part).map(e=>
+            `<span class="chip wine">${I.emb} ${esc(e.kind)} · ${esc(part)}</span>`)).join("")}
           ${(p.components||[]).length>1?`<span class="chip sage">${(p.components||[]).length} ${isAr()?"قطع":"pcs"}</span>`:""}
           ${(p.patterns||[]).length?`<span class="chip">${I.file} ${(p.patterns||[]).length}</span>`:""}
         </div></div>
@@ -1403,8 +1408,11 @@ function showProductForm(pid){
 
     <div class="extbar" id="extBar">
       <label class="sw"><input type="checkbox" id="p_ext" ${p.external_make?"checked":""} onchange="toggleExt()"><span class="track"><span class="knob"></span></span></label>
-      <div style="flex:1"><b>${isAr()?"تنفيذ خارجي كامل":"Fully external"}</b>
-        <div class="muted" style="font-size:12px">${isAr()?"الخياطة تنفَّذ برّا — عبّي القطع والتطريز عادي، ويطلعون جوب أوردرين منفصلين":"Sewn outside — still fill parts & embroidery"}</div></div>
+      <div style="flex:1"><b>${isAr()?"تنفيذ خارجي كامل":"Fully external"}</b></div>
+    </div>
+    <div class="extbar" id="embBar">
+      <label class="sw"><input type="checkbox" id="p_hasemb" ${Object.keys(p.emb_parts||{}).length?"checked":""} onchange="toggleEmb()"><span class="track"><span class="knob"></span></span></label>
+      <div style="flex:1"><b>${isAr()?"تطريز أو طباعة":"Embroidery / print"}</b></div>
     </div>
 
     <div id="partsWrap">
@@ -1466,6 +1474,14 @@ function toggleExt(){
   /* التنفيذ الخارجي يخفي أوقات القص والخياطة فقط — القطع والخامات والتطريز تبقى، لأن الجوب أوردر يحتاجها */
   document.querySelectorAll(".timesrow").forEach(x=>x.style.display = on? "none":"");
 }
+function toggleEmb(){
+  const on=!!(el("p_hasemb")&&el("p_hasemb").checked);
+  const b=el("embBar"); if(b) b.classList.toggle("on", on);
+  document.querySelectorAll(".embblock").forEach(x=>x.style.display = on? "none":"none");
+  document.querySelectorAll(".embblock").forEach(x=>x.style.display = on? "":"none");
+  if(!on) window._embP={};
+}
+function hasEmbOn(){ return !!(el("p_hasemb")&&el("p_hasemb").checked); }
 /* ===== كل قطعة تصميم لها بطاقتها: خامات + وقت قص + وقت خياطة + تطريز ===== */
 function material(id){return (DB.materials||[]).find(m=>m.id===id)||{name:"؟",unit:""};}
 function pkey(s){return String(s).replace(/[^\p{L}\p{N}]/gu,"_");}
@@ -1483,14 +1499,10 @@ function currentParts(){
 function capturePartCards(){
   currentParts().forEach(c=>{
     const k=pkey(c.ar);
-    const ec=el("ec_"+k), es=el("es_"+k), ek=el("ek_"+k), ew=el("ew_"+k), en=el("en_"+k);
+    const ec=el("ec_"+k), es=el("es_"+k);
     if(ec) window._estCut[c.ar]=+ec.value||null;
     if(es) window._estSew[c.ar]=+es.value||null;
-    if(ek){
-      if(!ek.value){ delete window._embP[c.ar]; }
-      else window._embP[c.ar]={kind:ek.value, when:(ew?ew.value:"after_sew"), note:(en?en.value:""),
-        artwork:(window._embP[c.ar]||{}).artwork||""};
-    }
+    captureEmbP(c.ar);
   });
 }
 function redrawParts(){
@@ -1519,25 +1531,68 @@ function redrawParts(){
           <input id="es_${k}" type="number" value="${window._estSew[c.ar]||""}"></div>
       </div>
 
-      <div class="grid2" style="margin-top:6px">
-        <div><label>${isAr()?"تطريز/طباعة؟":"Embroidery?"}</label>
-          <select id="ek_${k}" onchange="redrawParts()"><option value="">${isAr()?"لا":"No"}</option>
-            <option ${e.kind==="تطريز"?"selected":""}>تطريز</option>
-            <option ${e.kind==="طباعة"?"selected":""}>طباعة</option></select></div>
-        <div><label>${isAr()?"متى يُرسل؟":"When"}</label>
-          <select id="ew_${k}" ${e.kind?"":"disabled"}>
-            <option value="after_cut" ${e.when==="after_cut"?"selected":""}>${isAr()?"بعد القص — قبل الخياطة":"After cut"}</option>
-            <option value="after_sew" ${e.when==="after_sew"?"selected":""}>${isAr()?"بعد الخياطة":"After sew"}</option>
-          </select></div>
+      <div class="embblock">
+        <label>${isAr()?"تطريز وطباعة هذي القطعة":"Embroidery / print"}</label>
+        <div id="emb_${k}"></div>
+        <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addEmbP('${esc(c.ar)}')">${I.plus} ${isAr()?"أضف تطريز أو طباعة":"Add"}</button>
       </div>
-      ${e.kind?`<label>${isAr()?"ملاحظة التطريز":"Note"}</label><input id="en_${k}" value="${esc(e.note||"")}">
-      <label>${isAr()?"الرسمة / صورة الموضع":"Artwork"}</label>
-      ${e.artwork?`<img class="thumb" src="${esc(e.artwork)}" onclick="viewImg('${esc(e.artwork)}')" style="cursor:zoom-in">`:""}
-      <input type="file" id="ea_${k}" accept="image/*">`:""}
     </div>`;}).join("");
   box.innerHTML=html;
-  parts.forEach(c=>redrawBomP(c.ar));
-  toggleExt();
+  parts.forEach(c=>{ redrawBomP(c.ar); redrawEmbP(c.ar); });
+  toggleExt(); toggleEmb();
+}
+/* ===== تطريزات متعددة على نفس القطعة (تطريز + طباعة، أو تطريزين) ===== */
+const EMB_HINT = "جملة التطريز · الحجم · نوع الخط · لون الخيط · الموضع";
+function embArr(partAr){
+  let v=window._embP[partAr];
+  if(!v) return [];
+  if(!Array.isArray(v)) v=[v];                 /* شكل قديم: كائن واحد */
+  return v.filter(x=>x&&x.kind);
+}
+function setEmbArr(partAr, arr){
+  if(arr.length) window._embP[partAr]=arr; else delete window._embP[partAr];
+}
+function redrawEmbP(partAr){
+  const box=el("emb_"+pkey(partAr)); if(!box) return;
+  const k=pkey(partAr), arr=embArr(partAr);
+  box.innerHTML = arr.length? arr.map((e,i)=>`
+    <div class="embcard">
+      <div class="grid2">
+        <div><label style="margin-top:0">${isAr()?"النوع":"Type"}</label>
+          <select id="ek_${k}_${i}"><option ${e.kind==="تطريز"?"selected":""}>تطريز</option><option ${e.kind==="طباعة"?"selected":""}>طباعة</option></select></div>
+        <div><label style="margin-top:0">${isAr()?"متى يُرسل؟":"When"}</label>
+          <select id="ew_${k}_${i}">
+            <option value="after_cut" ${e.when==="after_cut"?"selected":""}>${isAr()?"بعد القص — قبل الخياطة":"After cut"}</option>
+            <option value="after_sew" ${e.when!=="after_cut"?"selected":""}>${isAr()?"بعد الخياطة":"After sew"}</option>
+          </select></div>
+      </div>
+      <label>${isAr()?"التفاصيل":"Details"}</label>
+      <textarea id="en_${k}_${i}" rows="2" placeholder="${isAr()?EMB_HINT:"Text · size · font · thread colour · position"}">${esc(e.note||"")}</textarea>
+      <label>${isAr()?"الرسمة / صورة الموضع":"Artwork"}</label>
+      ${e.artwork?`<img class="thumb" src="${esc(e.artwork)}" onclick="viewImg('${esc(e.artwork)}')" style="cursor:zoom-in">`:""}
+      <input type="file" id="ea_${k}_${i}" accept="image/*">
+      <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="rmEmbP('${esc(partAr)}',${i})">✕ ${isAr()?"احذف":"Remove"}</button>
+    </div>`).join("")
+  : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه تطريز ولا طباعة على هذي القطعة":"None"}</div>`;
+}
+function captureEmbP(partAr){
+  const k=pkey(partAr), arr=embArr(partAr);
+  arr.forEach((e,i)=>{
+    const kk=el(`ek_${k}_${i}`), ww=el(`ew_${k}_${i}`), nn=el(`en_${k}_${i}`);
+    if(kk) e.kind=kk.value; if(ww) e.when=ww.value; if(nn) e.note=nn.value;
+  });
+  setEmbArr(partAr, arr);
+}
+function addEmbP(partAr){
+  captureEmbP(partAr);
+  const arr=embArr(partAr);
+  arr.push({kind:"تطريز", when:"after_sew", note:"", artwork:""});
+  setEmbArr(partAr, arr); redrawEmbP(partAr);
+}
+function rmEmbP(partAr,i){
+  captureEmbP(partAr);
+  const arr=embArr(partAr); arr.splice(i,1);
+  setEmbArr(partAr, arr); redrawEmbP(partAr);
 }
 function pid_(){ return editProductId; }
 function redrawBomP(partAr){
@@ -1611,11 +1666,17 @@ async function saveProduct(){
   capturePartCards();
   const isExt = !!(el("p_ext")&&el("p_ext").checked);
   const comps = currentParts();   /* القطع تُحفظ حتى في التنفيذ الخارجي — المشاغل تحتاجها في الجوب أوردر */
-  /* رفع رسمات التطريز لكل قطعة */
-  for(const c of comps){
-    const f=el("ea_"+pkey(c.ar))?.files?.[0];
-    if(f){ const u=await uploadFile(f,"artwork"); if(u && window._embP[c.ar]) window._embP[c.ar].artwork=u; }
-  }
+  /* رفع رسمات التطريز — لكل تطريز على كل قطعة */
+  if(hasEmbOn()){
+    for(const c of comps){
+      const arr=embArr(c.ar);
+      for(let i=0;i<arr.length;i++){
+        const f=el(`ea_${pkey(c.ar)}_${i}`)?.files?.[0];
+        if(f){ const u=await uploadFile(f,"artwork"); if(u) arr[i].artwork=u; }
+      }
+      setEmbArr(c.ar, arr);
+    }
+  } else { window._embP={}; }
   const keep=o=>{const r={}; comps.forEach(c=>{ if(o[c.ar]!==undefined && o[c.ar]!==null && o[c.ar]!=="") r[c.ar]=o[c.ar]; }); return r;};
   const estSew=keep(window._estSew), estCut=keep(window._estCut);
   const bomP=keep(window._bomP), embP=keep(window._embP);
@@ -1956,7 +2017,8 @@ function tabExternal(){
   const embRow=x=>{const l=DB.lines.find(y=>y.id===x.line_id)||{}; const p=product(l.product_id),o=order(l.order_id);
     return `<div class="checkrow"><input type="checkbox" class="embchk" value="${x.id}"> ${thumb(p)}
     <div style="flex:1"><b>${esc(pname(p))}</b> — <b style="color:var(--wine)">${esc(isAr()?x.part_ar:(x.part_en||x.part_ar))}</b>
-    <span class="muted">${x.emb_kind?" · "+esc(x.emb_kind):""} · #${o.order_no} — ${esc(l.size||"")} × ${l.qty||1}</span></div></div>`;};
+    <span class="muted">${x.emb_kind?" · "+esc(x.emb_kind):""} · #${o.order_no} — ${esc(l.size||"")} × ${l.qty||1}</span>
+    ${x.is_fix?`<div class="chip wine" style="margin-top:4px">${I.fix} ${isAr()?"إعادة تنفيذ":"redo"}</div>`:""}</div></div>`;};
   const extRow=l=>{const p=product(l.product_id),o=order(l.order_id);
     return `<div class="checkrow"><input type="checkbox" class="extchk" value="${l.id}"> ${thumb(p)}
     <div style="flex:1"><b>${esc(pname(p))}</b> <span class="muted">#${o.order_no} — ${esc(l.size||"")} × ${l.qty}</span>
@@ -1999,7 +2061,8 @@ async function makeJob(mode){
     if(!pids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
     const first=DB.parts.find(x=>x.id===pids[0]);
     const kind=(first&&first.emb_kind)||"تطريز";
-    const {data:j,error}=await sb.from("ext_jobs").insert({kind,vendor,part_ids:pids,line_ids:[]}).select().single();
+    const isFix=pids.every(id=>{const x=DB.parts.find(y=>y.id===id); return x&&x.is_fix;});
+    const {data:j,error}=await sb.from("ext_jobs").insert({kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix}).select().single();
     if(error) return alert(error.message);
     for(const id of pids) await sb.from("line_parts").update({status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
@@ -2018,11 +2081,12 @@ async function makeJob(mode){
     for(const id of (isFix? [] : ids)){
       const l=DB.lines.find(x=>x.id===id); if(!l) continue;
       const p=product(l.product_id);
-      Object.entries(p.emb_parts||{}).forEach(([partAr,e])=>{
-        if(!e||!e.kind) return;
+      Object.keys(p.emb_parts||{}).forEach(partAr=>{
         const c=(p.components||[]).find(x=>x.ar===partAr)||{ar:partAr,en:partAr};
-        rows.push({line_id:id, part_ar:partAr, part_en:c.en||partAr, stage:"emb", status:"sent",
-          emb_kind:e.kind, emb_note:e.note||null, emb_artwork:e.artwork||null});
+        embOf(p,partAr).forEach(e=>{
+          rows.push({line_id:id, part_ar:partAr, part_en:c.en||partAr, stage:"emb", status:"sent",
+            emb_kind:e.kind, emb_when:e.when||"after_sew", emb_note:e.note||null, emb_artwork:e.artwork||null});
+        });
       });
     }
     let j2=null;
@@ -2061,9 +2125,10 @@ async function receiveJob(jobId){
       if(!garmentOut && !embLeft.length) await moveLine(lineId,"qc");
       continue;
     }
+    if(l.stage==="qc") continue;   /* إرجاع تطريز والسطر واقف عند الجودة — يرجع للقائمة تلقائياً */
     const own=DB.parts.filter(x=>x.line_id===lineId && (x.stage||"sew")===l.stage && x.status!=="done");
     const embLeft=DB.parts.filter(x=>x.line_id===lineId && x.stage==="emb" && x.status!=="done"
-      && !doneIds.includes(x.id) && WHEN2STAGE[(embOf(p,x.part_ar)||{}).when]===l.stage);
+      && !doneIds.includes(x.id) && WHEN2STAGE[x.emb_when||"after_sew"]===l.stage);
     if(!own.length && !embLeft.length) await moveLine(lineId, nextStage(l.stage,p));
   }
   for(const id of (j.line_ids||[])){
@@ -2148,8 +2213,15 @@ async function shootDone(id){await sb.from("photoshoots").update({status:"done",
 
 /* ---- الجودة (تبويب للمكتب) ---- */
 function tabQuality(){
-  const ls=DB.lines.filter(l=>l.stage==="qc" && activeLine(l));
+  /* السطر اللي مرجّع منه تطريز يختفي من الجودة لين يرجع */
+  const waitEmb=l=>DB.parts.some(x=>x.line_id===l.id&&x.stage==="emb"&&x.status!=="done");
+  const all=DB.lines.filter(l=>l.stage==="qc" && activeLine(l));
+  const ls=all.filter(l=>!waitEmb(l));
+  const held=all.filter(waitEmb);
   el("tabbody").innerHTML=`
+    ${held.length?`<div class="note-box">${I.emb} ${isAr()
+      ?`${held.length} ${held.length===1?"قطعة":"قطع"} واقفة لين يرجع تطريزها: `
+      :`${held.length} waiting on embroidery: `}${held.map(l=>esc(pname(product(l.product_id)))).join(" · ")}</div>`:""}
     <div class="sechead">${I.qc} ${t("qc")} (${ls.length})</div>
     ${ls.length? ls.map(l=>{
       const p=product(l.product_id), o=order(l.order_id);
@@ -2178,11 +2250,28 @@ async function qcResult(lineId, result){
   await refresh();
 }
 function qcFixSheet(lineId){
+  const l=DB.lines.find(x=>x.id===lineId)||{}; const p=product(l.product_id);
+  /* كل التطريزات والطباعات على هذا الموديل — عشان يقدر يرجّع وحدة منها بس */
+  const embs=[];
+  Object.keys(p.emb_parts||{}).forEach(part=>embOf(p,part).forEach((e,i)=>embs.push({part,e,i})));
   openSheet(`<div class="title">${I.fix} ${t("fix")}</div>
+    ${embs.length?`<label>${isAr()?"وين المشكلة؟":"Where is the problem?"}</label>
+    <div class="pillrow" id="fixTarget">
+      <span class="pill on" data-t="garment" onclick="pickFixTarget(this)">${isAr()?"الخياطة / الموديل":"Garment"}</span>
+      ${embs.map((x,n)=>`<span class="pill" data-t="emb" data-n="${n}" onclick="pickFixTarget(this)">${esc(x.e.kind)} · ${esc(x.part)}</span>`).join("")}
+    </div>
+    <div class="note-box" id="fixHint" style="display:none">${isAr()
+      ?"راح ترجع هذي القطعة للمطرّز وحدها — الموديل يبقى واقفاً عند الجودة لين ترجع."
+      :"Only this piece goes back to the embroiderer."}</div>`:""}
     <label>${t("reason")}</label>
     <div class="pillrow" id="qcReasons">${DB.reasons.filter(r=>r.active).map((r,i)=>`<span class="pill ${i===0?'on':''}" data-r="${esc(r.label)}" onclick="[...document.querySelectorAll('#qcReasons .pill')].forEach(p=>p.classList.remove('on'));this.classList.add('on')">${esc(r.label)}</span>`).join("")}</div>
     <label>${isAr()?"صورة العيب (اختياري)":"Defect photo (optional)"}</label><input type="file" id="qc_img" accept="image/*">
-    <button class="btn btn-bad btn-big" onclick="sendFix('${lineId}')">${I.fix} ${isAr()?"إرجاع لنفس الخياط":"Back to same tailor"}</button>`);
+    <button class="btn btn-bad btn-big" onclick="sendFix('${lineId}')">${I.fix} ${isAr()?"إرجاع للتصليح":"Send back"}</button>`);
+}
+function pickFixTarget(elm){
+  document.querySelectorAll("#fixTarget .pill").forEach(x=>x.classList.remove("on"));
+  elm.classList.add("on");
+  const h=el("fixHint"); if(h) h.style.display = elm.dataset.t==="emb"? "":"none";
 }
 /* هل هذا السطر منفَّذ خارجياً؟ */
 function isExternalLine(l){
@@ -2195,7 +2284,28 @@ async function sendFix(lineId){
   let img=null; const f=el("qc_img").files[0]; if(f) img=await uploadFile(f,"qc");
   const now=new Date().toISOString();
   const l=DB.lines.find(x=>x.id===lineId);
+  const p=product(l&&l.product_id);
   await sb.from("stage_events").insert({line_id:lineId,stage:"qc",result:"fix",started_at:now,finished_at:now});
+  /* المشكلة في التطريز/الطباعة → ترجع القطعة وحدها للمطرّز والموديل يبقى عند الجودة */
+  const tgt=document.querySelector("#fixTarget .pill.on");
+  if(tgt && tgt.dataset.t==="emb"){
+    const embs=[];
+    Object.keys(p.emb_parts||{}).forEach(part=>embOf(p,part).forEach(e=>embs.push({part,e})));
+    const pick=embs[+tgt.dataset.n];
+    if(pick){
+      const c=(p.components||[]).find(x=>x.ar===pick.part)||{ar:pick.part,en:pick.part};
+      await spawnEmb(l, {part_ar:pick.part, part_en:c.en||pick.part},
+        {...pick.e, note:[pick.e.note, reason&&(isAr()?"إعادة تنفيذ: "+reason:"redo: "+reason)].filter(Boolean).join(" — ")}, true);
+      await sb.from("order_lines").update({fix_reason:reason, fix_image:img}).eq("id",lineId);
+      await logIt("fix","line_parts",lineId,
+        `${lineLabel(lineId)} · ${pick.e.kind} ${pick.part} → ${isAr()?"إرجاع للمطرّز":"back to embroiderer"}${reason?" · "+reason:""}`,
+        null, {reason, target:"embroidery", part:pick.part});
+      closeSheet(); await refresh();
+      alert(isAr()?"رجّعناها لسلة التطريز — أرسلها من تبويب «الخارجي». الموديل واقف عند الجودة لين ترجع."
+                 :"Sent back to the embroidery pool.");
+      return;
+    }
+  }
   if(isExternalLine(l)){
     /* منفَّذ برّا — يرجع للمشغل الخارجي مو لخياط عندنا */
     await sb.from("order_lines").update({stage:"ext", stage_status:"waiting", claimed_by:null,
@@ -2626,8 +2736,11 @@ async function wDone(lineId, partId){
     if(ev) await sb.from("stage_events").update({finished_at:now}).eq("id",ev.id);
     /* هل هذي القطعة تحتاج تطريز عند هذي المرحلة؟ نرسلها لحالها ونكمل الباقي */
     let added=false;
-    const e2=embOf(p, pt&&pt.part_ar);
-    if(pstage!=="emb" && e2 && WHEN2STAGE[e2.when]===pstage){ await spawnEmb(l, pt, e2); added=true; }
+    if(pstage!=="emb"){
+      for(const e2 of embOf(p, pt&&pt.part_ar)){
+        if(WHEN2STAGE[e2.when||"after_sew"]===pstage){ await spawnEmb(l, pt, e2); added=true; }
+      }
+    }
     if(!stageBlocked(lineId, pstage, partId, added)) await moveLine(lineId, nextStage(pstage,p));
   }else{
     const ev=DB.events.find(e=>e.line_id===lineId&&!e.part_id&&e.stage===l.stage&&e.started_at&&!e.finished_at);
