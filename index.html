@@ -224,6 +224,8 @@
 /* ================= الإعدادات الثابتة ================= */
 const SUPA_URL = "https://piivfnhnhwymhspiqqpq.supabase.co";
 const SUPA_KEY = "sb_publishable_EL5y8Utc62RgpvYeDAlBmQ_81smvXU3";
+const AUTH_EMAIL = "ops@veevogue.app";
+let AUTHED=false;
 const MANAGER_PIN = "9371";
 
 /* ================= الترجمة ================= */
@@ -405,7 +407,7 @@ async function vvFetch(url, opts){
     return r;
   }catch(err){
     NETOK=false;
-    if(isWrite && !wantsBody(opts)){
+    if(isWrite && !wantsBody(opts) && String(url).includes("/rest/v1/")){
       let bodyText = (typeof opts.body==="string") ? opts.body : null;
       if(method==="POST" && bodyText){
         try{
@@ -433,6 +435,8 @@ async function flushQueue(){
     while(q.length){
       const it=q[0];
       let r;
+      try{ const {data:{session:_as}} = await sb.auth.getSession();
+           if(_as){ delete it.headers["Authorization"]; it.headers["authorization"]="Bearer "+_as.access_token; } }catch(e){}
       try{ r = await fetch(it.url,{method:it.method, headers:it.headers, body:it.body}); }
       catch(e){ NETOK=false; paintNet(); return; }
       if(r.status>=500){ paintNet(); return; }   /* خلل مؤقت في السيرفر — نعيد لاحقاً */
@@ -464,6 +468,9 @@ window.addEventListener("DOMContentLoaded", async ()=>{
   sb = supabase.createClient(SUPA_URL, SUPA_KEY, {global:{fetch:vvFetch}});
   checkDailyLogout();
   applyDir();
+  try{ const {data:{session:_as}} = await sb.auth.getSession(); AUTHED=!!_as; }catch(e){ AUTHED=false; }
+  try{ sb.auth.onAuthStateChange((_e,_s)=>{ AUTHED=!!_s; }); }catch(e){}
+  if(!AUTHED){ render(); return; }
   await flushQueue();
   await loadAll();
   render();
@@ -648,9 +655,9 @@ async function autoBackup(force){
   try{
     const blob=new Blob([JSON.stringify(bkPayload())],{type:"application/json"});
     const tag=Math.random().toString(36).slice(2,8);
-    const up=await sb.storage.from("files").upload(`backups/daily-${today()}-${tag}.json`, blob, {upsert:true});
+    const up=await sb.storage.from("backups").upload(`backups/daily-${today()}-${tag}.json`, blob, {upsert:true});
     if(up.error) return null;
-    if(new Date().getDay()===6) await sb.storage.from("files").upload(`backups/weekly-${today()}-${tag}.json`, blob, {upsert:true});
+    if(new Date().getDay()===6) await sb.storage.from("backups").upload(`backups/weekly-${today()}-${tag}.json`, blob, {upsert:true});
     localStorage.setItem("vv_lastbk", today());
     await rotateBackups();
     return true;
@@ -658,17 +665,17 @@ async function autoBackup(force){
 }
 async function rotateBackups(){
   try{
-    const {data}=await sb.storage.from("files").list("backups",{limit:300});
+    const {data}=await sb.storage.from("backups").list("backups",{limit:300});
     if(!data) return;
     const stale=(pre,keep)=>data.filter(f=>f.name.startsWith(pre))
       .sort((a,b)=> a.name<b.name?1:-1).slice(keep).map(f=>"backups/"+f.name);
     const del=[...stale("daily-",7), ...stale("weekly-",4)];
-    if(del.length) await sb.storage.from("files").remove(del);
+    if(del.length) await sb.storage.from("backups").remove(del);
   }catch(e){}
 }
 async function listBackups(){
   try{
-    const {data}=await sb.storage.from("files").list("backups",{limit:300});
+    const {data}=await sb.storage.from("backups").list("backups",{limit:300});
     return (data||[]).sort((a,b)=> a.name<b.name?1:-1);
   }catch(e){ return []; }
 }
@@ -678,13 +685,19 @@ async function renderBackups(){
   const fs=await listBackups();
   if(!fs.length){ box.innerHTML=`<div class="muted">${isAr()?"ما فيه نسخ محفوظة بعد":"No backups yet"}</div>`; return; }
   box.innerHTML=fs.map(f=>{
-    const url=sb.storage.from("files").getPublicUrl("backups/"+f.name).data.publicUrl;
     const wk=f.name.startsWith("weekly-");
     const d=(f.name.match(/\d{4}-\d{2}-\d{2}/)||[""])[0];
     const kb=Math.round(((f.metadata&&f.metadata.size)||0)/1024);
     return `<div class="lineitem"><div><b>${d}</b> <span class="muted">${wk?(isAr()?"أسبوعية":"weekly"):(isAr()?"يومية":"daily")}${kb?` · ${kb}KB`:""}</span></div>
-      <a class="btn btn-ghost" style="padding:4px 10px;font-size:12px" href="${url}" download="${f.name}">${isAr()?"تنزيل":"Download"}</a></div>`;
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="dlBackup('${f.name}')">${isAr()?"تنزيل":"Download"}</button></div>`;
   }).join("");
+}
+async function dlBackup(name){
+  const {data,error}=await sb.storage.from("backups").download("backups/"+name);
+  if(error||!data){ alert(isAr()?"ما قدرنا ننزل النسخة":"Download failed"); return; }
+  const u=URL.createObjectURL(data);
+  const a=document.createElement("a"); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),4000);
 }
 async function backupNow(){
   const box=el("bkBox"); if(box) box.innerHTML=`<div class="muted">${isAr()?"جاري الحفظ…":"Saving…"}</div>`;
@@ -841,6 +854,7 @@ function stopAuto(){ if(autoTimer){clearInterval(autoTimer); autoTimer=null;} }
 
 /* ================= العرض ================= */
 function render(){
+  if(!AUTHED){ stopAuto(); const lb0=el("logoutBtn"); if(lb0) lb0.style.display="none"; const w0=el("whoami"); if(w0) w0.textContent=""; return renderGate(); }
   const lb=el("logoutBtn");
   lb.style.display = session? "inline-block":"none";
   lb.textContent = t("logout");
@@ -849,6 +863,39 @@ function render(){
   if(session.role==="worker"||session.role==="creative") startAuto(); else stopAuto();
   if(session.role==="manager"||session.role==="creative"){ renderDesk(); setTimeout(enableSwipe,0); return; }
   renderWorker();
+}
+
+/* ================= بوابة كلمة سر المشغل ================= */
+function renderGate(){
+  el("app").innerHTML=`<div class="login-card card">
+    <div class="title" style="font-size:20px">${isAr()?"كلمة سر المشغل":"Workshop password"}</div>
+    <p class="muted" style="margin:6px 0 14px">${isAr()?"تنكتب مرة وحدة على هذا الجهاز":"Entered once on this device"}</p>
+    <input id="gate_pw" type="password" autocomplete="current-password" style="width:100%;text-align:center;font-size:18px;padding:12px;border:1px solid var(--line);border-radius:12px" onkeydown="if(event.key==='Enter')gateSubmit()">
+    <div id="gate_err" class="muted" style="color:var(--bad);height:20px;margin-top:8px"></div>
+    <button id="gate_btn" class="btn btn-ink btn-big" onclick="gateSubmit()">${isAr()?"دخول":"Enter"}</button>
+  </div>`;
+  setTimeout(()=>{ const i=el("gate_pw"); if(i) i.focus(); },50);
+}
+async function gateSubmit(){
+  const i=el("gate_pw"), b=el("gate_btn"); if(!i||!i.value) return;
+  b.disabled=true; b.textContent=isAr()?"جاري الدخول…":"Signing in…";
+  let error=null;
+  try{ ({error} = await sb.auth.signInWithPassword({email:AUTH_EMAIL, password:i.value})); }
+  catch(e){ error=e; }
+  if(error){
+    b.disabled=false; b.textContent=isAr()?"دخول":"Enter";
+    const msg=String((error&&error.message)||"");
+    el("gate_err").textContent = /invalid/i.test(msg) ? (isAr()?"الكلمة غلط":"Wrong password")
+      : (isAr()?"ما قدرنا نتصل — جرب مرة ثانية":"Could not connect — try again");
+    return;
+  }
+  AUTHED=true;
+  el("app").innerHTML=`<div class="login-card card"><div class="muted">${isAr()?"جاري التحميل…":"Loading…"}</div></div>`;
+  await flushQueue();
+  await loadAll();
+  render();
+  paintNet();
+  autoBackup();
 }
 
 /* ================= الدخول ================= */
