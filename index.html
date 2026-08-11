@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=1">
+<link rel="icon" type="image/png" href="apple-touch-icon.png?v=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="فيفوق">
+<meta name="theme-color" content="#FFFFFF">
 <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Aref+Ruqaa:wght@400;700&family=Inter:wght@400;600;700;800&family=Italiana&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -235,7 +241,7 @@ const T = {
   whoAreYou:"منو أنت؟", noWorkers:"ما في عمال مسجلين", wrongPin:"الرقم غلط", pin:"الرقم السري",
   logout:"خروج", refresh:"تحديث", close:"إغلاق", save:"حفظ", add:"إضافة", edit:"تعديل",
   del:"حذف", cancel:"إلغاء", stop:"إيقاف", open:"فتح",
-  board:"لوحة", china:"الصين", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
+  board:"لوحة", china:"المشتريات", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
   shoots:"التصوير", workersTab:"العمال", perf:"الأداء", settings:"الإعدادات", archive:"الأرشيف", quality:"الجودة",
   cut:"قص", emb:"تطريز/طباعة", sew:"خياطة", qc:"جودة", pack:"تجهيز", shipped:"أُرسل", ext:"تنفيذ خارجي", sample:"عينة",
   workingNow:"شغال الحين", noOneWorking:"ما في أحد شغال حالياً", noOrders:"ما في أوامر جارية",
@@ -254,7 +260,7 @@ const T = {
   whoAreYou:"Who are you?", noWorkers:"No workers yet", wrongPin:"Wrong PIN", pin:"PIN",
   logout:"LOG OUT", refresh:"REFRESH", close:"CLOSE", save:"SAVE", add:"ADD", edit:"EDIT",
   del:"DELETE", cancel:"CANCEL", stop:"DISABLE", open:"OPEN",
-  board:"Board", china:"CHINA", newOrder:"New Order", products:"Products", design:"Design", external:"External",
+  board:"Board", china:"PURCHASING", newOrder:"New Order", products:"Products", design:"Design", external:"External",
   shoots:"Photoshoot", workersTab:"Workers", perf:"Performance", settings:"Settings", archive:"Archive", quality:"Quality",
   cut:"CUT", emb:"EMBROIDERY", sew:"SEW", qc:"QUALITY", pack:"PACK", shipped:"SHIPPED", ext:"EXTERNAL", sample:"SAMPLE",
   workingNow:"Working now", noOneWorking:"Nobody is working", noOrders:"No active orders",
@@ -344,7 +350,7 @@ const PARTS_PRESET = [["توب","TOP"],["بنطرون","PANTS"],["تنورة","S
 const AGES_PRESET = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 
 let sb=null;
-let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[]};
+let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[],purchases:[]};
 let session=JSON.parse(localStorage.getItem("vv2_session")||"null");
 let mTab=localStorage.getItem("vv2_tab")||"board";
 let editProductId=null, newLines=[], customModels=[];
@@ -356,7 +362,7 @@ let NETOK = (typeof navigator!=="undefined" && navigator.onLine!==false);
 let flushing=false;
 const TBL2DB={workers:"workers",products:"products",design_projects:"designs",photoshoots:"shoots",
   repair_reasons:"reasons",orders:"orders",order_lines:"lines",line_parts:"parts",stage_events:"events",
-  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples"};
+  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples",purchases:"purchases"};
 
 function qGet(){ try{return JSON.parse(localStorage.getItem(VVQ)||"[]");}catch(e){return [];} }
 function qSet(a){ try{localStorage.setItem(VVQ,JSON.stringify(a));}catch(e){} }
@@ -503,8 +509,9 @@ async function loadAll(){
     sb.from("trips").select("*").order("created_at",{ascending:false}),
     sb.from("suppliers").select("*").order("name"),
     sb.from("trip_samples").select("*").order("created_at",{ascending:false}),
+    sb.from("purchases").select("*").order("created_at",{ascending:false}),
   ]);
-  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp] = res;
+  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur] = res;
   /* فشل الاتصال: نحافظ على البيانات الحالية أو نرجع لآخر نسخة محفوظة على الجهاز */
   if(res.some(x=>x && x.error && !x.data)){
     NETOK=false;
@@ -516,7 +523,7 @@ async function loadAll(){
       orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
       settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
       breaks:br.data||[], collections:col.data||[], materials:mat.data||[],
-      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[]};
+      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[]};
   NETOK=true; cacheDB(); paintNet();
 }
 async function refresh(){await loadAll(); render(); paintNet();}
@@ -686,7 +693,7 @@ function bkPayload(){
     design_projects:DB.designs, orders:DB.orders, order_lines:DB.lines, line_parts:DB.parts,
     stage_events:DB.events, ext_jobs:DB.jobs, photoshoots:DB.shoots,
     repair_reasons:DB.reasons, breaks:DB.breaks, settings:DB.settings,
-    trips:DB.trips, suppliers:DB.suppliers, trip_samples:DB.samples}};
+    trips:DB.trips, suppliers:DB.suppliers, trip_samples:DB.samples, purchases:DB.purchases, channels:(DB.settings||{}).channels}};
 }
 async function autoBackup(force){
   if(!NETOK) return null;
@@ -983,6 +990,33 @@ function pinKey(k){
 
 /* ================= وحدة الصين — عدة السوق ================= */
 const YARD=0.9144;
+/* ===== قنوات الشراء ===== */
+const CHAN_DEFAULT={china:{label:"الصين (استيراد)",shortage:4,spare:5,ship_mode:"perpiece",ship_val:0,commission:5,currency:"CNY"},
+  local:{label:"السوق المحلي",shortage:2,spare:5,ship_mode:"none",ship_val:0,commission:0,currency:"KWD"}};
+function channelsCfg(){ const c=(DB.settings&&DB.settings.channels); return (c&&Object.keys(c).length)? c : CHAN_DEFAULT; }
+function chan(key){ const c=channelsCfg(); return c[key]||c.local||CHAN_DEFAULT.local; }
+function chanKeys(){ return Object.keys(channelsCfg()); }
+function chanLabel(key){ return (chan(key).label)||key; }
+let chChannel = localStorage.getItem("vv_chan")||"china";
+/* الاحتياج بالياردات حسب هوامش القناة */
+function needYards(mpp, qty, channelKey){
+  const c=chan(channelKey), base=(mpp||0)*(qty||0);
+  const meters=base*(1+(c.shortage||0)/100)+base*(c.spare||0)/100;
+  return {base, meters, yards: meters/YARD};
+}
+/* التكلفة النهائية على القطعة حسب القناة */
+function landedCost(o){
+  const c=chan(o.channel), cur=o.currency||c.currency||"KWD";
+  const raw=(o.qty_yd||0)*(o.unit_price||0);
+  const rawKWD = cur==="KWD"? raw : toKWD(raw,cur);
+  if(rawKWD==null) return null;
+  const commission=rawKWD*((c.commission||0)/100);
+  let shipping=0;
+  if(c.ship_mode==="flat") shipping=(c.ship_val||0);
+  else if(c.ship_mode==="perpiece") shipping=(c.ship_val||0)*(o.plan_qty||0);
+  const total=rawKWD+commission+shipping;
+  return {rawKWD, commission, shipping, total, per:o.plan_qty? total/(o.plan_qty):null};
+}
 let chTab = localStorage.getItem("vv_chtab")||"trip";
 let chCompare=false, chFilterProd="";
 let _pendSet=null, _pendUrls={}, _pupBusy=false;
@@ -1013,7 +1047,7 @@ function toKWD(amount, cur){
   const r=cur==="CNY"? f.cny : f.usd;
   return (r && amount!=null)? amount*r : null;
 }
-function activeTrip(){ return (DB.trips||[]).find(t=>t.status==="active") || (DB.trips||[])[0] || null; }
+function activeTrip(ch){ ch=ch||chChannel; const list=(DB.trips||[]).filter(t=>(t.channel||"china")===ch); return list.find(t=>t.status==="active")||list[0]||null; }
 function fxAge(){ const f=fxGet(); if(!f.at) return isAr()?"ما في سعر محفوظ":"no rate saved";
   const h=Math.round((Date.now()-f.at)/3600000);
   return (f.src==="manual"?(isAr()?"يدوي":"manual"):(isAr()?"تلقائي":"auto"))+" · "+(h<1?(isAr()?"قبل شوي":"now"):(isAr()?("قبل "+h+" ساعة"):(h+"h ago")));
@@ -1088,22 +1122,27 @@ function metersPerPiece(p){
 function tabChina(){
   fxAuto();
   const sub=(k,l)=>`<button class="btn ${chTab===k?'btn-ink':'btn-ghost'}" style="padding:8px 14px" onclick="chTab='${k}';localStorage.setItem('vv_chtab','${k}');render()">${l}</button>`;
+  const chanChip=(k)=>`<span class="pill ${chChannel===k?'on':''}" onclick="chChannel='${k}';localStorage.setItem('vv_chan','${k}');render()">${esc(chanLabel(k))}</span>`;
   el("tabbody").innerHTML=`
+    <div class="pillrow" style="margin-bottom:8px">${chanKeys().map(chanChip).join("")}</div>
     <div class="pillrow" style="margin-bottom:12px">
-      ${sub("trip", isAr()?"الرحلة":"Trip")}
+      ${sub("trip", isAr()?"الدفعات":"Batches")}
       ${sub("samples", isAr()?"دفتر العينات":"Samples")}
       ${sub("suppliers", isAr()?"الموردين":"Suppliers")}
+      ${sub("purch", isAr()?"أوامر الشراء":"Purchase orders")}
       ${sub("calc", isAr()?"الحاسبة":"Calculator")}
     </div>
     <div id="chBody"></div>`;
-  ({trip:chTrip, samples:chSamples, suppliers:chSuppliers, calc:chCalc})[chTab]();
+  if(!chChannel||chanKeys().indexOf(chChannel)<0) chChannel=chanKeys()[0];
+  ({trip:chTrip, samples:chSamples, suppliers:chSuppliers, purch:chPurch, calc:chCalc})[chTab]();
 }
 
 /* -- الرحلة -- */
 function chTrip(){
-  const f=fxGet(), tr=activeTrip();
+  const f=fxGet(), c=chan(chChannel), needFx=(c.currency||"KWD")!=="KWD";
+  const batches=(DB.trips||[]).filter(t=>(t.channel||"china")===chChannel);
   el("chBody").innerHTML=`
-  <div class="card" style="padding:14px">
+  ${needFx? `<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"سعر الصرف (دينار)":"FX to KWD"}</div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">${fxAge()}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1114,16 +1153,16 @@ function chTrip(){
       <button class="btn btn-ghost" onclick="fxSaveManual()">${isAr()?"حفظ يدوي":"Save manual"}</button>
       <button class="btn btn-ghost" onclick="fxRefresh()">${isAr()?"تحديث تلقائي":"Auto refresh"}</button>
     </div>
-  </div>
-  ${tr? `<div class="card" style="padding:14px">
-      <div class="title" style="font-size:16px">${esc(tr.name||"رحلة")}</div>
-      <div class="muted">${esc(tr.start_date||"")} ← ${esc(tr.end_date||"")} · ${tr.status==="active"?(isAr()?"نشطة":"active"):esc(tr.status||"")}</div>
-      <div class="muted" style="margin-top:6px">${(DB.samples||[]).filter(x=>x.trip_id===tr.id).length} ${isAr()?"عينة مسجلة":"samples"}</div>
+  </div>`:""}
+  ${batches.length? batches.map(tr=>`<div class="card" style="padding:14px">
+      <div class="title" style="font-size:16px">${esc(tr.name||"دفعة")} ${tr.status==="active"?`<span class="chip sage">${isAr()?"نشطة":"active"}</span>`:""}</div>
+      <div class="muted">${esc(tr.start_date||"")}${tr.end_date?` ← ${esc(tr.end_date)}`:""}</div>
+      <div class="muted" style="margin-top:6px">${(DB.samples||[]).filter(x=>x.trip_id===tr.id).length} ${isAr()?"عينة":"samples"} · ${(DB.purchases||[]).filter(x=>x.trip_id===tr.id).length} ${isAr()?"أمر شراء":"POs"}</div>
       ${tr.notes?`<div style="margin-top:6px">${esc(tr.notes)}</div>`:""}
-      ${tr.status!=="active"?`<button class="btn btn-ghost" style="margin-top:8px" onclick="tripActivate('${tr.id}')">${isAr()?"تفعيل هالرحلة":"Activate"}</button>`:""}
-    </div>`
-  : `<div class="empty">${isAr()?"ما في رحلة بعد":"No trip yet"}</div>`}
-  <button class="btn btn-ink btn-big" onclick="tripSheet()">＋ ${isAr()?"رحلة جديدة":"New trip"}</button>`;
+      ${tr.status!=="active"?`<button class="btn btn-ghost" style="margin-top:8px" onclick="tripActivate('${tr.id}')">${isAr()?"تفعيل":"Activate"}</button>`:""}
+    </div>`).join("")
+  : `<div class="empty">${isAr()?"ما في دفعة بعد لهالقناة":"No batch yet"}</div>`}
+  <button class="btn btn-ink btn-big" onclick="tripSheet()">＋ ${isAr()?"دفعة جديدة":"New batch"}</button>`;
 }
 async function fxSaveManual(){
   const c=parseFloat(el("fx_cny").value)||null, u=parseFloat(el("fx_usd").value)||null;
@@ -1138,22 +1177,25 @@ async function fxRefresh(){
   render();
 }
 function tripSheet(){
-  openSheet(`<div class="title">${isAr()?"رحلة جديدة":"New trip"}</div>
-    <label>${isAr()?"الاسم":"Name"}</label><input id="tr_name" value="${isAr()?"رحلة الصين":"China trip"} ${new Date().toISOString().slice(0,7)}">
+  const isChina=chChannel==="china";
+  const dflt=isChina? (isAr()?"رحلة الصين":"China trip") : (isAr()?"دفعة شراء محلي":"Local buy");
+  openSheet(`<div class="title">${isAr()?"دفعة جديدة":"New batch"} — ${esc(chanLabel(chChannel))}</div>
+    <label>${isAr()?"الاسم":"Name"}</label><input id="tr_name" value="${dflt} ${new Date().toISOString().slice(0,7)}">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>${isAr()?"من":"From"}</label><input id="tr_from" type="date" value="${today()}"></div>
-      <div><label>${isAr()?"إلى":"To"}</label><input id="tr_to" type="date"></div>
+      <div><label>${isChina?(isAr()?"من":"From"):(isAr()?"التاريخ":"Date")}</label><input id="tr_from" type="date" value="${today()}"></div>
+      ${isChina?`<div><label>${isAr()?"إلى":"To"}</label><input id="tr_to" type="date"></div>`:``}
     </div>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="tr_notes"></textarea>
     <button class="btn btn-ink btn-big" onclick="tripSave()">${t("save")}</button>`);
 }
 async function tripSave(){
-  const row={id:newId(), name:el("tr_name").value||"رحلة", start_date:el("tr_from").value||null,
-    end_date:el("tr_to").value||null, notes:el("tr_notes").value||null, status:"active", fx:fxGet()};
-  (DB.trips||[]).forEach(x=>{ if(x.status==="active") sb.from("trips").update({status:"done"}).eq("id",x.id).then(()=>{}); });
+  const row={id:newId(), name:el("tr_name").value||"دفعة", start_date:el("tr_from").value||null,
+    end_date:(el("tr_to")?el("tr_to").value:null)||null, notes:el("tr_notes").value||null, status:"active", channel:chChannel, fx:fxGet()};
+  (DB.trips||[]).forEach(x=>{ if(x.status==="active" && (x.channel||"china")===chChannel) sb.from("trips").update({status:"done"}).eq("id",x.id).then(()=>{}); });
   const {error}=await sb.from("trips").insert(row);
-  if(error) return alert(error.message);
-  closeSheet(); await refresh(); chTab="trip";
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(!(DB.trips||[]).some(x=>x.id===row.id)) DB.trips.unshift(row);
+  closeSheet(); cacheDB(); render(); chTab="trip";
 }
 async function tripActivate(id){
   await sb.from("trips").update({status:"active"}).eq("id",id);
@@ -1228,7 +1270,7 @@ function sampleSheet(){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
       <div><label>${isAr()?"السعر":"Price"}</label><input id="smp_price" inputmode="decimal"></div>
-      <div><label>${isAr()?"العملة":"Currency"}</label><select id="smp_cur"><option>CNY</option><option>USD</option></select></div>
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="smp_cur">${["KWD","CNY","USD"].map(x=>`<option ${chan(chChannel).currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
       <div><label>${isAr()?"لكل":"Per"}</label><select id="smp_per"><option value="yard">${isAr()?"يارد":"yard"}</option><option value="meter">${isAr()?"متر":"meter"}</option></select></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1317,8 +1359,17 @@ async function supSave(){
 }
 
 /* -- الحاسبة -- */
+/* استهلاك كل خام (متر) لكل قطعة من الـ BOM */
+function bomMeters(pr){
+  const rows=[];
+  allBom(pr).forEach(b=>{
+    const mat=(DB.materials||[]).find(x=>x.id===b.material_id);
+    if(mat && (mat.unit||"")==="متر") rows.push({name:pname(mat)||mat.name||"خام", qty:parseFloat(b.qty)||0});
+  });
+  return rows;
+}
 function chCalc(){
-  const f=fxGet();
+  const c=chan(chChannel), needFx=(c.currency||"KWD")!=="KWD";
   el("chBody").innerHTML=`
   <div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"محول سريع":"Converter"}</div>
@@ -1331,45 +1382,129 @@ function chCalc(){
     </div>
   </div>
   <div class="card" style="padding:14px">
-    <div class="title" style="font-size:16px">${isAr()?"حاسبة الاحتياج والتكلفة":"Need & cost"}</div>
-    <label>${isAr()?"الموديل (اختياري — يجيب الاستهلاك تلقائي)":"Model"}</label>
+    <div class="title" style="font-size:16px">${isAr()?"حاسبة الاحتياج والتكلفة":"Need & cost"} — ${esc(chanLabel(chChannel))}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"القصور والسبير والعمولة والشحن تجي من إعدادات القناة — تعدّلها بالإعدادات":"Margins come from the channel settings"}</div>
+    <label>${isAr()?"الموديل (يجيب استهلاك خاماته)":"Model"}</label>
     <select id="nc_prod" onchange="ncProdPick()"><option value="">${isAr()?"يدوي":"manual"}</option>
       ${DB.products.map(x=>{const m=metersPerPiece(x);return `<option value="${x.id}" data-m="${m}">${esc(pname(x))}${m?` (${m} ${isAr()?"م/قطعة":"m/pc"})`:""}</option>`;}).join("")}
     </select>
+    <div id="nc_bom" class="muted" style="font-size:12px;margin:4px 0"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><label>${isAr()?"عدد القطع":"Qty"}</label><input id="nc_qty" inputmode="numeric" oninput="ncCalc()"></div>
       <div><label>${isAr()?"استهلاك القطعة (متر)":"m / piece"}</label><input id="nc_mpp" inputmode="decimal" oninput="ncCalc()"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>${isAr()?"قصور المورد %":"Shortage %"}</label><input id="nc_short" inputmode="decimal" value="4" oninput="ncCalc()"></div>
-      <div><label>${isAr()?"سبير %":"Spare %"}</label><input id="nc_spare" inputmode="decimal" value="5" oninput="ncCalc()"></div>
+      <div><label>${isAr()?"قصور %":"Shortage %"}</label><input id="nc_short" inputmode="decimal" value="${c.shortage||0}" oninput="ncCalc()"></div>
+      <div><label>${isAr()?"سبير %":"Spare %"}</label><input id="nc_spare" inputmode="decimal" value="${c.spare||0}" oninput="ncCalc()"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><label>${isAr()?"سعر اليارد":"Price / yd"}</label><input id="nc_price" inputmode="decimal" oninput="ncCalc()"></div>
-      <div><label>${isAr()?"العملة":"Currency"}</label><select id="nc_cur" onchange="ncCalc()"><option>CNY</option><option>USD</option></select></div>
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="nc_cur" onchange="ncCalc()">${["KWD","CNY","USD"].map(x=>`<option ${c.currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
     </div>
     <div id="nc_out" class="note-box" style="margin-top:10px">—</div>
   </div>`;
 }
 function ncProdPick(){
-  const sel=el("nc_prod"), m=parseFloat(sel.options[sel.selectedIndex].dataset.m||"0");
+  const sel=el("nc_prod"), pid=sel.value, m=parseFloat(sel.options[sel.selectedIndex].dataset.m||"0");
   if(m) el("nc_mpp").value=m;
+  const bx=el("nc_bom");
+  if(bx){ const rows=pid? bomMeters(product(pid)):[];
+    bx.innerHTML=rows.length? (isAr()?"خامات الموديل: ":"Fabrics: ")+rows.map(r=>`${esc(r.name)} ${r.qty}${isAr()?"م":"m"}`).join(" · ") : ""; }
   ncCalc();
 }
 function ncCalc(){
   const qty=parseFloat(el("nc_qty").value)||0, mpp=parseFloat(el("nc_mpp").value)||0;
   const sh=(parseFloat(el("nc_short").value)||0)/100, sp=(parseFloat(el("nc_spare").value)||0)/100;
   const out=el("nc_out"); if(!qty||!mpp){ out.textContent="—"; return; }
-  const base=qty*mpp;
-  const total=base*(1+sh)+base*sp;
-  const yards=total/YARD;
+  const base=qty*mpp, meters=base*(1+sh)+base*sp, yards=meters/YARD;
   const price=parseFloat(el("nc_price").value)||0, cur=el("nc_cur").value;
-  let txt=`${isAr()?"الأساس":"base"}: ${base.toFixed(1)} ${isAr()?"م":"m"} · ${isAr()?"الإجمالي مع القصور والسبير":"total"}: <b>${total.toFixed(1)} ${isAr()?"متر":"m"} = ${yards.toFixed(1)} ${isAr()?"يارد":"yd"}</b>`;
+  let txt=`${isAr()?"الأساس":"base"}: ${base.toFixed(1)}${isAr()?"م":"m"} · ${isAr()?"مع القصور+السبير":"total"}: <b>${meters.toFixed(1)}${isAr()?"م":"m"} = ${yards.toFixed(1)} ${isAr()?"يارد":"yd"}</b>`;
   if(price){
-    const cost=yards*price, kd=toKWD(cost,cur);
-    txt+=`<br>${isAr()?"التكلفة":"cost"}: <b>${cost.toFixed(0)} ${cur}</b>${kd!=null?` ≈ <b>${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}</b> (${fmtKD(kd/qty)} ${isAr()?"د.ك/قطعة":"KWD/pc"})`:""}`;
+    const lc=landedCost({channel:chChannel, qty_yd:yards, unit_price:price, currency:cur, plan_qty:qty});
+    if(lc){
+      txt+=`<br>${isAr()?"القماش":"fabric"}: ${fmtKD(lc.rawKWD)} د.ك`;
+      if(lc.commission) txt+=` · ${isAr()?"عمولة":"comm"}: ${fmtKD(lc.commission)}`;
+      if(lc.shipping) txt+=` · ${isAr()?"شحن":"ship"}: ${fmtKD(lc.shipping)}`;
+      txt+=`<br>${isAr()?"الإجمالي":"total"}: <b>${fmtKD(lc.total)} د.ك</b>${lc.per!=null?` · <b>${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"KWD/pc"}</b>`:""}`;
+    }
   }
   out.innerHTML=txt;
+}
+
+/* -- أوامر الشراء -- */
+function chPurch(){
+  const arr=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
+  el("chBody").innerHTML=`
+    ${arr.length? arr.map(poCard).join("") : `<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>`}
+    <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`;
+}
+function poCard(x){
+  const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
+  const prod=x.product_id? product(x.product_id):null;
+  const stTxt={planned:isAr()?"مخطط":"planned",deposit:isAr()?"عربون مدفوع":"deposit",ready:isAr()?"جاهز":"ready",arrived:isAr()?"وصل":"arrived"}[x.status||"planned"];
+  return `<div class="card" style="padding:12px">
+    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} <span class="chip">${esc(stTxt)}</span></div>
+    <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${prod?` · ${isAr()?"لموديل":"for"} ${esc(pname(prod))}`:""}</div>
+    <div style="font-size:13px;margin-top:3px">${x.qty_yd||0} ${isAr()?"يارد":"yd"} × ${x.unit_price||0} ${esc(x.currency||"KWD")}${x.plan_qty?` · ${x.plan_qty} ${isAr()?"قطعة":"pc"}`:""}</div>
+    ${lc?`<div style="font-size:13px;margin-top:2px"><b>${fmtKD(lc.total)} ${isAr()?"د.ك إجمالي":"KWD"}</b>${lc.per!=null?` · <b>${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"KWD/pc"}</b>`:""}</div>`:""}
+    <div class="pillrow" style="margin-top:6px">
+      ${["planned","deposit","ready","arrived"].map(sv=>`<button class="btn ${x.status===sv?'btn-ink':'btn-ghost'}" style="padding:3px 9px;font-size:11px" onclick="poStatus('${x.id}','${sv}')">${esc({planned:isAr()?"مخطط":"plan",deposit:isAr()?"عربون":"deposit",ready:isAr()?"جاهز":"ready",arrived:isAr()?"وصل":"arrived"}[sv])}</button>`).join("")}
+    </div></div>`;
+}
+async function poStatus(id,st){ await sb.from("purchases").update({status:st}).eq("id",id); const r=(DB.purchases||[]).find(x=>x.id===id); if(r)r.status=st; render(); }
+function poSheet(){
+  const c=chan(chChannel), tr=activeTrip(chChannel);
+  const sups=(DB.suppliers||[]).filter(x=>x.kind!=="agent");
+  openSheet(`<div class="title">${isAr()?"أمر شراء":"Purchase order"} — ${esc(chanLabel(chChannel))}</div>
+    <label>${isAr()?"المورد":"Supplier"}</label>
+    <select id="po_sup" onchange="if(this.value)el('po_supname').value=this.options[this.selectedIndex].text">
+      <option value="">—</option>${sups.map(x=>`<option value="${x.id}">${esc(x.name||"")}</option>`).join("")}
+    </select>
+    <input id="po_supname" placeholder="${isAr()?"اسم المورد":"Supplier"}">
+    <label>${isAr()?"الموديل (يجيب الاستهلاك)":"Model"}</label>
+    <select id="po_prod" onchange="poProdPick()"><option value="">${isAr()?"بدون":"none"}</option>
+      ${DB.products.map(x=>`<option value="${x.id}" data-m="${metersPerPiece(x)}">${esc(pname(x))}</option>`).join("")}</select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>${isAr()?"نوع الخام":"Fabric"}</label><input id="po_fab"></div>
+      <div><label>${isAr()?"عدد القطع":"Pieces"}</label><input id="po_qty" inputmode="numeric" oninput="poPreview()"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>${isAr()?"الياردات":"Yards"}</label><input id="po_yd" inputmode="decimal" oninput="poPreview()"></div>
+      <div><label>${isAr()?"سعر اليارد":"Price/yd"}</label><input id="po_price" inputmode="decimal" oninput="poPreview()"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="po_cur" onchange="poPreview()">${["KWD","CNY","USD"].map(x=>`<option ${c.currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
+      <div><label>${isAr()?"عربون مدفوع":"Deposit"}</label><input id="po_dep" inputmode="decimal"></div>
+    </div>
+    <div id="po_prev" class="note-box" style="margin:8px 0">—</div>
+    <button class="btn btn-ink btn-big" onclick="poSave()">${t("save")}</button>`);
+}
+function poProdPick(){
+  const sel=el("po_prod"), m=parseFloat(sel.options[sel.selectedIndex].dataset.m||"0"), qty=parseFloat(el("po_qty").value)||0;
+  if(m && qty){ const n=needYards(m,qty,chChannel); el("po_yd").value=n.yards.toFixed(1); }
+  poPreview();
+}
+function poPreview(){
+  const yd=parseFloat(el("po_yd").value)||0, pr=parseFloat(el("po_price").value)||0, qty=parseFloat(el("po_qty").value)||0, cur=el("po_cur").value;
+  const bx=el("po_prev"); if(!yd||!pr){ bx.textContent="—"; return; }
+  const lc=landedCost({channel:chChannel, qty_yd:yd, unit_price:pr, currency:cur, plan_qty:qty});
+  if(!lc){ bx.textContent="—"; return; }
+  bx.innerHTML=`${isAr()?"الإجمالي":"total"}: <b>${fmtKD(lc.total)} د.ك</b>${lc.per!=null?` · <b>${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"KWD/pc"}</b>`:""}`;
+}
+async function poSave(){
+  const yd=parseFloat(el("po_yd").value)||0, pr=parseFloat(el("po_price").value)||0;
+  if(!yd||!pr) return alert(isAr()?"ادخل الياردات والسعر":"Yards & price?");
+  const tr=activeTrip(chChannel);
+  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel,
+    supplier_id:el("po_sup").value||null, supplier_name:el("po_supname").value||null,
+    product_id:el("po_prod").value||null, fabric_name:el("po_fab").value||null,
+    plan_qty:parseInt(el("po_qty").value)||null, qty_yd:yd, unit_price:pr,
+    currency:el("po_cur").value, fx_rate:(el("po_cur").value==="KWD"?null:(chan(chChannel),(fxGet()[el("po_cur").value.toLowerCase()]||null))),
+    deposit:parseFloat(el("po_dep").value)||null, status:"planned"};
+  const {error}=await sb.from("purchases").insert(row);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(!(DB.purchases||[]).some(x=>x.id===row.id)) DB.purchases.unshift(row);
+  closeSheet(); cacheDB(); render();
 }
 
 
@@ -1718,6 +1853,23 @@ function tabSettings(){
     <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
   </div>
+  ${session.role==="manager"?`<div class="card">
+    <div class="title">${I.shipped||""} ${isAr()?"قنوات الشراء (هوامش كل مصدر)":"Purchase channels"}</div>
+    <div class="muted" style="font-size:12px">${isAr()?"هوامش القصور والسبير والعمولة والشحن لكل قناة — الحاسبة وأوامر الشراء تاخذ منها":"Margins per channel used by the calculator & POs"}</div>
+    ${Object.entries(channelsCfg()).map(([k,c])=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px">
+      <input id="ch_${k}_label" value="${esc(c.label||k)}" style="font-weight:700">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+        <div><label>${isAr()?"قصور %":"Shortage %"}</label><input id="ch_${k}_shortage" inputmode="decimal" value="${c.shortage||0}"></div>
+        <div><label>${isAr()?"سبير %":"Spare %"}</label><input id="ch_${k}_spare" inputmode="decimal" value="${c.spare||0}"></div>
+        <div><label>${isAr()?"عمولة %":"Commission %"}</label><input id="ch_${k}_commission" inputmode="decimal" value="${c.commission||0}"></div>
+        <div><label>${isAr()?"العملة":"Currency"}</label><select id="ch_${k}_currency">${["KWD","CNY","USD"].map(x=>`<option ${c.currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
+        <div><label>${isAr()?"نوع الشحن":"Shipping"}</label><select id="ch_${k}_ship_mode">${[["none",isAr()?"بدون":"none"],["flat",isAr()?"مقطوع":"flat"],["perpiece",isAr()?"للقطعة":"per piece"]].map(([v,l])=>`<option value="${v}" ${c.ship_mode===v?"selected":""}>${l}</option>`).join("")}</select></div>
+        <div><label>${isAr()?"قيمة الشحن (د.ك)":"Ship value (KWD)"}</label><input id="ch_${k}_ship_val" inputmode="decimal" value="${c.ship_val||0}"></div>
+      </div>
+    </div>`).join("")}
+    <button type="button" class="btn btn-ok btn-big" style="margin-top:10px" onclick="saveChannels()">${t("save")}</button>
+    <div id="chanMsg" class="muted" style="text-align:center;margin-top:6px"></div>
+  </div>`:""}
   <div id="workersBox"></div>
   ${session.role==="manager"?`<div class="card">
     <div class="title">${I.file} ${isAr()?"النسخ الاحتياطي والبيانات":"Backup & data"}</div>
@@ -1744,6 +1896,26 @@ async function saveSettings(){
   if(el("ctabPills")) row.creative_tabs=[...document.querySelectorAll("#ctabPills .pill.on")].map(x=>x.dataset.k);
   const {data,error}=await sb.from("settings").upsert({id:1,...row}).select();
   if(error){ if(msg){msg.style.color="var(--wine)"; msg.textContent="✕ "+error.message;} return; }
+  await loadAll();
+  if(msg){msg.style.color="var(--green)"; msg.textContent=t("savedOk");}
+}
+async function saveChannels(){
+  const msg=el("chanMsg"); if(msg) msg.textContent="...";
+  const cfg={};
+  chanKeys().forEach(k=>{
+    cfg[k]={
+      label: el("ch_"+k+"_label").value || k,
+      shortage: parseFloat(el("ch_"+k+"_shortage").value)||0,
+      spare: parseFloat(el("ch_"+k+"_spare").value)||0,
+      commission: parseFloat(el("ch_"+k+"_commission").value)||0,
+      currency: el("ch_"+k+"_currency").value||"KWD",
+      ship_mode: el("ch_"+k+"_ship_mode").value||"none",
+      ship_val: parseFloat(el("ch_"+k+"_ship_val").value)||0
+    };
+  });
+  const {error}=await sb.from("settings").upsert({id:1, channels:cfg, updated_at:new Date().toISOString()}).select();
+  if(error){ if(msg){msg.style.color="var(--wine)"; msg.textContent="✕ "+error.message;} return; }
+  DB.settings.channels=cfg;
   await loadAll();
   if(msg){msg.style.color="var(--green)"; msg.textContent=t("savedOk");}
 }
