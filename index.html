@@ -226,6 +226,22 @@
 .dsec{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 .dsec>.sechead{margin-top:0}
 .dsec input[type=file]{margin-top:8px}
+
+/* ---- عرض الكولكشن: شريط المراحل + كروت تصاميم مرتبة ---- */
+.dpipe{display:flex;gap:8px;margin:6px 0 8px;flex-wrap:wrap}
+.dpipe .pill{flex:1;min-width:70px;text-align:center;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:9px 6px}
+.dpipe .pill b{display:block;font-size:19px;line-height:1.1;color:var(--ink)}
+.dpipe .pill span{font-size:11px;color:var(--faint)}
+.stagehdr{display:flex;align-items:center;gap:8px;margin:20px 2px 10px;font-weight:800;font-size:14px;letter-spacing:1px;color:var(--ink)}
+.stagehdr::after{content:"";flex:1;height:1px;background:var(--line)}
+.stagehdr .n{background:var(--soft);color:var(--gray);border-radius:20px;padding:1px 10px;font-size:12px;font-weight:700}
+.dcard{display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;cursor:pointer;transition:background .15s}
+.dcard:active{background:var(--soft)}
+.dcard .dthumb{width:52px;height:52px;border-radius:10px;flex:0 0 auto;object-fit:cover;background:var(--soft);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#c8c2b8}
+.dcard-body{flex:1;min-width:0}
+.dcard-name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dcard-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.dcard-open{color:var(--faint);font-size:20px;flex:0 0 auto;margin-inline-start:2px}
 </style>
 </head>
 <body>
@@ -2988,23 +3004,30 @@ function renderCollection(cid){
     </div>
     ${c.notes?`<div class="note-box">${esc(c.notes)}</div>`:""}
     <button class="btn btn-ink btn-big" onclick="newDesign('${cid}')">${I.plus} ${isAr()?"تصميم جديد":"New design"}</button>
-    ${DSTAGES.map(st=>{
-      const list=ds.filter(d=>(d.stage||"idea")===st);
-      if(!list.length) return "";
-      return `<div class="sechead">${dlab(st)} <span class="muted" style="letter-spacing:0">(${list.length})</span></div>
-      ${list.map(d=>`<div class="card swipe">
-        <div class="wtop">${(d.mood&&d.mood[0])?`<img class="thumb" src="${esc(d.mood[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
-          <div style="flex:1"><div class="title">${esc(d.final_name||d.name||(isAr()?"بدون اسم":"Unnamed"))} ${rowMenu(esc(d.final_name||d.name||"—"),[
-            {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
-            {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delRow("design_projects",d.id)}
-          ])}</div>
-          ${d.sample_worker_id?`<span class="chip">${I.user} ${esc(wname(worker(d.sample_worker_id)))}</span>`:""}
-          ${(d.sample_notes||[]).length?`<span class="chip wine">${(d.sample_notes||[]).length} ${isAr()?"ملاحظة":"notes"}</span>`:""}
+    ${(function(){
+      const B=[["idea","sketch"],["materials"],["prep","sample","notes"],["approved"]];
+      const blab=[isAr()?"الفكرة":"Idea", isAr()?"شراء المواد":"Materials", isAr()?"تجهيز العينة":"Sample", isAr()?"معتمد":"Approved"];
+      const buckets=B.map(g=>ds.filter(d=>g.includes(d.stage||"idea")));
+      const pipe=`<div class="dpipe">${blab.map((l,i)=>`<div class="pill"><b>${buckets[i].length}</b><span>${l}</span></div>`).join("")}</div>`;
+      const cardOf=(d)=>`<div class="dcard" onclick="openDesign('${d.id}')">
+        ${(d.mood&&d.mood[0])?`<img class="dthumb" src="${esc(d.mood[0])}">`:`<div class="dthumb">${I.design}</div>`}
+        <div class="dcard-body">
+          <div class="dcard-name">${esc(d.final_name||d.name||(isAr()?"بدون اسم":"Unnamed"))}</div>
+          <div class="dcard-meta">
+            <span class="chip" style="font-size:11px">${dlab(d.stage||"idea")}</span>
+            ${d.sample_worker_id?`<span class="chip" style="font-size:11px">${I.user} ${esc(wname(worker(d.sample_worker_id)))}</span>`:""}
+            ${(d.sample_notes||[]).length?`<span class="chip wine" style="font-size:11px">${(d.sample_notes||[]).length} ${isAr()?"ملاحظة":"notes"}</span>`:""}
           </div>
         </div>
-        <button class="btn btn-ghost" style="margin-top:8px" onclick="openDesign('${d.id}')">${t("open")} ←</button>
-      </div>`).join("")}`;
-    }).join("") || `<div class="empty">—</div>`}`;
+        <span onclick="event.stopPropagation()">${rowMenu(esc(d.final_name||d.name||"—"),[
+          {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
+          {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delRow("design_projects",d.id)}
+        ])}</span>
+        <span class="dcard-open">←</span>
+      </div>`;
+      const sections=buckets.map((list,i)=> list.length? `<div class="stagehdr">${blab[i]} <span class="n">${list.length}</span></div>${list.map(cardOf).join("")}` : "").join("");
+      return pipe + (sections || `<div class="empty">${isAr()?"ابدأ بإضافة تصميم":"Add a design"}</div>`);
+    })()}`;
 }
 async function delCollection(id){
   if(!confirm(isAr()?"حذف الكولكشن؟ التصاميم تبقى بدون كولكشن":"Delete collection?")) return;
