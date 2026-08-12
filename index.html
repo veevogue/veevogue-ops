@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.1:APPV-->
+<!--APPV:2026-08-12.2:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -248,6 +248,8 @@
 .dpipe .pill.on{background:var(--ink);border-color:var(--ink)}
 .dpipe .pill.on b{color:#fff}
 .dpipe .pill.on span{color:rgba(255,255,255,.82)}
+
+.smpdiv{height:1px;margin:14px 6px;background:linear-gradient(90deg,transparent,rgba(142,59,76,.28),transparent);border-radius:1px}
 </style>
 </head>
 <body>
@@ -579,7 +581,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.1";
+const APP_VERSION="2026-08-12.2";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1227,148 +1229,47 @@ function tabChina(){
 function chTrip(){
   const f=fxGet(), c=chan(chChannel), needFx=(c.currency||"KWD")!=="KWD";
   const batches=(DB.trips||[]).filter(t=>(t.channel||"china")===chChannel);
-  el("chBody").innerHTML=`
-  ${needFx? `<div class="card" style="padding:14px">
-    <div class="title" style="font-size:16px">${isAr()?"سعر الصرف (دينار)":"FX to KWD"}</div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${fxAge()}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>1 يوان =</label><input id="fx_cny" inputmode="decimal" value="${f.cny? (Math.round(f.cny*10000)/10000):""}" placeholder="0.0425"></div>
-      <div><label>1 دولار =</label><input id="fx_usd" inputmode="decimal" value="${f.usd? (Math.round(f.usd*10000)/10000):""}" placeholder="0.306"></div>
-    </div>
-    <div class="pillrow" style="margin-top:10px">
-      <button class="btn btn-ghost" onclick="fxSaveManual()">${isAr()?"حفظ يدوي":"Save manual"}</button>
-      <button class="btn btn-ghost" onclick="fxRefresh()">${isAr()?"تحديث تلقائي":"Auto refresh"}</button>
-    </div>
-  </div>`:""}
-  ${batches.length? batches.map(tr=>`<div class="card" style="padding:14px">
-      <div class="title" style="font-size:16px">${esc(tr.name||"دفعة")} ${tr.status==="active"?`<span class="chip sage">${isAr()?"نشطة":"active"}</span>`:""}</div>
-      <div class="muted">${esc(tr.start_date||"")}${tr.end_date?` ← ${esc(tr.end_date)}`:""}</div>
-      <div class="muted" style="margin-top:6px">${(DB.samples||[]).filter(x=>x.trip_id===tr.id).length} ${isAr()?"عينة":"samples"} · ${(DB.purchases||[]).filter(x=>x.trip_id===tr.id).length} ${isAr()?"أمر شراء":"POs"}</div>
-      ${tr.notes?`<div style="margin-top:6px">${esc(tr.notes)}</div>`:""}
-      ${tr.status!=="active"?`<button class="btn btn-ghost" style="margin-top:8px" onclick="tripActivate('${tr.id}')">${isAr()?"تفعيل":"Activate"}</button>`:""}
-    </div>`).join("")
-  : `<div class="empty">${isAr()?"ما في دفعة بعد لهالقناة":"No batch yet"}</div>`}
-  <button class="btn btn-ink btn-big" onclick="tripSheet()">＋ ${isAr()?"دفعة جديدة":"New batch"}</button>`;
-}
-async function fxSaveManual(){
-  const c=parseFloat(el("fx_cny").value)||null, u=parseFloat(el("fx_usd").value)||null;
-  if(!c && !u) return alert(isAr()?"ادخل سعر واحد على الأقل":"Enter a rate");
-  const f=fxGet();
-  fxSet({cny:c||f.cny, usd:u||f.usd, at:Date.now(), src:"manual"});
-  render();
-}
-async function fxRefresh(){
-  const o=await fxAuto(true);
-  if(!o || !o.cny) alert(isAr()?"ما قدرنا نجيب السعر — ادخله يدوي":"Could not fetch — enter manually");
-  render();
-}
-function tripSheet(){
-  const isChina=chChannel==="china";
-  const dflt=isChina? (isAr()?"رحلة الصين":"China trip") : (isAr()?"دفعة شراء محلي":"Local buy");
-  openSheet(`<div class="title">${isAr()?"دفعة جديدة":"New batch"} — ${esc(chanLabel(chChannel))}</div>
-    <label>${isAr()?"الاسم":"Name"}</label><input id="tr_name" value="${dflt} ${new Date().toISOString().slice(0,7)}">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>${isChina?(isAr()?"من":"From"):(isAr()?"التاريخ":"Date")}</label><input id="tr_from" type="date" value="${today()}"></div>
-      ${isChina?`<div><label>${isAr()?"إلى":"To"}</label><input id="tr_to" type="date"></div>`:``}
-    </div>
-    <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="tr_notes"></textarea>
-    <button class="btn btn-ink btn-big" onclick="tripSave()">${t("save")}</button>`);
-}
-async function tripSave(){
-  const row={id:newId(), name:el("tr_name").value||"دفعة", start_date:el("tr_from").value||null,
-    end_date:(el("tr_to")?el("tr_to").value:null)||null, notes:el("tr_notes").value||null, status:"active", channel:chChannel, fx:fxGet()};
-  (DB.trips||[]).forEach(x=>{ if(x.status==="active" && (x.channel||"china")===chChannel) sb.from("trips").update({status:"done"}).eq("id",x.id).then(()=>{}); });
-  const {error}=await sb.from("trips").insert(row);
-  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
-  if(!(DB.trips||[]).some(x=>x.id===row.id)) DB.trips.unshift(row);
-  closeSheet(); cacheDB(); render(); chTab="trip";
-}
-async function tripActivate(id){
-  await sb.from("trips").update({status:"active"}).eq("id",id);
-  await refresh();
-}
-
-/* -- دفتر العينات -- */
-function sampleCard(x){
-  const ph=(x.photos||[])[0];
-  const isAcc=x.kind==="accessory";
-  const st=x.status||"candidate";
-  const perLbl = isAcc? (x.per_count?`${isAr()?"لكل":"/"} ${x.per_count}`:(isAr()?"للدرزن":"/dozen"))
-                      : (x.per==="yard"?(isAr()?"يارد":"yd"):(isAr()?"متر":"m"));
-  let kd=null;
-  if(x.price!=null){
-    if(isAcc){ const per=x.per_count||12; kd=toKWD(x.price/per, x.currency||"CNY"); }
-    else { const perM=x.per==="yard"? x.price/YARD : x.price; kd=toKWD(perM, x.currency||"CNY"); }
-  }
-  const stChip = st==="shortlist"? `<span class="chip sage">★ ${isAr()?"معتمدة → شراء":"approved"}</span>`
-    : st==="rejected"? `<span class="chip" style="background:#F5EAEC;color:#8E3B4C">✕ ${isAr()?"مرفوضة":"rejected"}</span>` : "";
-  return `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:flex-start;${st==="rejected"?"opacity:.6":""}">
-    ${ph?`<img class="thumb" src="${esc(ph)}" style="width:84px;height:84px" onclick="viewImg('${esc(ph)}')">`:`<div class="thumb" style="width:84px;height:84px"></div>`}
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))} ${stChip}</div>
-      <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${x.shop_no?` · ${isAr()?"محل":"shop"} ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}</div>
-      <div style="font-size:13px;margin-top:2px">${x.price!=null?`${x.price} ${esc(x.currency||"CNY")}/${perLbl}`:""}${isAcc&&x.count?` · ${isAr()?"العدد":"count"} ${x.count}`:""}
-        ${kd!=null?` <b>≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</b>`:""}</div>
-      ${x.card_photo?`<div class="pillrow" style="margin-top:2px"><img class="thumb" src="${esc(x.card_photo)}" style="width:44px;height:30px" onclick="viewImg('${esc(x.card_photo)}')"><span class="muted" style="font-size:11px">${isAr()?"بزنس كارد":"card"}</span></div>`:""}
-      ${x.note?`<div class="muted" style="font-size:12px">${esc(x.note)}</div>`:""}
-      <div class="pillrow" style="margin-top:6px">
-        ${st!=="shortlist"
-          ? `<button class="btn btn-ok" style="padding:3px 12px;font-size:13px" onclick="sampleStar('${x.id}')">★ ${isAr()?"اعتمد → شراء":"approve"}</button>`
-          : `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleUnstar('${x.id}')">↺ ${isAr()?"تراجع":"undo"}</button>`}
-        ${st!=="rejected"
-          ? `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleReject('${x.id}')">✕</button>`
-          : `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleRestore('${x.id}')">↺ ${isAr()?"رجّع":"restore"}</button>`}
-      </div>
-    </div></div>`;
-}
-
-function chSamples(){
-  const tr=activeTrip();
-  const allS=(DB.samples||[]).filter(x=>!tr || x.trip_id===tr.id);
-  const desWithSamples=[...new Set(allS.map(x=>x.design_id).filter(Boolean))];
-  const desWithChk=activeDesigns().filter(d=>(d.checklist||[]).length).map(d=>d.id);
-  const designIds=[...new Set([...desWithChk, ...desWithSamples])];
-  const loose=allS.filter(x=>!x.design_id);
-  const showList=(list)=> chCompare? list.filter(x=>x.status==="shortlist") : list;
-
-  const slotBlock=(d, item)=>{
-    const list=allS.filter(x=>x.design_id===d.id && x.checklist_item_id===item.id);
-    const shown=showList(list);
-    if(chCompare && !shown.length) return "";
-    const sourced=list.some(x=>x.status==="shortlist");
-    return `<div class="note-box" style="background:var(--paper);padding:10px;margin-top:8px">
-      <div style="font-weight:700;font-size:13px">${sourced?"★ ":""}${esc(item.name||"")}
-        <span class="muted" style="font-size:11px;font-weight:400">· ${item.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")}${item.qty?` · ${item.qty} ${esc(item.unit||(item.kind==="accessory"?(isAr()?"عدد":"pc"):(isAr()?"م":"m")))}`:""} · ${list.length} ${isAr()?"عينة":"samples"}</span></div>
-      ${shown.map(sampleCard).join("")}
-      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin-top:4px" onclick="sampleSheet('${d.id}','${item.id}','${item.kind||"fabric"}')">＋ ${isAr()?"عينة لهذا البند":"Add sample"}</button>
-    </div>`;
-  };
-
-  const designBlock=(did)=>{
-    const d=design_(did)||{name:"?"}; ensureChkIds(d);
-    const items=d.checklist||[];
-    const dsamples=allS.filter(x=>x.design_id===did);
-    const orphan=dsamples.filter(x=>!x.checklist_item_id || !items.some(it=>it.id===x.checklist_item_id));
-    const shownOrphan=showList(orphan);
-    const starTot=dsamples.filter(x=>x.status==="shortlist").length;
-    return `<div class="card" style="padding:12px;background:var(--soft)">
-      <div class="title" style="font-size:15px">${I.design} ${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}
-        <span class="muted" style="font-size:12px;letter-spacing:0">· ${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""}</span></div>
-      ${items.length? items.map(it=>slotBlock(d,it)).join("")
-        : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود تشيك ليست — أضفها من صفحة التصميم":"Add checklist items on the design page"}</div>`}
-      ${shownOrphan.length?`<div class="sechead" style="margin-top:8px;font-size:11px">${isAr()?"عينات بدون بند":"UNSLOTTED"}</div>${shownOrphan.map(sampleCard).join("")}`:""}
-      <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="sampleSheet('${did}','','fabric')">＋ ${isAr()?"عينة عامة لهذا التصميم":"Sample for this design"}</button>
-    </div>`;
-  };
-
-  el("chBody").innerHTML=`
-    ${!tr?`<div class="note-box">${isAr()?"سوّ دفعة/رحلة أول — العينات تنسجل تحتها":"Create a batch first"}</div>`:""}
-    <div class="pillrow" style="margin-bottom:10px">
+  const filterPill=`<div class="pillrow" style="margin-bottom:10px">
       <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:6px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة فقط ★":"Approved only"}</button>
-    </div>
-    <div class="sechead">${isAr()?"تصاميم جديدة — تشيك ليست وعينات":"NEW DESIGNS"}</div>
-    ${designIds.length? designIds.map(designBlock).join("")
-      : `<div class="muted" style="font-size:13px">${isAr()?"ما في تصاميم بعد — عبّي تشيك ليست تصميم من صفحة التصميم":"No designs yet"}</div>`}
+    </div>`;
+  const tripWarn = !tr?`<div class="note-box">${isAr()?"سوّ دفعة/رحلة أول — العينات تنسجل تحتها":"Create a batch first"}</div>`:"";
+  /* تنظيم الدفتر بالكولكشنات: نجمّع التصاميم حسب الكولكشن (زي قسم التصميم) */
+  const byCol={};
+  designIds.forEach(did=>{ const d=design_(did); const c=(d&&d.collection_id)||"__none"; (byCol[c]=byCol[c]||[]).push(did); });
+  const colKeys=Object.keys(byCol);
+
+  if(window._smpCol && byCol[window._smpCol]){
+    const cid=window._smpCol;
+    const c=cid==="__none"?{name:isAr()?"بدون كولكشن":"No collection"}:collection_(cid);
+    const blocks=byCol[cid].map(designBlock).join('<div class="smpdiv"></div>');
+    el("chBody").innerHTML=`
+      ${tripWarn}
+      <div class="colhead"><button class="colback" onclick="window._smpCol=null;render()" title="${isAr()?"الكولكشنات":"Collections"}">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="colhead-mid"><div class="colhead-name">${esc(c.name||"")}</div>
+          <div class="colhead-sub">${byCol[cid].length} ${isAr()?"تصميم":"designs"}</div></div>
+        <span style="width:38px"></span></div>
+      ${filterPill}
+      ${blocks}`;
+    return;
+  }
+
+  el("chBody").innerHTML=`
+    ${tripWarn}
+    ${filterPill}
+    <div class="sechead">${isAr()?"الكولكشنات":"COLLECTIONS"}</div>
+    ${colKeys.length? colKeys.map(cid=>{
+        const c=cid==="__none"?{name:isAr()?"بدون كولكشن":"No collection"}:collection_(cid);
+        const dids=byCol[cid];
+        const nSourced=dids.filter(did=>{ const d=design_(did); const items=(d.checklist||[]); return items.length && items.every(it=>allS.some(sm=>sm.design_id===did&&sm.checklist_item_id===it.id&&sm.status==="shortlist")); }).length;
+        return `<div class="card colcard" onclick="window._smpCol='${cid}';render()">
+          <div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>
+          <div style="flex:1"><div class="title">${esc(c.name||"")}</div>
+            <div class="muted">${dids.length} ${isAr()?"تصميم":"designs"}${nSourced?` · ${nSourced} ${isAr()?"مكتمل الخامات":"sourced"}`:""}</div></div>
+          <div class="muted" style="font-size:20px">←</div>
+        </div>`;
+      }).join("")
+      : `<div class="muted" style="font-size:13px">${isAr()?"ما في تصاميم بعد — عبّي تشيك ليست تصميم من قسم التصميم":"No designs yet"}</div>`}
     ${loose.length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة بتصميم":"UNLINKED"}</div>${showList(loose).map(sampleCard).join("")}`:""}
     ${tr?`<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric')">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`:""}`;
 }
@@ -1428,6 +1329,15 @@ async function sampleUnstar(id){
   cacheDB(); render();
 }
 /* ✕ رفض العينة — تبقى للرجوع */
+async function sampleDelete(id){
+  const x=(DB.samples||[]).find(s=>s.id===id);
+  if(!confirm(isAr()?`حذف هذه العينة${x&&x.fabric_type?` («${x.fabric_type}»)`:""}؟`:"Delete this sample?")) return;
+  const po=(DB.purchases||[]).find(pp=>pp.sample_id===id && pp.status==="planned");
+  if(po){ await sb.from("purchases").delete().eq("id",po.id); DB.purchases=(DB.purchases||[]).filter(pp=>pp.id!==po.id); }
+  await sb.from("trip_samples").delete().eq("id",id);
+  DB.samples=(DB.samples||[]).filter(s=>s.id!==id);
+  cacheDB(); render();
+}
 async function sampleReject(id){
   await sb.from("trip_samples").update({status:"rejected"}).eq("id",id);
   const x=(DB.samples||[]).find(s=>s.id===id); if(x) x.status="rejected"; render();
