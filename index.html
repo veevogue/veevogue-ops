@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.11:APPV-->
+<!--APPV:2026-08-12.12:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -582,7 +582,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.11";
+const APP_VERSION="2026-08-12.12";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -2280,7 +2280,6 @@ function poSend(gidEnc, lang){
         ${line2?`<div>${line2}</div>`:""}
         ${line3?`<div>${line3}</div>`:""}
       </div>
-      ${card?`<div style="margin:6px 0"><div class="muted" style="font-size:11px">${L.card}</div><img src="${esc(card)}" style="width:120px;max-width:45%;border-radius:8px" onclick="viewImg('${esc(card)}')"></div>`:""}
       <table style="width:100%;border-collapse:collapse;margin-top:6px">
         <tr><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px">${L.photo}</th><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px;text-align:${lang==='ar'?'right':'left'}">${L.item}</th><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px">${L.qty}</th></tr>
         ${rowsHtml}
@@ -2619,7 +2618,7 @@ function orderCard(o){
   const openIds=JSON.parse(localStorage.getItem("vv_open")||"[]");
   const isOpen=openIds.includes(o.id);
   const doneN=ls.filter(l=>l.stage==="shipped").length;
-  return `<div class="card swipe">
+  return `<div class="card">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
       <div style="flex:1;cursor:pointer" onclick="toggleOrder('${o.id}')">
         <div class="title">${t("order")} #${o.order_no} <span class="chip wine">${esc(o.order_type)}</span> <span class="muted">${doneN}/${ls.length}</span></div>
@@ -2634,7 +2633,7 @@ function orderCard(o){
     ${isOpen?`
       ${o.customer_ref?`<div class="muted">${t("invoice")}: ${esc(o.customer_ref)}</div>`:""}
       ${o.repair_reason?`<div class="muted">${t("reason")}: ${esc(o.repair_reason)}</div>`:""}
-      ${ls.map(l=>`<div class="lineitem swipe">
+      ${ls.map(l=>`<div class="lineitem">
         <div style="flex:1"><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
         <div>${lineChip(l)} ${l.stage==="pack"&&session.role==="manager"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped}</button>`:""}
         ${session.role==="manager"? rowMenu(esc(pname(product(l.product_id)))+" "+esc(l.size||""),[
