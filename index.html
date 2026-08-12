@@ -1299,7 +1299,7 @@ async function approveDesignPurchase(designId){
     /* 3) الكمية من التشيك ليست إن وجد بند مطابق */
     const ci=chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>(c.kind==="accessory")===isAcc);
     let qty_yd=null, plan_qty=null;
-    if(ci && ci.qty){ if(isAcc) plan_qty=parseInt(ci.qty)||null; else qty_yd = (x.per==="meter"? (ci.qty/0.9144) : ci.qty); }
+    if(ci && ci.qty){ if(isAcc) plan_qty=parseInt(ci.qty)||null; else qty_yd = (parseFloat(ci.qty)/YARD); }  /* التشيك ليست بالمتر → يارد */
     /* 4) أمر الشراء */
     const po={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, design_id:designId,
       supplier_id:supId||null, supplier_name:x.supplier_name||null, material_id:mat.id,
