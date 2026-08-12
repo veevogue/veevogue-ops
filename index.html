@@ -241,7 +241,7 @@ const T = {
   whoAreYou:"منو أنت؟", noWorkers:"ما في عمال مسجلين", wrongPin:"الرقم غلط", pin:"الرقم السري",
   logout:"خروج", refresh:"تحديث", close:"إغلاق", save:"حفظ", add:"إضافة", edit:"تعديل",
   del:"حذف", cancel:"إلغاء", stop:"إيقاف", open:"فتح",
-  board:"لوحة", china:"المشتريات", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
+  board:"لوحة", china:"المشتريات", finance:"المالية", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
   shoots:"التصوير", workersTab:"العمال", perf:"الأداء", settings:"الإعدادات", archive:"الأرشيف", quality:"الجودة",
   cut:"قص", emb:"تطريز/طباعة", sew:"خياطة", qc:"جودة", pack:"تجهيز", shipped:"أُرسل", ext:"تنفيذ خارجي", sample:"عينة",
   workingNow:"شغال الحين", noOneWorking:"ما في أحد شغال حالياً", noOrders:"ما في أوامر جارية",
@@ -260,7 +260,7 @@ const T = {
   whoAreYou:"Who are you?", noWorkers:"No workers yet", wrongPin:"Wrong PIN", pin:"PIN",
   logout:"LOG OUT", refresh:"REFRESH", close:"CLOSE", save:"SAVE", add:"ADD", edit:"EDIT",
   del:"DELETE", cancel:"CANCEL", stop:"DISABLE", open:"OPEN",
-  board:"Board", china:"PURCHASING", newOrder:"New Order", products:"Products", design:"Design", external:"External",
+  board:"Board", china:"PURCHASING", finance:"FINANCE", newOrder:"New Order", products:"Products", design:"Design", external:"External",
   shoots:"Photoshoot", workersTab:"Workers", perf:"Performance", settings:"Settings", archive:"Archive", quality:"Quality",
   cut:"CUT", emb:"EMBROIDERY", sew:"SEW", qc:"QUALITY", pack:"PACK", shipped:"SHIPPED", ext:"EXTERNAL", sample:"SAMPLE",
   workingNow:"Working now", noOneWorking:"Nobody is working", noOrders:"No active orders",
@@ -1160,12 +1160,12 @@ function tabChina(){
       ${sub("samples", isAr()?"دفتر العينات":"Samples")}
       ${sub("suppliers", isAr()?"الموردين":"Suppliers")}
       ${sub("purch", isAr()?"أوامر الشراء":"Purchase orders")}
-      ${sub("fin", isAr()?"المالية":"Finance")}
       ${sub("calc", isAr()?"الحاسبة":"Calculator")}
     </div>
     <div id="chBody"></div>`;
   if(!chChannel||chanKeys().indexOf(chChannel)<0) chChannel=chanKeys()[0];
-  ({trip:chTrip, samples:chSamples, suppliers:chSuppliers, purch:chPurch, fin:chFin, calc:chCalc})[chTab]();
+  if(chTab==="fin") chTab="trip";
+  ({trip:chTrip, samples:chSamples, suppliers:chSuppliers, purch:chPurch, calc:chCalc})[chTab]();
 }
 
 /* -- الرحلة -- */
@@ -1266,12 +1266,18 @@ function chSamples(){
   /* التصميم هو العنصر الأساسي: نجمّع العينات تحت تصاميمها (19ب) */
   const groups={}; const loose=[];
   arr.forEach(x=>{ if(x.design_id){ (groups[x.design_id]=groups[x.design_id]||[]).push(x); } else loose.push(x); });
-  const designBlock=(did, list)=>{
+  /* التصاميم اللي نشتغل عليها: عندها عينات أو عندها تشيك ليست (حتى لو ما لها عينات بعد) */
+  const designIds=[...new Set([...Object.keys(groups), ...activeDesigns().filter(d=>(d.checklist||[]).length).map(d=>d.id)])];
+  const chkRef=(d)=>{ const items=d.checklist||[]; if(!items.length) return "";
+    return `<div class="note-box" style="font-size:12px;background:var(--paper)"><b>${isAr()?"محتاج نشتري له:":"To buy:"}</b> ${items.map(c=>`<span style="white-space:nowrap">${esc(c.name)}${c.qty?` (${c.qty} ${esc(c.unit||(c.kind==="accessory"?(isAr()?"عدد":"pc"):(isAr()?"م":"m")))})`:""}${c.status==="star"?" ★":""}</span>`).join(" · ")}</div>`; };
+  const designBlock=(did)=>{
     const d=design_(did)||{name:"?"};
+    const list=groups[did]||[];
     const starred=list.filter(x=>x.status==="shortlist");
     return `<div class="card" style="padding:12px;background:var(--soft)">
-      <div class="title" style="font-size:15px">${I.design} ${esc(d.final_name||d.name||"تصميم")}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}
+      <div class="title" style="font-size:15px">${I.design} ${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}
         <span class="muted" style="font-size:12px;letter-spacing:0">· ${list.length} ${isAr()?"عينة":"samples"}${starred.length?` · ${starred.length} ★`:""}</span></div>
+      ${chkRef(d)}
       ${list.map(sampleCard).join("")}
       ${starred.length?`<button class="btn btn-ok btn-big" onclick="approveDesignPurchase('${did}')">${I.done} ${isAr()?"اعتمد → ولّد أوامر الشراء":"Approve → generate POs"}</button>`:""}
       <button class="btn btn-ghost btn-big" onclick="window._chDesign='${did}';sampleSheet()">＋ ${isAr()?"عينة لهذا التصميم":"Sample for this design"}</button>
@@ -1283,8 +1289,8 @@ function chSamples(){
       <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:6px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المفضّلة فقط ★":"Shortlist"}</button>
     </div>
     <div class="sechead">${isAr()?"تصاميم جديدة":"NEW DESIGNS"}</div>
-    ${Object.keys(groups).length? Object.entries(groups).map(([did,list])=>designBlock(did,list)).join("")
-      : `<div class="muted" style="font-size:13px">${isAr()?"ما في عينات مربوطة بتصميم بعد — أضف عينة واختر لها تصميم":"No design-linked samples yet"}</div>`}
+    ${designIds.length? designIds.map(did=>designBlock(did)).join("")
+      : `<div class="muted" style="font-size:13px">${isAr()?"ما في تصاميم بعد — عبّي تشيك ليست تصميم أو أضف عينة واختر لها تصميم":"No designs yet"}</div>`}
     ${loose.length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة":"UNLINKED"}</div>${loose.map(sampleCard).join("")}`:""}
     ${tr?`<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="window._chDesign='';sampleSheet()">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`:""}`;
 }
@@ -1600,7 +1606,56 @@ async function poSave(){
 }
 
 
-/* ================= المالية: نفقات + دفعات + ملخص ================= */
+/* ================= قسم المالية الرئيسي (كل الرحلات) ================= */
+function tripName(id){ const t=(DB.trips||[]).find(x=>x.id===id); return t? (t.name||"") : (isAr()?"عام":"general"); }
+function tabFinance(){
+  const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
+  const pos=(DB.purchases||[]), exps=(DB.expenses||[]);
+  let mTotal=0,mPaid=0,mRem=0; const bySup={}, byTrip={};
+  pos.forEach(po=>{ const t=poTotals(po); mTotal+=t.total; mPaid+=t.paid; mRem+=t.remaining;
+    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,rem:0}); bySup[sk].total+=t.total; bySup[sk].rem+=t.remaining;
+    const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
+  exps.forEach(e=>{ const tk=e.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].exp+=expKWD(e); });
+  const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
+  const grand=mTotal+expTotal;
+  el("tabbody").innerHTML=`
+  <div class="card" style="padding:16px">
+    <div class="title">${isAr()?"إجمالي المصروف":"Total spend"}</div>
+    <div style="font-size:30px;font-weight:800;margin:4px 0">${money(grand)}</div>
+    <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}</div>
+    <div class="muted" style="margin-top:2px">${isAr()?"مدفوع":"paid"}: ${money(mPaid)} · ${mRem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي عليك":"due"}: ${money(mRem)}</b>`:`<b style="color:var(--green)">${isAr()?"لا يوجد متبقٍ":"all paid"}</b>`}</div>
+  </div>
+
+  <div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"النفقات":"Expenses"} <span class="muted" style="font-size:13px">· ${money(expTotal)}</span></div>
+    ${exps.length? exps.map(e=>`<div class="lineitem"><div style="min-width:0">
+        <b>${esc(expCatLabel(e.category))}</b> ${e.label?`<span class="muted">· ${esc(e.label)}</span>`:""}
+        <div class="muted" style="font-size:12px">${esc(tripName(e.trip_id))} · ${esc(e.spent_on||"")}${(e.currency||"KWD")!=="KWD"?` · ${e.amount} ${esc(e.currency)}`:""}</div>
+      </div><div style="text-align:left;white-space:nowrap">${fmtKD(expKWD(e))} ${rowMenu(esc(expCatLabel(e.category)),[{label:isAr()?"حذف":"Delete",icon:I.trash,danger:true,fn:()=>expDel(e.id)}])}</div></div>`).join("")
+      : `<div class="muted" style="font-size:13px">${isAr()?"ما في نفقات مسجلة":"No expenses"}</div>`}
+    <button class="btn btn-ink btn-big" style="margin-top:8px" onclick="expSheet()">＋ ${isAr()?"نفقة جديدة":"New expense"}</button>
+  </div>
+
+  ${Object.keys(byTrip).length?`<div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"حسب الرحلة/الدفعة":"By batch"}</div>
+    ${Object.entries(byTrip).map(([tk,v])=>`<div class="lineitem"><div><b>${esc(tk==="__none"?(isAr()?"عام":"general"):tripName(tk))}</b>
+      <div class="muted" style="font-size:12px">${isAr()?"مشتريات":"pur"} ${fmtKD(v.pur)} · ${isAr()?"نفقات":"exp"} ${fmtKD(v.exp)}</div></div>
+      <div style="text-align:left;font-weight:700">${money(v.pur+v.exp)}</div></div>`).join("")}
+  </div>`:""}
+
+  ${Object.keys(bySup).length?`<div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"حسب المورد":"By supplier"}</div>
+    ${Object.entries(bySup).map(([k,v])=>`<div class="lineitem"><div><b>${esc(k)}</b></div>
+      <div class="muted" style="text-align:left">${money(v.total)}${v.rem>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(v.rem)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`).join("")}
+  </div>`:""}
+
+  <div class="card" style="padding:14px;opacity:.75">
+    <div class="title" style="font-size:16px">${isAr()?"المبيعات":"Sales"}</div>
+    <div class="muted">${isAr()?"تُسجّل تلقائياً عند ربط الموقع الإلكتروني (لاحقاً) — وقتها يطلع الربح = المبيعات − المصروف":"Auto-recorded once the website is linked"}</div>
+  </div>`;
+}
+
+/* ================= المالية: نفقات + دفعات + ملخص (داخل المشتريات — مرجع) ================= */
 const EXP_CATS=[["transport","نقل"],["food","أكل"],["hotel","سكن"],["tickets","تذاكر"],["misc","نثريات / بوكيت موني"],["customs","جمارك / رسوم"],["other","أخرى"]];
 function expCatLabel(k){ const f=EXP_CATS.find(x=>x[0]===k); return f? f[1] : k; }
 function expKWD(x){ return (x.currency||"KWD")==="KWD"? (parseFloat(x.amount)||0) : (toKWD(parseFloat(x.amount)||0, x.currency)||0); }
@@ -1654,9 +1709,12 @@ function chFin(){
     ${Object.entries(byDesign).map(([k,v])=>`<div class="lineitem"><div><b>${esc(k)}</b></div><div class="muted" style="text-align:left">${money(v)}</div></div>`).join("")}
   </div>`:""}`;
 }
-function expSheet(){
-  const tr=activeTrip(chChannel), c=chan(chChannel);
-  openSheet(`<div class="title">${isAr()?"نفقة جديدة":"New expense"}${tr?` — ${esc(tr.name||"")}`:""}</div>
+function expSheet(preTrip){
+  const tr = preTrip? (DB.trips||[]).find(t=>t.id===preTrip) : activeTrip(chChannel);
+  const c=chan(chChannel);
+  openSheet(`<div class="title">${isAr()?"نفقة جديدة":"New expense"}</div>
+    <label>${isAr()?"الرحلة/الدفعة":"Batch"}</label>
+    <select id="ex_trip"><option value="">${isAr()?"— بدون —":"none"}</option>${(DB.trips||[]).map(x=>`<option value="${x.id}" ${tr&&tr.id===x.id?"selected":""}>${esc(x.name||"")}</option>`).join("")}</select>
     <label>${isAr()?"النوع":"Category"}</label>
     <select id="ex_cat">${EXP_CATS.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
     <label>${isAr()?"وصف (اختياري)":"Label"}</label><input id="ex_label">
@@ -1669,8 +1727,8 @@ function expSheet(){
 }
 async function expSave(){
   const amt=parseFloat(el("ex_amt").value)||0; if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
-  const tr=activeTrip(chChannel), cur=el("ex_cur").value;
-  const row={id:newId(), trip_id:tr?tr.id:null, category:el("ex_cat").value, label:el("ex_label").value||null,
+  const cur=el("ex_cur").value, trId=(el("ex_trip")?el("ex_trip").value:"")||null;
+  const row={id:newId(), trip_id:trId, category:el("ex_cat").value, label:el("ex_label").value||null,
     amount:amt, currency:cur, fx_rate:(cur==="KWD"?null:(fxGet()[cur.toLowerCase()]||null)), spent_on:el("ex_date").value||today()};
   const {error}=await sb.from("expenses").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
@@ -1819,7 +1877,7 @@ function enableSwipe(){
   });
 }
 /* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
-const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","perf","china","settings","archive"];
+const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","perf","china","finance","settings","archive"];
 const TABS_CREATIVE=["board","design","products","quality"];
 function myTabs(){
   if(session.role==="manager") return TABS_MANAGER;
@@ -1833,7 +1891,7 @@ function renderDesk(){
     <div class="tabs">${tabs.map(k=>`<button class="${mTab===k?'on':''}" onclick="mTab='${k}';localStorage.setItem('vv2_tab','${k}');render()">${t(k)}</button>`).join("")}</div>
     <div id="tabbody"></div>`;
   ({board:tabBoard,newOrder:tabNewOrder,products:tabProducts,design:tabDesign,external:tabExternal,
-    shoots:tabShoots,quality:tabQuality,perf:tabPerf,china:tabChina,settings:tabSettings,archive:tabArchive})[mTab]();
+    shoots:tabShoots,quality:tabQuality,perf:tabPerf,china:tabChina,finance:tabFinance,settings:tabSettings,archive:tabArchive})[mTab]();
 }
 
 /* ---- لوحة ---- */
