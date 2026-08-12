@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.6:APPV-->
+<!--APPV:2026-08-12.7:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -388,7 +388,7 @@ const PARTS_PRESET = [["توب","TOP"],["بنطرون","PANTS"],["تنورة","S
 const AGES_PRESET = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 
 let sb=null;
-let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[],purchases:[],expenses:[]};
+let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[],purchases:[],expenses:[],supplier_payments:[]};
 let session=JSON.parse(localStorage.getItem("vv2_session")||"null");
 let mTab=localStorage.getItem("vv2_tab")||"board";
 let editProductId=null, newLines=[], customModels=[];
@@ -400,7 +400,7 @@ let NETOK = (typeof navigator!=="undefined" && navigator.onLine!==false);
 let flushing=false;
 const TBL2DB={workers:"workers",products:"products",design_projects:"designs",photoshoots:"shoots",
   repair_reasons:"reasons",orders:"orders",order_lines:"lines",line_parts:"parts",stage_events:"events",
-  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples",purchases:"purchases",expenses:"expenses"};
+  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples",purchases:"purchases",expenses:"expenses",supplier_payments:"supplier_payments"};
 
 function qGet(){ try{return JSON.parse(localStorage.getItem(VVQ)||"[]");}catch(e){return [];} }
 function qSet(a){ try{localStorage.setItem(VVQ,JSON.stringify(a));}catch(e){} }
@@ -562,8 +562,9 @@ async function loadAll(){
     sb.from("trip_samples").select("*").order("created_at",{ascending:false}),
     sb.from("purchases").select("*").order("created_at",{ascending:false}),
     sb.from("expenses").select("*").order("created_at",{ascending:false}),
+    sb.from("supplier_payments").select("*").order("created_at",{ascending:false}),
   ]);
-  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur,exp] = res;
+  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur,exp,sp] = res;
   /* فشل الاتصال: نحافظ على البيانات الحالية أو نرجع لآخر نسخة محفوظة على الجهاز */
   if(res.some(x=>x && x.error && !x.data)){
     NETOK=false;
@@ -575,13 +576,13 @@ async function loadAll(){
       orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
       settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
       breaks:br.data||[], collections:col.data||[], materials:mat.data||[],
-      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[], expenses:exp.data||[]};
+      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[], expenses:exp.data||[], supplier_payments:sp.data||[]};
   NETOK=true; cacheDB(); paintNet();
 }
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.6";
+const APP_VERSION="2026-08-12.7";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1783,18 +1784,20 @@ function chPurch(){
     if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
     groups[k].rows.push(po); });
   el("chBody").innerHTML = Object.values(groups).map(g=>{
-    const curs=[...new Set(g.rows.map(po=>po.currency||"KWD"))]; const uniform=curs.length===1?curs[0]:null;
-    let tot=0,rem=0; g.rows.forEach(po=>{ const d=uniform?poDealTotals(po):poTotals(po); tot+=d.total; rem+=d.remaining; });
-    const cl=uniform||(isAr()?"د.ك":"KWD"); const totS=uniform?`${fmtN(tot)} ${cl}`:fmtKD(tot); const remS=uniform?`${fmtN(rem)} ${cl}`:fmtKD(rem);
     const sup=g.sup||{}; const nm=g.name||sup.name||"—";
-    const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
+    const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const paid=supPaid(g.key,cur).paid; const rem=Math.max(0,dinfo.total-paid);
+    const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
     return `<div class="card" style="padding:14px 12px;background:var(--soft)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="font-size:20px;font-weight:800;border-inline-start:4px solid var(--wine);padding-inline-start:10px;line-height:1.2;min-width:0">${esc(nm)}</div>
         <button class="btn btn-ghost" style="width:auto;display:inline-flex;align-items:center;gap:5px;padding:6px 12px;font-size:13px;white-space:nowrap" onclick="poSend('${encodeURIComponent(g.key)}')">📤 ${isAr()?"إرسال الطلب":"Send"}</button>
       </div>
       ${contact?`<div class="muted" style="font-size:12px;margin-top:6px">${contact}</div>`:""}
-      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي":"total"} ${totS} · ${rem>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${remS}</span>`:`<span style="color:var(--green)">${isAr()?"مدفوع":"paid"}</span>`}</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي المستحق":"total due"} <b>${fmtN(dinfo.total)} ${esc(cur)}</b></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;background:var(--paper);border-radius:10px">
+        <div style="font-size:12px">${isAr()?"مدفوع":"paid"}: <b>${fmtN(paid)} ${esc(cur)}</b> · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
+        <button class="btn btn-ink" style="width:auto;display:inline-block;padding:6px 14px;font-size:13px" onclick="poPaySup('${encodeURIComponent(g.key)}')">${isAr()?"الدفع":"Pay"}</button>
+      </div>
       ${g.rows.map(poCard).join('<div class="smpdiv"></div>')}
     </div>`;
   }).join("") + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
@@ -1825,22 +1828,106 @@ function poCard(x){
     <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
-    ${(()=>{ const dt=poDealTotals(x); return `<div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"قطعة":"pc"}`:""}</span>`:""}</div>
-    <div style="font-size:12px;margin-top:2px" class="muted">${isAr()?"مدفوع":"paid"}: ${fmtN(dt.paid)} ${esc(dt.cur)} · ${dt.remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(dt.remaining)} ${esc(dt.cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مكتمل الدفع":"paid"}</b>`}</div>`; })()}
+    ${(()=>{ const dt=poDealTotals(x); return `<div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"قطعة":"pc"}`:""}</span>`:""}</div>`; })()}
     <div class="pillrow" style="margin-top:8px;align-items:center">
-      <span class="chip" style="font-size:11px">${isAr()?"الدفع":"Pay"}</span>
-      <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poPay('${x.id}')">${isAr()?"سجّل دفعة / عربون":"Add payment"}</button>
-    </div>
-    <div class="pillrow" style="margin-top:6px;align-items:center">
       <span class="chip ${overdue?'wine':''}" style="font-size:11px">${isAr()?"التسليم":"Deliv"}: ${esc(dmap[ds])}</span>
       ${x.ready_eta&&ds!=="received"?`<span class="chip ${overdue?'wine':''}" style="font-size:11px">${overdue?"⏰ ":""}${isAr()?"يجهز":"ready"} ${esc(x.ready_eta)}</span>`:""}
       ${x.pickup_place?`<span class="chip" style="font-size:11px">${x.pickup_place==="workshop"?(isAr()?"المشغل":"workshop"):(isAr()?"مخزن اللوجستيك":"logistics")}</span>`:""}
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poDeliver('${x.id}')">${isAr()?"تحديث":"Update"}</button>
     </div>
     <div class="pillrow" style="margin-top:6px">
+      <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poEditQty('${x.id}')">${isAr()?"تعديل الكمية/السعر":"Edit qty"}</button>
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;color:var(--wine)" onclick="poDel('${x.id}')">${I.trash}</button>
     </div>
   </div>`;
+}
+/* ===== الدفع على مستوى المورد + تعديل الكمية ===== */
+function supGroup(gidEnc){
+  const gid=decodeURIComponent(gidEnc); let rows,sup=null,name;
+  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
+  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
+  return {gid, rows, sup, name};
+}
+function supDueInfo(rows){
+  const curs=[...new Set(rows.map(po=>po.currency||"KWD"))]; const cur=curs.length===1?curs[0]:"KWD";
+  let total=0; rows.forEach(po=>{ const d=poDealTotals(po); total += (curs.length===1? d.total : toCur(d.total,po.currency,"KWD")); });
+  return {cur, total};
+}
+function supPaid(key, cur){
+  const list=(DB.supplier_payments||[]).filter(pp=>pp.supplier_key===key && (pp.channel||"")===chChannel);
+  const paid=list.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0);
+  return {list, paid};
+}
+function poPaySup(gidEnc){
+  const G=supGroup(gidEnc); if(!G.rows.length) return;
+  const dinfo=supDueInfo(G.rows); const cur=dinfo.cur; const gid=decodeURIComponent(gidEnc);
+  const spd=supPaid(gid,cur); const paid=spd.paid; const remaining=Math.max(0,dinfo.total-paid);
+  window._payReceipt=null;
+  openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(G.name||"")}</div>
+    <div class="note-box">${isAr()?"الإجمالي المستحق":"Total due"}: <b>${fmtN(dinfo.total)} ${esc(cur)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtN(paid)} ${esc(cur)} · ${remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(remaining)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
+    ${spd.list.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${spd.list.map(pp=>`<div class="lineitem"><div style="min-width:0"><b>${pp.kind==="deposit"?(isAr()?"عربون":"deposit"):(isAr()?"دفعة نهائية":"final")}: ${pp.amount} ${esc(pp.currency||cur)}</b> <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}</span>${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div><button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poPaySupDel('${pp.id}','${gidEnc}')">✕</button></div>`).join("")}`:""}
+    <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة":"NEW PAYMENT"}</div>
+    <label>${isAr()?"النوع":"Kind"}</label>
+    <select id="ps_kind"><option value="deposit">${isAr()?"عربون":"Deposit"}</option><option value="final">${isAr()?"دفعة نهائية / تسديد":"Final payment"}</option></select>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
+    </div>
+    <label>${isAr()?"نسخة إثبات الدفع (صورة)":"Receipt photo"}</label>
+    <input type="file" accept="image/*" id="ps_file" onchange="poPayReceiptSup(this.files)">
+    <div id="psReceiptRow" class="pillrow" style="min-height:20px"></div>
+    <label>${isAr()?"ملاحظة":"Note"}</label><input id="ps_note">
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poPaySupAdd('${gidEnc}')">${isAr()?"أضف الدفعة → المالية":"Add payment"}</button>
+    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"عند الدفعة النهائية إذا اختلف المبلغ عن المستحق، ينبّهك بالفرق ويسألك السبب.":"On final payment, any difference from the due is flagged."}</div>`);
+}
+async function poPayReceiptSup(files){ const f=files&&files[0]; if(!f)return; const u=await captureSamplePhoto(f); if(u){ window._payReceipt=u; const r=el("psReceiptRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:56px;height:56px">`; } }
+async function poPaySupAdd(gidEnc){
+  const amt=parseFloat(el("ps_amt").value)||0; if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
+  const kind=el("ps_kind").value, cur0=el("ps_cur").value;
+  const G=supGroup(gidEnc); const dinfo=supDueInfo(G.rows); const gid=decodeURIComponent(gidEnc);
+  const paid=supPaid(gid,dinfo.cur).paid;
+  let discrepancy_note=null;
+  const amtInCur=toCur(amt,cur0,dinfo.cur);
+  const diff=(paid+amtInCur)-dinfo.total;
+  if(kind==="final" && Math.abs(diff)>0.01){
+    const more=diff>0;
+    const reason=prompt(isAr()
+      ? `الدفعة تخالف المستحق بمقدار ${fmtN(Math.abs(diff))} ${dinfo.cur} (${more?"زيادة":"نقص"}).
+اكتب السبب (مثل: زيادة إنتاج الخام) أو اضغط إلغاء للمراجعة مع المورد:`
+      : `Payment differs from due by ${fmtN(Math.abs(diff))} ${dinfo.cur} (${more?"over":"under"}). Reason, or Cancel to review:`, "");
+    if(reason===null) return;
+    discrepancy_note=`${more?(isAr()?"زيادة":"over"):(isAr()?"نقص":"under")} ${fmtN(Math.abs(diff))} ${dinfo.cur}${reason?` — ${reason}`:""}`;
+  }
+  const tr=activeTrip(chChannel);
+  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note};
+  const {error}=await sb.from("supplier_payments").insert(row);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
+  window._payReceipt=null; cacheDB(); render(); closeSheet(); poPaySup(gidEnc);
+}
+async function poPaySupDel(id, gidEnc){
+  if(!confirm(isAr()?"حذف هذه الدفعة؟":"Delete this payment?")) return;
+  await sb.from("supplier_payments").delete().eq("id",id);
+  DB.supplier_payments=(DB.supplier_payments||[]).filter(x=>x.id!==id); cacheDB(); render(); closeSheet(); poPaySup(gidEnc);
+}
+function poEditQty(id){
+  const x=(DB.purchases||[]).find(pp=>pp.id===id); if(!x) return;
+  const q=poQtyUnit(x);
+  openSheet(`<div class="title">${isAr()?"تعديل الكمية والسعر":"Edit qty & price"} — ${esc(x.fabric_name||"")}</div>
+    <div class="muted" style="font-size:12px">${isAr()?"عدّل لو المورد سلّم كمية مختلفة أو تغيّر السعر (يعدّل المبلغ المستحق).":"Adjust if delivered qty or price changed."}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+      <div><label>${isAr()?"الكمية":"Qty"} (${unitAr(q.unit)})</label><input id="eq_qty" inputmode="decimal" value="${q.qty}"></div>
+      <div><label>${isAr()?"سعر الوحدة":"Unit price"} (${esc(x.currency||"KWD")})</label><input id="eq_price" inputmode="decimal" value="${x.unit_price||0}"></div>
+    </div>
+    <button class="btn btn-ink btn-big" onclick="poEditQtySave('${id}')">${t("save")}</button>`);
+}
+async function poEditQtySave(id){
+  const x=(DB.purchases||[]).find(pp=>pp.id===id); if(!x) return;
+  const qty=parseFloat(el("eq_qty").value)||0; const price=parseFloat(el("eq_price").value);
+  const upd={unit_price:isNaN(price)?x.unit_price:price};
+  if((x.buy_unit||"")==="count"){ upd.buy_qty=qty; upd.plan_qty=qty; } else { upd.buy_qty=qty; upd.qty_yd=qty; }
+  await sb.from("purchases").update(upd).eq("id",id);
+  Object.assign(x,upd); cacheDB(); closeSheet(); render();
 }
 
 async function poStatus(id,st){ await sb.from("purchases").update({status:st}).eq("id",id); const r=(DB.purchases||[]).find(x=>x.id===id); if(r)r.status=st; render(); }
@@ -1907,10 +1994,13 @@ function tripName(id){ const t=(DB.trips||[]).find(x=>x.id===id); return t? (t.n
 function tabFinance(){
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
   const pos=(DB.purchases||[]), exps=(DB.expenses||[]);
-  let mTotal=0,mPaid=0,mRem=0; const bySup={}, byTrip={};
-  pos.forEach(po=>{ const t=poTotals(po); mTotal+=t.total; mPaid+=t.paid; mRem+=t.remaining;
-    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,rem:0}); bySup[sk].total+=t.total; bySup[sk].rem+=t.remaining;
+  let mTotal=0; const bySup={}, byTrip={};
+  pos.forEach(po=>{ const t=poTotals(po); mTotal+=t.total;
+    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].total+=t.total;
     const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
+  let mPaid=0;
+  (DB.supplier_payments||[]).forEach(pp=>{ const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk; const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].paid+=kk; });
+  const mRem=Math.max(0,mTotal-mPaid);
   exps.forEach(e=>{ const tk=e.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].exp+=expKWD(e); });
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   const grand=mTotal+expTotal;
@@ -1941,8 +2031,8 @@ function tabFinance(){
 
   ${Object.keys(bySup).length?`<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"حسب المورد":"By supplier"}</div>
-    ${Object.entries(bySup).map(([k,v])=>`<div class="lineitem"><div><b>${esc(k)}</b></div>
-      <div class="muted" style="text-align:left">${money(v.total)}${v.rem>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(v.rem)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`).join("")}
+    ${Object.entries(bySup).map(([k,v])=>{ const vr=Math.max(0,(v.total||0)-(v.paid||0)); return `<div class="lineitem"><div><b>${esc(k)}</b></div>
+      <div class="muted" style="text-align:left">${money(v.total)}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
   </div>`:""}
 
   <div class="card" style="padding:14px;opacity:.75">
