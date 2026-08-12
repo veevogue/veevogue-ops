@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
+<!--APPV:2026-08-12.1:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -242,6 +243,11 @@
 .dcard-name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dcard-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .dcard-open{color:var(--faint);font-size:20px;flex:0 0 auto;margin-inline-start:2px}
+
+.dpipe .pill{cursor:pointer;transition:.15s}
+.dpipe .pill.on{background:var(--ink);border-color:var(--ink)}
+.dpipe .pill.on b{color:#fff}
+.dpipe .pill.on span{color:rgba(255,255,255,.82)}
 </style>
 </head>
 <body>
@@ -573,6 +579,25 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
+const APP_VERSION="2026-08-12.1";
+async function checkVersion(){
+  try{
+    const url=location.pathname.split("?")[0];
+    const r=await fetch(url+"?cb="+Date.now(), {cache:"no-store", headers:{Range:"bytes=0-2047"}});
+    if(!r.ok && r.status!==206) return;
+    const head=await r.text();
+    const m=head.match(/APPV:(.*?):APPV/);
+    if(!m) return;
+    const remote=(m[1]||"").trim();
+    if(!remote || remote===APP_VERSION) return;
+    const u=new URL(location.href);
+    if(u.searchParams.get("v")===remote) return;   /* حاجز ضد التكرار */
+    u.searchParams.set("v", remote);
+    location.replace(u.toString());
+  }catch(e){}
+}
+window.addEventListener("load", ()=>setTimeout(checkVersion,1500));
+window.addEventListener("focus", ()=>{ if(document.querySelector(".sheet")) return; checkVersion(); });
 function el(id){return document.getElementById(id);}
 /* يحوّل الأرقام العربية/الفارسية إلى إنجليزية + الفاصلة العربية (قاعدة على كل حقول الأرقام) */
 function toAsciiDigits(str){
@@ -2962,7 +2987,7 @@ function tabDesign(){
       const late=c.target_date && c.target_date<today() && doneN<ds.length;
       const pct=ds.length? Math.round(doneN/ds.length*100):0;
       const cover=(ds.find(x=>(x.mood||[]).length)||{}).mood?.[0] || (ds.find(x=>(x.sketches||[]).length)||{}).sketches?.[0];
-      return `<div class="card colcard" onclick="window._curCol='${c.id}';render()">
+      return `<div class="card colcard" onclick="window._curCol='${c.id}';window._colStage=null;render()">
         ${cover?`<img class="thumb" src="${esc(cover)}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
         <div style="flex:1">
           <div class="title">${esc(c.name)}</div>
@@ -3008,7 +3033,8 @@ function renderCollection(cid){
       const B=[["idea","sketch"],["materials"],["prep","sample","notes"],["approved"]];
       const blab=[isAr()?"الفكرة":"Idea", isAr()?"شراء المواد":"Materials", isAr()?"تجهيز العينة":"Sample", isAr()?"معتمد":"Approved"];
       const buckets=B.map(g=>ds.filter(d=>g.includes(d.stage||"idea")));
-      const pipe=`<div class="dpipe">${blab.map((l,i)=>`<div class="pill"><b>${buckets[i].length}</b><span>${l}</span></div>`).join("")}</div>`;
+      let sel=window._colStage; if(sel==null){ sel=buckets.findIndex(b=>b.length); if(sel<0) sel=0; }
+      const pipe=`<div class="dpipe">${blab.map((l,i)=>`<div class="pill ${i===sel?'on':''}" onclick="window._colStage=${i};render()"><b>${buckets[i].length}</b><span>${l}</span></div>`).join("")}</div>`;
       const cardOf=(d)=>`<div class="dcard" onclick="openDesign('${d.id}')">
         ${(d.mood&&d.mood[0])?`<img class="dthumb" src="${esc(d.mood[0])}">`:`<div class="dthumb">${I.design}</div>`}
         <div class="dcard-body">
@@ -3025,8 +3051,9 @@ function renderCollection(cid){
         ])}</span>
         <span class="dcard-open">←</span>
       </div>`;
-      const sections=buckets.map((list,i)=> list.length? `<div class="stagehdr">${blab[i]} <span class="n">${list.length}</span></div>${list.map(cardOf).join("")}` : "").join("");
-      return pipe + (sections || `<div class="empty">${isAr()?"ابدأ بإضافة تصميم":"Add a design"}</div>`);
+      const cur=buckets[sel]||[];
+      const body = cur.length? cur.map(cardOf).join("") : `<div class="empty">${isAr()?"ما في تصاميم في هذه المرحلة":"No designs in this stage"}</div>`;
+      return pipe + body;
     })()}`;
 }
 async function delCollection(id){
