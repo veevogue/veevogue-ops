@@ -212,6 +212,20 @@
   .sw .knob{position:absolute;top:3px;inset-inline-start:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:inset-inline-start .18s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
   .sw input:checked + .track{background:var(--wine);}
   .sw input:checked + .track .knob{inset-inline-start:23px;}
+
+/* ---- صفحة التصميم: ستيبر أربع مراحل + أقسام كروت ---- */
+.dstepper{display:flex;justify-content:space-between;position:relative;margin:2px 0 16px}
+.dstepper::before{content:"";position:absolute;top:16px;inset-inline:18px;height:2px;background:var(--line);z-index:0}
+.dstep{position:relative;z-index:1;flex:1;text-align:center;padding:0 2px}
+.dstep .dot{width:32px;height:32px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;background:var(--paper);border:2px solid var(--line);color:var(--faint);font-weight:800;font-size:13px;transition:.2s}
+.dstep.done .dot{background:var(--sage);border-color:var(--sage);color:#fff}
+.dstep.active .dot{background:var(--ink);border-color:var(--ink);color:#fff;box-shadow:0 0 0 4px rgba(24,24,27,.07)}
+.dstep .lbl{font-size:11px;color:var(--faint);line-height:1.25}
+.dstep.active .lbl{color:var(--ink);font-weight:700}
+.dstep.done .lbl{color:var(--green)}
+.dsec{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.dsec>.sechead{margin-top:0}
+.dsec input[type=file]{margin-top:8px}
 </style>
 </head>
 <body>
@@ -2899,9 +2913,23 @@ function showChart(pid, size){
 }
 
 /* ---- التصميم: الكولكشنات ← المسار ---- */
-const DSTAGES=["idea","sketch","prep","sample","notes","approved"];
-const DLABEL={idea:["الفكرة","IDEA"],sketch:["السكيتشات","SKETCH"],prep:["تجهيز العينة","PREP"],
+const DSTAGES=["idea","sketch","materials","prep","sample","notes","approved"];
+const DLABEL={idea:["الفكرة","IDEA"],sketch:["السكيتشات","SKETCH"],materials:["شراء المواد","MATERIALS"],prep:["تجهيز العينة","PREP"],
   sample:["تنفيذ العينة","SAMPLE"],notes:["ملاحظات العينة","REVIEW"],approved:["معتمد","APPROVED"]};
+/* الستيبر: ربط المراحل الداخلية بأربع مراحل ظاهرة */
+function dStepIndex(stage){
+  const s=stage||"idea";
+  if(s==="idea"||s==="sketch") return 0;
+  if(s==="materials") return 1;
+  if(s==="prep"||s==="sample"||s==="notes") return 2;
+  return 3;
+}
+function designStepper(d){
+  const cur=dStepIndex(d.stage);
+  const steps=[isAr()?"الفكرة":"Idea", isAr()?"شراء المواد":"Materials", isAr()?"تجهيز العينة":"Sample", isAr()?"معتمد":"Approved"];
+  return `<div class="dstepper">${steps.map((s,i)=>`<div class="dstep ${i<cur?'done':''} ${i===cur?'active':''}">
+    <div class="dot">${i<cur?'✓':(i+1)}</div><div class="lbl">${s}</div></div>`).join("")}</div>`;
+}
 function dlab(s){return isAr()? (DLABEL[s]?DLABEL[s][0]:s) : (DLABEL[s]?DLABEL[s][1]:s);}
 function design_(id){return DB.designs.find(x=>x.id===id)||{};}
 function collection_(id){return (DB.collections||[]).find(c=>c.id===id)||{};}
@@ -3060,7 +3088,9 @@ async function chkEdit(id,i){
   d.checklist=arr; reopenDesign(id);
 }
 async function chkDel(id,i){
-  const d=design_(id); const arr=[...(d.checklist||[])]; arr.splice(i,1);
+  const d=design_(id); const arr=[...(d.checklist||[])]; const it=arr[i];
+  if(!confirm(isAr()?`حذف «${(it&&it.name)||""}» من التشيك ليست؟`:"Delete this item?")) return;
+  arr.splice(i,1);
   await sb.from("design_projects").update({checklist:arr}).eq("id",id);
   d.checklist=arr; reopenDesign(id);
 }
@@ -3081,44 +3111,60 @@ function openDesign(id){
   const imgs=(arr)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`;
   let body="";
   if(st==="idea"||st==="sketch"){
-    /* صفحة واحدة: الاسم + المود بورد + السكيتشات + الملاحظات + الباترون + التشيك ليست */
-    body=`<label>${isAr()?"اسم التصميم":"Design name"}</label>
-      <input id="d_name_${id}" value="${esc(d.name||"")}" placeholder="${isAr()?"اكتب اسم التصميم":"Design name"}" onchange="renameDesign('${id}',this.value)">
-      <hr class="sep">
-      <div class="sechead">${I.design} ${isAr()?"المود بورد":"MOOD BOARD"}</div>
-      ${imgGrid(d.mood,id,'mood','moodgrid')}
-      <input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
-      <hr class="sep">
-      <div class="sechead">${I.edit} ${isAr()?"السكيتشات والأمثلة":"SKETCHES & EXAMPLES"}</div>
-      ${imgGrid(d.sketches,id,'sketches')}
-      <input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
-      <hr class="sep">
-      <div class="sechead">${I.file} ${isAr()?"ملاحظات (داخلية)":"NOTES (internal)"}</div>
-      ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
-        <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','notes',${i})">✕</b></div>`).join("")||`<div class="muted">—</div>`}
-      <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note" style="flex:1"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
-      <hr class="sep">
-      <div class="sechead">${I.file} ${isAr()?"الباترون":"PATTERN"}</div>
-      ${(d.patterns||[]).filter(Boolean).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer;color:var(--wine)" onclick="rmDesignPattern('${id}',${i})">✕</b></span>`).join("")||`<div class="muted" style="font-size:12px">${isAr()?"ما فيه باترون بعد":"None yet"}</div>`}
-      <input type="file" id="d_pat" multiple onchange="addDesignPattern('${id}')">
-      <hr class="sep">
-      ${checklistBlock(d)}
-      <hr class="sep">
-      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${I.done} ${isAr()?"اعتماد الفكرة → تجهيز العينة":"Approve idea"}</button>`;
+    body=`
+      <div class="dsec">
+        <label>${isAr()?"اسم التصميم":"Design name"}</label>
+        <input id="d_name_${id}" value="${esc(d.name||"")}" placeholder="${isAr()?"اكتب اسم التصميم":"Design name"}" onchange="renameDesign('${id}',this.value)">
+      </div>
+      <div class="dsec">
+        <div class="sechead">${I.design} ${isAr()?"المود بورد":"MOOD BOARD"}</div>
+        ${imgGrid(d.mood,id,'mood','moodgrid')}
+        <input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
+      </div>
+      <div class="dsec">
+        <div class="sechead">${I.edit} ${isAr()?"السكيتشات والأمثلة":"SKETCHES & EXAMPLES"}</div>
+        ${imgGrid(d.sketches,id,'sketches')}
+        <input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
+      </div>
+      <div class="dsec">
+        <div class="sechead">${I.file} ${isAr()?"ملاحظات داخلية":"NOTES"}</div>
+        ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
+          <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','notes',${i})">✕</b></div>`).join("")||`<div class="muted" style="font-size:12px">${isAr()?"لا ملاحظات بعد":"None yet"}</div>`}
+        <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note" style="flex:1" placeholder="${isAr()?"أضف ملاحظة":"Add note"}"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
+      </div>
+      <div class="dsec">
+        <div class="sechead">${I.file} ${isAr()?"الباترون":"PATTERN"}</div>
+        ${(d.patterns||[]).filter(Boolean).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer;color:var(--wine)" onclick="rmDesignPattern('${id}',${i})">✕</b></span>`).join("")||`<div class="muted" style="font-size:12px">${isAr()?"ما فيه باترون بعد":"None yet"}</div>`}
+        <input type="file" id="d_pat" multiple onchange="addDesignPattern('${id}')">
+      </div>
+      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','materials')">${I.done} ${isAr()?"اعتماد الفكرة ← شراء المواد":"Approve idea → Materials"}</button>`;
+  } else if(st==="materials"){
+    body=`
+      <div class="dsec">
+        ${checklistBlock(d)}
+      </div>
+      <div class="note-box" style="font-size:12px">${isAr()?"أضف عينات كل بند من «المشتريات ← العينات». لما تعتمد عينة بالنجمة، تشتعل نجمة البند هنا ويتولّد أمر شراء تلقائياً.":"Add samples per item in Purchasing → Samples. Approving a sample lights its star here and generates a PO."}</div>
+      <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${isAr()?"المواد جاهزة ← تجهيز العينة":"Materials ready → Sample"}</button>
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','idea')">→ ${isAr()?"رجوع للفكرة":"Back to idea"}</button>`;
   } else if(st==="prep"){
     const ws=DB.workers.filter(w=>w.active&&(w.specialties||[]).includes("sample"));
     window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
-    body=`${imgs(d.sketches)}
-      <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
-      <label>${isAr()?"قياسات العينة (موديل واحد)":"Sample measurements"}</label>
-      <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{})[0]||(isAr()?"العينة":"SAMPLE"))}" onchange="captureDChart();redrawDChart()">
-      <div id="dChartGrid"></div>
-      <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
-      <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
-        : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
-      ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
-      <button class="btn btn-ok btn-big" onclick="sendToSample('${id}')">${isAr()?"إرسال لتنفيذ العينة":"Send to sample"} ←</button>
-      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','idea')">← ${isAr()?"رجوع للتصميم":"Back"}</button>`;
+    body=`
+      <div class="dsec">
+        ${imgs(d.sketches)}
+        <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
+        <label>${isAr()?"قياسات العينة (موديل واحد)":"Sample measurements"}</label>
+        <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{})[0]||(isAr()?"العينة":"SAMPLE"))}" onchange="captureDChart();redrawDChart()">
+        <div id="dChartGrid"></div>
+      </div>
+      <div class="dsec">
+        <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
+        <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
+          : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
+        ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
+      </div>
+      <button class="btn btn-ok btn-big" onclick="sendToSample('${id}')">${isAr()?"إرسال لتنفيذ العينة":"Send to sample"}</button>
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','materials')">→ ${isAr()?"رجوع لشراء المواد":"Back to materials"}</button>`;
     setTimeout(redrawDChart,0);
   } else if(st==="sample"){
     const running=d.sample_started_at&&!d.sample_finished_at;
@@ -3131,7 +3177,7 @@ function openDesign(id){
       ${imgs(d.sketches)}
       ${d.materials?`<div class="note-box">${esc(d.materials)}</div>`:""}
       ${designHistory(d)}
-      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">← ${isAr()?"تعديل الخامات والقياسات":"Edit prep"}</button>`;
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">→ ${isAr()?"تعديل الخامات والقياسات":"Edit prep"}</button>`;
   } else if(st==="notes"){
     const rev=(d.revisions||[]).length;
     body=`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${I.done}
@@ -3139,24 +3185,27 @@ function openDesign(id){
       ${d.sample_started_at&&d.sample_finished_at?` · ${mins(d.sample_started_at,d.sample_finished_at)} ${t("minutes")}`:""}</div>
       ${imgs(d.sketches)}
       ${designHistory(d)}
-      <hr class="sep">
-      <div class="sechead">${I.fix} ${isAr()?"ملاحظات على العينة":"SAMPLE NOTES"}</div>
-      ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
-        <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','sample_notes',${i})">✕</b>
-        ${n.img?`<div><img class="thumb" src="${esc(n.img)}" onclick="viewImg('${esc(n.img)}')"></div>`:""}</div>`).join("")||`<div class="muted">—</div>`}
-      <label>${isAr()?"ملاحظة جديدة":"New note"}</label>
-      <input id="d_note" placeholder="${isAr()?"اكتب الملاحظة...":"..."}">
-      <label>${isAr()?"صوّر المشكلة (اختياري)":"Photo (optional)"}</label>
-      <input type="file" id="d_note_img" accept="image/*" capture="environment">
-      <button class="btn btn-ghost btn-big" onclick="addDesignNote('${id}','sample_notes')">${I.plus} ${t("add")}</button>
+      <div class="dsec">
+        <div class="sechead">${I.fix} ${isAr()?"ملاحظات على العينة":"SAMPLE NOTES"}</div>
+        ${(d.sample_notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
+          <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','sample_notes',${i})">✕</b>
+          ${n.img?`<div><img class="thumb" src="${esc(n.img)}" onclick="viewImg('${esc(n.img)}')"></div>`:""}</div>`).join("")||`<div class="muted">—</div>`}
+        <label>${isAr()?"ملاحظة جديدة":"New note"}</label>
+        <input id="d_note" placeholder="${isAr()?"اكتب الملاحظة...":"..."}">
+        <label>${isAr()?"صوّر المشكلة (اختياري)":"Photo (optional)"}</label>
+        <input type="file" id="d_note_img" accept="image/*" capture="environment">
+        <button class="btn btn-ghost btn-big" onclick="addDesignNote('${id}','sample_notes')">${I.plus} ${t("add")}</button>
+      </div>
       <button class="btn btn-bad btn-big" onclick="backToSample('${id}')">↩ ${isAr()?"إرجاع لنفس العامل للتعديل":"Back to worker"}</button>
       <button class="btn btn-ok btn-big" onclick="approveSample('${id}')">${I.done} ${isAr()?"اعتماد العينة":"Approve sample"}</button>`;
   } else {
-    body=`<div class="note-box">${I.done} ${isAr()?"معتمد وتحول لمنتج":"Approved → product"}</div>
+    body=`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${I.done} ${isAr()?"معتمد وتحوّل لمنتج":"Approved → product"}</div>
       ${d.product_id?`<button class="btn btn-ghost btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}`;
   }
-  openSheet(`<div class="title">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))} <span class="chip sage">${dlab(st)}</span></div>${body}
-    ${session.role==="manager"&&st!=="approved"?`<button class="btn btn-ghost btn-big" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
+  openSheet(`<div class="title" style="margin-bottom:4px">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}</div>
+    ${designStepper(d)}
+    ${body}
+    ${session.role==="manager"&&st!=="approved"?`<button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
 }
 function captureDChart(){Object.keys(window._dchart||{}).forEach(s=>{MEAS.forEach(m=>{const i=el(`dc_${s}_${m[0]}`); if(i) window._dchart[s][m[0]]=i.value;});});}
 function redrawDChart(){
