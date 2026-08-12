@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.4:APPV-->
+<!--APPV:2026-08-12.5:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -581,7 +581,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.4";
+const APP_VERSION="2026-08-12.5";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1083,7 +1083,7 @@ const CHAN_DEFAULT={china:{label:"الصين (استيراد)",shortage:4,spare:
 function channelsCfg(){ const c=(DB.settings&&DB.settings.channels); return (c&&Object.keys(c).length)? c : CHAN_DEFAULT; }
 function chan(key){ const c=channelsCfg(); return c[key]||c.local||CHAN_DEFAULT.local; }
 function chanKeys(){ return Object.keys(channelsCfg()); }
-function chanLabel(key){ return (chan(key).label)||key; }
+function chanLabel(key){ const c=chan(key); if(!isAr()){ if(key==="china") return "China (import)"; if(key==="local") return "Local market"; if(c.label_en) return c.label_en; } return c.label||key; }
 let chChannel = localStorage.getItem("vv_chan")||"china";
 /* الاحتياج بالياردات حسب هوامش القناة */
 function needYards(mpp, qty, channelKey){
@@ -1527,7 +1527,7 @@ function sampleSheet(designId, itemId, kind){
     <input type="file" accept="image/*" multiple id="smp_file" onchange="smpAddPhotos(this.files)">
     <div id="smpPhotoRow" class="pillrow" style="min-height:24px"></div>
     <label>${isAr()?"المورد (من السجل أو اكتب)":"Supplier"}</label>
-    <select id="smp_sup" onchange="if(this.value)el('smp_supname').value=this.options[this.selectedIndex].text">
+    <select id="smp_sup" onchange="smpSupPick(this.value)">
       <option value="">—</option>
       ${sups.map(x=>`<option value="${x.id}">${esc(x.name||"")}${x.shop_no?` (${esc(x.shop_no)})`:""}</option>`).join("")}
     </select>
@@ -1548,13 +1548,10 @@ function sampleSheet(designId, itemId, kind){
     </div>
     <div id="smp_accbox" style="display:none">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>${isAr()?"العدد المتوفر":"Count"}</label><input id="smp_count" inputmode="numeric"></div>
         <div><label>${isAr()?"السعر":"Price"}</label><input id="smp_aprice" inputmode="decimal"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label>${isAr()?"العملة":"Currency"}</label><select id="smp_acur">${["KWD","CNY","USD"].map(x=>`<option ${chan(chChannel).currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
-        <div><label>${isAr()?"السعر لكل (عدد حبات/درزن)":"Price per (pcs)"}</label><input id="smp_percount" inputmode="numeric" placeholder="12"></div>
       </div>
+      <label>${isAr()?"السعر لكل (عدد حبات/درزن)":"Price per (pcs)"}</label><input id="smp_percount" inputmode="numeric" placeholder="12">
     </div>
     <label>${isAr()?"لأي تصميم؟":"For design"}</label>
     <select id="smp_design">${designOptions(window._chDesign)}</select>
@@ -1567,6 +1564,7 @@ function sampleSheet(designId, itemId, kind){
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
   smpKindToggle();
 }
+function smpSupPick(id){ const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return; const n=el("smp_supname"); if(n)n.value=spx.name||""; const sh=el("smp_shop"); if(sh)sh.value=spx.shop_no||""; }
 function smpKindToggle(){
   const k=el("smp_kind")?el("smp_kind").value:"fabric";
   const fb=el("smp_fabbox"), ab=el("smp_accbox");
@@ -1602,7 +1600,6 @@ async function sampleSave(){
     note:el("smp_note").value||null,
     status:"candidate"};
   if(k==="accessory"){
-    row.count=parseFloat(el("smp_count").value)||null;
     row.price=parseFloat(el("smp_aprice").value)||null;
     row.currency=el("smp_acur").value;
     row.per_count=parseFloat(el("smp_percount").value)||null;
@@ -1753,20 +1750,36 @@ function chPurch(){
     if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
     groups[k].rows.push(po); });
   el("chBody").innerHTML = Object.values(groups).map(g=>{
-    let tot=0,rem=0; g.rows.forEach(po=>{ const t=poTotals(po); tot+=t.total; rem+=t.remaining; });
+    const curs=[...new Set(g.rows.map(po=>po.currency||"KWD"))]; const uniform=curs.length===1?curs[0]:null;
+    let tot=0,rem=0; g.rows.forEach(po=>{ const d=uniform?poDealTotals(po):poTotals(po); tot+=d.total; rem+=d.remaining; });
+    const cl=uniform||(isAr()?"د.ك":"KWD"); const totS=uniform?`${fmtN(tot)} ${cl}`:fmtKD(tot); const remS=uniform?`${fmtN(rem)} ${cl}`:fmtKD(rem);
     const sup=g.sup||{}; const nm=g.name||sup.name||"—";
     const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
-    return `<div class="card" style="padding:12px;background:var(--soft)">
-      <div class="title" style="font-size:15px">${esc(nm)}</div>
-      ${contact?`<div class="muted" style="font-size:12px">${contact}</div>`:""}
-      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي":"total"} ${fmtKD(tot)} · ${rem>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(rem)}</span>`:`<span style="color:var(--green)">${isAr()?"مدفوع":"paid"}</span>`}</div>
-      <button class="btn btn-line btn-big" style="margin:8px 0" onclick="poSend('${encodeURIComponent(g.key)}')">${isAr()?"إرسال الطلب للمورد (واتساب / وي تشات)":"Send order to supplier"}</button>
+    return `<div class="card" style="padding:14px 12px;background:var(--soft)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:20px;font-weight:800;border-inline-start:4px solid var(--wine);padding-inline-start:10px;line-height:1.2;min-width:0">${esc(nm)}</div>
+        <button class="btn btn-ghost" style="width:auto;display:inline-flex;align-items:center;gap:5px;padding:6px 12px;font-size:13px;white-space:nowrap" onclick="poSend('${encodeURIComponent(g.key)}')">📤 ${isAr()?"إرسال الطلب":"Send"}</button>
+      </div>
+      ${contact?`<div class="muted" style="font-size:12px;margin-top:6px">${contact}</div>`:""}
+      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي":"total"} ${totS} · ${rem>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${remS}</span>`:`<span style="color:var(--green)">${isAr()?"مدفوع":"paid"}</span>`}</div>
       ${g.rows.map(poCard).join('<div class="smpdiv"></div>')}
     </div>`;
   }).join("") + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
     <button class="btn btn-line btn-big" onclick="purchaseReq()">${isAr()?"طلب مشتريات للطباعة":"Print purchase request"}</button>`;
 }
 
+function fmtN(v){ return (Math.round((v||0)*100)/100).toLocaleString("en-US"); }
+function fromKWD(kwd,cur){ if((cur||"KWD")==="KWD") return kwd; const per=toKWD(1,cur); return (per&&per>0)? kwd/per : null; }
+function toCur(amt,from,to){ from=from||"KWD"; to=to||"KWD"; if(from===to) return parseFloat(amt)||0; const k=toKWDsafe(amt,from); const r=fromKWD(k,to); return r==null?(parseFloat(amt)||0):r; }
+function poDealTotals(po){
+  const cur=po.currency||"KWD";
+  const q=(po.buy_qty!=null?po.buy_qty:(po.qty_yd||0));
+  const total=q*(po.unit_price||0);
+  let paid;
+  if(po.paid) paid=total;
+  else { const log=Array.isArray(po.pay_log)?po.pay_log:[]; paid = log.length? log.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0) : (po.deposit?toCur(po.deposit,po.currency,cur):0); }
+  return {cur, total, paid:Math.min(paid,total), remaining:Math.max(0,total-paid)};
+}
 function poCard(x){
   const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, buy_qty:x.buy_qty, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
   const q=poQtyUnit(x); const t=poTotals(x);
@@ -1779,8 +1792,8 @@ function poCard(x){
     <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
-    ${lc?`<div style="font-size:13px;margin-top:2px"><b>${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}</b>${lc.per!=null?` · ${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"/pc"}`:""}</div>`:""}
-    <div class="muted" style="font-size:12px;margin-top:2px">${isAr()?"مدفوع":"paid"}: ${fmtKD(t.paid)} · ${t.remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtKD(t.remaining)}</b>`:`<b style="color:var(--green)">${isAr()?"مكتمل الدفع":"paid"}</b>`}</div>
+    ${(()=>{ const dt=poDealTotals(x); return `<div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"قطعة":"pc"}`:""}</span>`:""}</div>
+    <div style="font-size:12px;margin-top:2px" class="muted">${isAr()?"مدفوع":"paid"}: ${fmtN(dt.paid)} ${esc(dt.cur)} · ${dt.remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(dt.remaining)} ${esc(dt.cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مكتمل الدفع":"paid"}</b>`}</div>`; })()}
     <div class="pillrow" style="margin-top:8px;align-items:center">
       <span class="chip" style="font-size:11px">${isAr()?"الدفع":"Pay"}</span>
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poPay('${x.id}')">${isAr()?"سجّل دفعة / عربون":"Add payment"}</button>
@@ -2074,18 +2087,41 @@ function poSend(gidEnc){
   if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
   else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
   if(!rows.length) return;
+  const smpOf=(po)=> po.sample_id? (DB.samples||[]).find(s=>s.id===po.sample_id) : null;
+  const card = rows.map(smpOf).map(s=>s&&s.card_photo).find(Boolean) || null;
+  const shopNo = (sup&&sup.shop_no) ? sup.shop_no : (rows.map(smpOf).map(s=>s&&s.shop_no).find(Boolean)||"");
+  const wechat = (sup&&sup.wechat)||"", phone=(sup&&sup.phone)||"";
+  const NL=String.fromCharCode(10);
   const lines=rows.map((x,i)=>{ const q=poQtyUnit(x); const des=x.design_id?(design_(x.design_id)||{}):null; const dn=des?(des.final_name||des.name):"";
     return `${i+1}) ${x.fabric_name||""}${dn?` — ${dn}`:""} — ${q.qty} ${unitAr(q.unit)}${x.plan_meters?` (≈${x.plan_meters}م)`:""}`; });
-  const NL=String.fromCharCode(10);
-  const msg=`${isAr()?"مشغل فيفوق — طلب شراء":"Veevogue — Purchase order"}`+NL+`${isAr()?"المورد":"Supplier"}: ${name||"—"}${sup&&sup.shop_no?` · ${isAr()?"محل":"shop"} ${sup.shop_no}`:""}`+NL+`----------`+NL+lines.join(NL)+NL+`----------`+NL+`${isAr()?"عدد البنود":"items"}: ${rows.length}`;
-  const phone=(sup&&sup.phone)?String(sup.phone).replace(/[^0-9]/g,""):"";
-  const wa = phone? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  openSheet(`<div class="title">${isAr()?"إرسال الطلب":"Send order"} — ${esc(name||"")}</div>
-    ${sup&&sup.wechat?`<div class="note-box" style="font-size:13px">WeChat: <b>${esc(sup.wechat)}</b></div>`:""}
-    <textarea id="send_msg" style="min-height:180px">${esc(msg)}</textarea>
-    <button class="btn btn-ink btn-big" onclick="poCopyMsg()">${isAr()?"نسخ النص (للصقه في وي تشات)":"Copy text"}</button>
-    <a class="btn btn-ok btn-big" style="text-align:center;display:block;text-decoration:none" href="${wa}" target="_blank" rel="noopener">${isAr()?"إرسال عبر واتساب":"WhatsApp"}</a>
-    <div class="muted" style="font-size:12px">${isAr()?"وي تشات ما يدعم الإرسال المباشر — انسخ النص وافتح وي تشات والصقه في محادثة المورد.":"WeChat: copy text and paste."}</div>`);
+  const msg=`${isAr()?"طلب شراء":"Purchase order"}`+NL+`${isAr()?"المحل":"Shop"}: ${name||"—"}${shopNo?` · ${shopNo}`:""}`+NL+`----------`+NL+lines.join(NL);
+  window._sendMsgText=msg;
+  const ph2=String(phone||"").replace(/[^0-9]/g,"");
+  const wa = ph2? `https://wa.me/${ph2}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  const rowsHtml = rows.map((x)=>{ const s=smpOf(x); const ph=s&&(s.photos||[])[0]; const q=poQtyUnit(x); const des=x.design_id?(design_(x.design_id)||{}):null; const dn=des?(des.final_name||des.name):"";
+    return `<tr><td style="text-align:center">${ph?`<img src="${esc(ph)}" style="width:56px;height:56px;object-fit:cover;border-radius:8px">`:"—"}</td><td><b>${esc(x.fabric_name||"")}</b>${dn?`<div class="muted" style="font-size:11px">${esc(dn)}</div>`:""}</td><td style="text-align:center;white-space:nowrap"><b>${q.qty} ${unitAr(q.unit)}</b>${x.plan_meters?`<div class="muted" style="font-size:11px">≈${x.plan_meters}م</div>`:""}</td></tr>`; }).join("");
+  openSheet(`<div class="title">${isAr()?"طلب المورد — لشركة اللوجستيك":"Supplier order"} · ${esc(name||"")}</div>
+    <div id="poManifest">
+      <div class="note-box" style="font-size:13px">
+        <b style="font-size:15px">${esc(name||"—")}</b>${shopNo?` · ${isAr()?"محل":"shop"} ${esc(shopNo)}`:""}
+        ${wechat?`<div>WeChat: ${esc(wechat)}</div>`:""}${phone?`<div>${isAr()?"هاتف":"tel"}: ${esc(String(phone))}</div>`:""}
+      </div>
+      ${card?`<div style="margin:8px 0"><div class="muted" style="font-size:11px">${isAr()?"بزنس كارد":"Business card"}</div><img src="${esc(card)}" style="max-width:100%;border-radius:10px" onclick="viewImg('${esc(card)}')"></div>`:""}
+      <table style="width:100%;border-collapse:collapse;margin-top:6px">
+        <tr><th style="text-align:center;font-size:11px;border-bottom:1px solid var(--line);padding:6px">${isAr()?"صورة":"Photo"}</th><th style="text-align:start;font-size:11px;border-bottom:1px solid var(--line);padding:6px">${isAr()?"الصنف":"Item"}</th><th style="text-align:center;font-size:11px;border-bottom:1px solid var(--line);padding:6px">${isAr()?"العدد المطلوب":"Qty"}</th></tr>
+        ${rowsHtml}
+      </table>
+    </div>
+    <button class="btn btn-ink btn-big" onclick="poManifestPrint()">${isAr()?"طباعة / حفظ PDF (للوجستيك)":"Print / Save PDF"}</button>
+    <button class="btn btn-line btn-big" onclick="poCopyMsg2()">${isAr()?"نسخ النص (لوي تشات)":"Copy text"}</button>
+    <a class="btn btn-ok btn-big" style="text-align:center;display:block;text-decoration:none" href="${wa}" target="_blank" rel="noopener">${isAr()?"إرسال عبر واتساب":"WhatsApp"}</a>`);
+}
+function poCopyMsg2(){ try{ navigator.clipboard.writeText(window._sendMsgText||""); }catch(e){ try{document.execCommand("copy");}catch(_){} } alert(isAr()?"تم نسخ النص":"Copied"); }
+function poManifestPrint(){
+  const node=el("poManifest"); if(!node) return;
+  const w=window.open("","_blank"); if(!w){ alert(isAr()?"اسمح بالنوافذ المنبثقة عشان الطباعة":"Allow popups to print"); return; }
+  w.document.write(`<!DOCTYPE html><html dir="${isAr()?"rtl":"ltr"}"><head><meta charset="utf-8"><title>order</title><style>body{font-family:Tajawal,Arial,sans-serif;padding:18px;color:#18181B}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #E7E7E4;padding:8px;text-align:${isAr()?"right":"left"}}img{border-radius:8px}.note-box{background:#F4F4F2;border-radius:10px;padding:10px;margin-bottom:8px}.muted{color:#8A8A85;font-size:12px}</style></head><body>${node.innerHTML}</body></html>`);
+  w.document.close(); setTimeout(()=>{ try{w.focus();w.print();}catch(e){} }, 350);
 }
 function poCopyMsg(){ const t=el("send_msg"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand("copy");}catch(_){} } alert(isAr()?"تم نسخ النص":"Copied"); }
 
