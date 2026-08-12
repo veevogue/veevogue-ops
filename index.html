@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.3:APPV-->
+<!--APPV:2026-08-12.4:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -581,7 +581,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.3";
+const APP_VERSION="2026-08-12.4";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1094,7 +1094,8 @@ function needYards(mpp, qty, channelKey){
 /* التكلفة النهائية على القطعة حسب القناة */
 function landedCost(o){
   const c=chan(o.channel), cur=o.currency||c.currency||"KWD";
-  const raw=(o.qty_yd||0)*(o.unit_price||0);
+  const _q=(o.buy_qty!=null?o.buy_qty:(o.qty_yd||0));
+  const raw=_q*(o.unit_price||0);
   const rawKWD = cur==="KWD"? raw : toKWD(raw,cur);
   if(rawKWD==null) return null;
   const commission=rawKWD*((c.commission||0)/100);
@@ -1436,13 +1437,25 @@ async function poFromSample(x){
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
            : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>(c.kind==="accessory")===isAcc));
-  let qty_yd=null, plan_qty=null;
-  if(ci && ci.qty){ if(isAcc) plan_qty=parseInt(ci.qty)||null; else qty_yd=(parseFloat(ci.qty)/YARD); }
+  let qty_yd=null, plan_qty=null, buy_unit=null, buy_qty=null, plan_meters=null;
+  if(isAcc){ buy_unit="count"; if(ci&&ci.qty){ plan_qty=parseInt(ci.qty)||null; buy_qty=plan_qty; } }
+  else {
+    const target=(chChannel==="china")?"yard":"meter";
+    const ciUnit=ci?(ci.unit||"متر"):"متر";
+    let qMeters=null,qYards=null;
+    if(ci&&ci.qty){ if(ciUnit==="يارد"||ciUnit==="yard"){ qYards=parseFloat(ci.qty); qMeters=qYards*YARD; } else { qMeters=parseFloat(ci.qty); qYards=qMeters/YARD; } }
+    if(target==="yard"){ buy_unit="yard";
+      if(qMeters!=null && (ciUnit==="متر"||ciUnit==="m")){ buy_qty=Math.ceil(qMeters/YARD); plan_meters=Math.round(qMeters*100)/100; }
+      else if(qYards!=null){ buy_qty=qYards; }
+    } else { buy_unit="meter"; if(qMeters!=null) buy_qty=Math.round(qMeters*100)/100; }
+    qty_yd=(buy_unit==="yard")?buy_qty:(qYards!=null?qYards:null);
+  }
   const po={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, design_id:x.design_id||null,
     supplier_id:supId||null, supplier_name:x.supplier_name||null, material_id:mat.id, sample_id:x.id,
-    fabric_name:fabName, kind:isAcc?"accessory":"fabric", unit:isAcc?"count":"yard",
+    fabric_name:fabName, kind:isAcc?"accessory":"fabric", unit:buy_unit,
+    buy_unit:buy_unit, buy_qty:buy_qty, plan_meters:plan_meters,
     qty_yd:qty_yd, plan_qty:plan_qty, unit_price:x.price||null, currency:x.currency||chan(chChannel).currency,
-    status:"planned"};
+    deliver_status:"ordered", pay_log:[], status:"planned"};
   const {error}=await sb.from("purchases").insert(po);
   if(!error || /queued/i.test(error.message||"")){ if(!(DB.purchases||[]).some(z=>z.id===po.id)) DB.purchases.unshift(po); return true; }
   alert(error.message||"error"); return false;
@@ -1733,27 +1746,57 @@ function ncCalc(){
 /* -- أوامر الشراء -- */
 function chPurch(){
   const arr=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
-  el("chBody").innerHTML=`
-    ${arr.length? arr.map(poCard).join("") : `<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>`}
-    <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
-    ${arr.length?`<button class="btn btn-line btn-big" onclick="purchaseReq()">${isAr()?"طلب مشتريات للطباعة (بمربع قصاصة)":"Print purchase request"}</button>`:""}`;
+  if(!arr.length){ el("chBody").innerHTML=`<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>
+    <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
+  const groups={};
+  arr.forEach(po=>{ const k=po.supplier_id||("name:"+(po.supplier_name||"—"));
+    if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
+    groups[k].rows.push(po); });
+  el("chBody").innerHTML = Object.values(groups).map(g=>{
+    let tot=0,rem=0; g.rows.forEach(po=>{ const t=poTotals(po); tot+=t.total; rem+=t.remaining; });
+    const sup=g.sup||{}; const nm=g.name||sup.name||"—";
+    const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
+    return `<div class="card" style="padding:12px;background:var(--soft)">
+      <div class="title" style="font-size:15px">${esc(nm)}</div>
+      ${contact?`<div class="muted" style="font-size:12px">${contact}</div>`:""}
+      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي":"total"} ${fmtKD(tot)} · ${rem>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(rem)}</span>`:`<span style="color:var(--green)">${isAr()?"مدفوع":"paid"}</span>`}</div>
+      <button class="btn btn-line btn-big" style="margin:8px 0" onclick="poSend('${encodeURIComponent(g.key)}')">${isAr()?"إرسال الطلب للمورد (واتساب / وي تشات)":"Send order to supplier"}</button>
+      ${g.rows.map(poCard).join('<div class="smpdiv"></div>')}
+    </div>`;
+  }).join("") + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
+    <button class="btn btn-line btn-big" onclick="purchaseReq()">${isAr()?"طلب مشتريات للطباعة":"Print purchase request"}</button>`;
 }
+
 function poCard(x){
-  const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
-  const prod=x.product_id? product(x.product_id):null;
-  const stTxt={planned:isAr()?"مخطط":"planned",deposit:isAr()?"عربون مدفوع":"deposit",ready:isAr()?"جاهز":"ready",arrived:isAr()?"وصل":"arrived"}[x.status||"planned"];
+  const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, buy_qty:x.buy_qty, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
+  const q=poQtyUnit(x); const t=poTotals(x);
+  const ds=x.deliver_status||"ordered";
+  const dmap={ordered:isAr()?"لم يُرسل":"not sent", sent:isAr()?"أُرسل":"sent", ready:isAr()?"جاهز للاستلام":"ready", received:isAr()?"استُلم":"received"};
+  const des=x.design_id?(design_(x.design_id)||{}):null;
+  const forName=des?(des.final_name||des.name):(x.product_id?pname(product(x.product_id)):"");
+  const overdue = x.ready_eta && ds!=="received" && x.ready_eta<=today();
   return `<div class="card" style="padding:12px">
-    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} <span class="chip">${esc(stTxt)}</span></div>
-    <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${prod?` · ${isAr()?"لموديل":"for"} ${esc(pname(prod))}`:""}</div>
-    <div style="font-size:13px;margin-top:3px">${x.qty_yd||0} ${isAr()?"يارد":"yd"} × ${x.unit_price||0} ${esc(x.currency||"KWD")}${x.plan_qty?` · ${x.plan_qty} ${isAr()?"قطعة":"pc"}`:""}</div>
-    ${lc?`<div style="font-size:13px;margin-top:2px"><b>${fmtKD(lc.total)} ${isAr()?"د.ك إجمالي":"KWD"}</b>${lc.per!=null?` · <b>${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"KWD/pc"}</b>`:""}</div>`:""}
-    ${(()=>{ if(!lc) return ""; const dep=x.paid? lc.total : (x.deposit? (x.currency==="KWD"?x.deposit:(toKWD(x.deposit,x.currency)||0)):0); const rem=Math.max(0,lc.total-dep);
-      return `<div style="font-size:12px;margin-top:2px" class="muted">${isAr()?"مدفوع":"paid"}: ${fmtKD(dep)} · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtKD(rem)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>`; })()}
+    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))}</div>
+    ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
+    <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
+    ${lc?`<div style="font-size:13px;margin-top:2px"><b>${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}</b>${lc.per!=null?` · ${fmtKD(lc.per)} ${isAr()?"د.ك/قطعة":"/pc"}`:""}</div>`:""}
+    <div class="muted" style="font-size:12px;margin-top:2px">${isAr()?"مدفوع":"paid"}: ${fmtKD(t.paid)} · ${t.remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtKD(t.remaining)}</b>`:`<b style="color:var(--green)">${isAr()?"مكتمل الدفع":"paid"}</b>`}</div>
+    <div class="pillrow" style="margin-top:8px;align-items:center">
+      <span class="chip" style="font-size:11px">${isAr()?"الدفع":"Pay"}</span>
+      <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poPay('${x.id}')">${isAr()?"سجّل دفعة / عربون":"Add payment"}</button>
+    </div>
+    <div class="pillrow" style="margin-top:6px;align-items:center">
+      <span class="chip ${overdue?'wine':''}" style="font-size:11px">${isAr()?"التسليم":"Deliv"}: ${esc(dmap[ds])}</span>
+      ${x.ready_eta&&ds!=="received"?`<span class="chip ${overdue?'wine':''}" style="font-size:11px">${overdue?"⏰ ":""}${isAr()?"يجهز":"ready"} ${esc(x.ready_eta)}</span>`:""}
+      ${x.pickup_place?`<span class="chip" style="font-size:11px">${x.pickup_place==="workshop"?(isAr()?"المشغل":"workshop"):(isAr()?"مخزن اللوجستيك":"logistics")}</span>`:""}
+      <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poDeliver('${x.id}')">${isAr()?"تحديث":"Update"}</button>
+    </div>
     <div class="pillrow" style="margin-top:6px">
-      ${["planned","deposit","ready","arrived"].map(sv=>`<button class="btn ${x.status===sv?'btn-ink':'btn-ghost'}" style="padding:3px 9px;font-size:11px" onclick="poStatus('${x.id}','${sv}')">${esc({planned:isAr()?"مخطط":"plan",deposit:isAr()?"عربون":"deposit",ready:isAr()?"جاهز":"ready",arrived:isAr()?"وصل":"arrived"}[sv])}</button>`).join("")}
-      <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px" onclick="poPay('${x.id}')">${isAr()?"دفعة":"payment"}</button>
-    </div></div>`;
+      <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;color:var(--wine)" onclick="poDel('${x.id}')">${I.trash}</button>
+    </div>
+  </div>`;
 }
+
 async function poStatus(id,st){ await sb.from("purchases").update({status:st}).eq("id",id); const r=(DB.purchases||[]).find(x=>x.id===id); if(r)r.status=st; render(); }
 function poSheet(){
   const c=chan(chChannel), tr=activeTrip(chChannel);
@@ -1866,10 +1909,22 @@ function tabFinance(){
 const EXP_CATS=[["transport","نقل"],["food","أكل"],["hotel","سكن"],["tickets","تذاكر"],["misc","نثريات / بوكيت موني"],["customs","جمارك / رسوم"],["other","أخرى"]];
 function expCatLabel(k){ const f=EXP_CATS.find(x=>x[0]===k); return f? f[1] : k; }
 function expKWD(x){ return (x.currency||"KWD")==="KWD"? (parseFloat(x.amount)||0) : (toKWD(parseFloat(x.amount)||0, x.currency)||0); }
+function toKWDsafe(amt,cur){ amt=parseFloat(amt)||0; return (cur||"KWD")==="KWD"? amt : (toKWD(amt,cur)||0); }
+function unitAr(u){ return u==="count"?(isAr()?"حبة":"pc") : u==="meter"?(isAr()?"متر":"m") : (isAr()?"يارد":"yd"); }
+function poQtyUnit(x){
+  if(x.buy_qty!=null && x.buy_unit) return {qty:x.buy_qty, unit:x.buy_unit};
+  if((x.kind||"")==="accessory") return {qty:x.plan_qty||0, unit:"count"};
+  return {qty:x.qty_yd||0, unit:"yard"};
+}
+function poPaidKWD(po){
+  const log=Array.isArray(po.pay_log)?po.pay_log:[];
+  if(log.length) return log.reduce((a,pp)=>a+toKWDsafe(pp.amount,pp.currency),0);
+  return po.deposit? toKWDsafe(po.deposit, po.currency) : 0;
+}
 function poTotals(po){
-  const lc=landedCost({channel:po.channel, qty_yd:po.qty_yd, unit_price:po.unit_price, currency:po.currency, plan_qty:po.plan_qty})||{total:0,rawKWD:0,per:null};
-  const depKWD = po.paid? lc.total : (po.deposit? ((po.currency||"KWD")==="KWD"? (parseFloat(po.deposit)||0) : (toKWD(parseFloat(po.deposit)||0,po.currency)||0)) : 0);
-  return {total:lc.total||0, raw:lc.rawKWD||0, paid:Math.min(depKWD,lc.total||0), remaining:Math.max(0,(lc.total||0)-depKWD), per:lc.per};
+  const lc=landedCost({channel:po.channel, qty_yd:po.qty_yd, buy_qty:po.buy_qty, unit_price:po.unit_price, currency:po.currency, plan_qty:po.plan_qty})||{total:0,rawKWD:0,per:null};
+  const paidK = po.paid? (lc.total||0) : poPaidKWD(po);
+  return {total:lc.total||0, raw:lc.rawKWD||0, paid:Math.min(paidK,lc.total||0), remaining:Math.max(0,(lc.total||0)-paidK), per:lc.per};
 }
 function chFin(){
   const tr=activeTrip(chChannel);
@@ -1948,21 +2003,93 @@ async function expDel(id){
 }
 function poPay(id){
   const po=(DB.purchases||[]).find(x=>x.id===id); if(!po) return;
-  const t=poTotals(po);
-  openSheet(`<div class="title">${isAr()?"دفعة":"Payment"} — ${esc(po.fabric_name||po.supplier_name||"")}</div>
-    <div class="note-box">${isAr()?"الإجمالي":"total"}: <b>${fmtKD(t.total)} د.ك</b> · ${isAr()?"مدفوع حالياً":"paid"}: ${fmtKD(t.paid)} · ${isAr()?"باقي":"due"}: <b>${fmtKD(t.remaining)}</b></div>
-    <label>${isAr()?"عربون/دفعة مدفوعة":"Deposit paid"} (${esc(po.currency||"KWD")})</label>
-    <input id="pp_dep" inputmode="decimal" value="${po.deposit||""}">
-    <label class="sw" style="margin-top:8px"><input type="checkbox" id="pp_paid" ${po.paid?"checked":""}><span class="track"><span class="knob"></span></span></label>
-    <span style="margin-inline-start:8px">${isAr()?"مدفوع بالكامل":"Fully paid"}</span>
-    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poPaySave('${id}')">${t("save")}</button>`);
+  const t=poTotals(po); const log=Array.isArray(po.pay_log)?po.pay_log:[];
+  window._payReceipt=null;
+  openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(po.supplier_name||po.fabric_name||"")}</div>
+    <div class="note-box">${isAr()?"الإجمالي":"total"}: <b>${fmtKD(t.total)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtKD(t.paid)} · ${isAr()?"باقي":"due"}: <b style="color:var(--wine)">${fmtKD(t.remaining)}</b></div>
+    ${log.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${log.map((pp,i)=>`<div class="lineitem"><div style="min-width:0"><b>${pp.amount} ${esc(pp.currency||"KWD")}</b> <span class="muted" style="font-size:12px">${esc(pp.date||"")}${pp.note?" · "+esc(pp.note):""}</span>${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div><button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poPayDel('${id}',${i})">✕</button></div>`).join("")}`:""}
+    <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة (عربون أو تسديد)":"NEW PAYMENT"}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="pp_amt" inputmode="decimal"></div>
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="pp_cur">${["KWD","CNY","USD"].map(c=>`<option ${(po.currency||"KWD")===c?"selected":""}>${c}</option>`).join("")}</select></div>
+    </div>
+    <label>${isAr()?"نسخة إثبات الدفع (صورة)":"Receipt photo"}</label>
+    <input type="file" accept="image/*" id="pp_file" onchange="poPayReceipt(this.files)">
+    <div id="ppReceiptRow" class="pillrow" style="min-height:20px"></div>
+    <label>${isAr()?"ملاحظة":"Note"}</label><input id="pp_note">
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poPayAdd('${id}')">${isAr()?"أضف الدفعة → المالية":"Add payment"}</button>
+    <label class="sw" style="margin-top:14px"><input type="checkbox" id="pp_full" ${po.paid?"checked":""} onchange="poPayFull('${id}',this.checked)"><span class="track"><span class="knob"></span></span></label>
+    <span style="margin-inline-start:8px">${isAr()?"مدفوع بالكامل (استلم كامل المبلغ)":"Fully paid"}</span>`);
 }
-async function poPaySave(id){
-  const dep=parseFloat(el("pp_dep").value)||null, paid=el("pp_paid").checked;
-  await sb.from("purchases").update({deposit:dep, paid, status: paid?"arrived":(dep?"deposit":"planned")}).eq("id",id);
-  const po=(DB.purchases||[]).find(x=>x.id===id); if(po){ po.deposit=dep; po.paid=paid; if(paid)po.status="arrived"; else if(dep)po.status="deposit"; }
-  closeSheet(); cacheDB(); render();
+async function poPayReceipt(files){ const f=files&&files[0]; if(!f)return; const u=await captureSamplePhoto(f); if(u){ window._payReceipt=u; const r=el("ppReceiptRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:56px;height:56px">`; } }
+async function poPayAdd(id){
+  const amt=parseFloat(el("pp_amt").value)||0; if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
+  const po=(DB.purchases||[]).find(x=>x.id===id); if(!po) return;
+  const log=Array.isArray(po.pay_log)?[...po.pay_log]:[];
+  log.push({amount:amt, currency:el("pp_cur").value, date:today(), receipt:window._payReceipt||null, note:el("pp_note").value||null});
+  await sb.from("purchases").update({pay_log:log}).eq("id",id);
+  po.pay_log=log; cacheDB(); reopenPay(id);
 }
+async function poPayDel(id,i){
+  const po=(DB.purchases||[]).find(x=>x.id===id); if(!po)return;
+  const log=Array.isArray(po.pay_log)?[...po.pay_log]:[]; log.splice(i,1);
+  await sb.from("purchases").update({pay_log:log}).eq("id",id); po.pay_log=log; cacheDB(); reopenPay(id);
+}
+async function poPayFull(id,checked){
+  await sb.from("purchases").update({paid:checked}).eq("id",id);
+  const po=(DB.purchases||[]).find(x=>x.id===id); if(po) po.paid=checked; cacheDB(); reopenPay(id);
+}
+function reopenPay(id){ render(); closeSheet(); poPay(id); }
+/* التسليم */
+function poDeliver(id){
+  const po=(DB.purchases||[]).find(x=>x.id===id); if(!po) return;
+  const ds=po.deliver_status||"ordered";
+  openSheet(`<div class="title">${isAr()?"التسليم":"Delivery"} — ${esc(po.fabric_name||po.supplier_name||"")}</div>
+    <label>${isAr()?"الحالة":"Status"}</label>
+    <div class="pillrow">
+      ${[["ordered",isAr()?"لم يُرسل":"not sent"],["sent",isAr()?"أُرسل الطلب":"sent"],["ready",isAr()?"جاهز للاستلام":"ready"],["received",isAr()?"استُلم":"received"]].map(([k,l])=>`<button class="btn ${ds===k?'btn-ink':'btn-ghost'}" style="padding:5px 12px;font-size:12px" onclick="poSetDeliver('${id}','${k}')">${l}</button>`).join("")}
+    </div>
+    <label style="margin-top:12px">${isAr()?"متى يجهز؟ (المورد يبلّغك) — ننبّهك بالتاريخ":"Ready date"}</label>
+    <input type="date" id="pd_eta" value="${esc(po.ready_eta||"")}" onchange="poSetEta('${id}',this.value)">
+    <label style="margin-top:12px">${isAr()?"مكان الاستلام":"Pickup place"}</label>
+    <select id="pd_place" onchange="poSetPickup('${id}',this.value)">
+      <option value="">—</option>
+      <option value="logistics" ${po.pickup_place==="logistics"?"selected":""}>${isAr()?"مخزن شركة اللوجستيك":"Logistics warehouse"}</option>
+      <option value="workshop" ${po.pickup_place==="workshop"?"selected":""}>${isAr()?"المشغل":"Workshop"}</option>
+    </select>
+    <button class="btn btn-ink btn-big" style="margin-top:14px" onclick="render();closeSheet()">${isAr()?"تم":"Done"}</button>`);
+}
+async function poSetDeliver(id,st){ await sb.from("purchases").update({deliver_status:st}).eq("id",id); const po=(DB.purchases||[]).find(x=>x.id===id); if(po)po.deliver_status=st; cacheDB(); render(); closeSheet(); poDeliver(id); }
+async function poSetEta(id,v){ await sb.from("purchases").update({ready_eta:v||null}).eq("id",id); const po=(DB.purchases||[]).find(x=>x.id===id); if(po)po.ready_eta=v||null; cacheDB(); }
+async function poSetPickup(id,v){ await sb.from("purchases").update({pickup_place:v||null}).eq("id",id); const po=(DB.purchases||[]).find(x=>x.id===id); if(po)po.pickup_place=v||null; cacheDB(); }
+/* حذف أمر شراء */
+async function poDel(id){
+  if(!confirm(isAr()?"حذف أمر الشراء؟":"Delete purchase order?")) return;
+  await sb.from("purchases").delete().eq("id",id);
+  DB.purchases=(DB.purchases||[]).filter(x=>x.id!==id); cacheDB(); render();
+}
+/* إرسال الطلب لكل مورد (واتساب/وي تشات) */
+function poSend(gidEnc){
+  const gid=decodeURIComponent(gidEnc); let rows, sup=null, name;
+  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
+  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
+  if(!rows.length) return;
+  const lines=rows.map((x,i)=>{ const q=poQtyUnit(x); const des=x.design_id?(design_(x.design_id)||{}):null; const dn=des?(des.final_name||des.name):"";
+    return `${i+1}) ${x.fabric_name||""}${dn?` — ${dn}`:""} — ${q.qty} ${unitAr(q.unit)}${x.plan_meters?` (≈${x.plan_meters}م)`:""}`; });
+  const NL=String.fromCharCode(10);
+  const msg=`${isAr()?"مشغل فيفوق — طلب شراء":"Veevogue — Purchase order"}`+NL+`${isAr()?"المورد":"Supplier"}: ${name||"—"}${sup&&sup.shop_no?` · ${isAr()?"محل":"shop"} ${sup.shop_no}`:""}`+NL+`----------`+NL+lines.join(NL)+NL+`----------`+NL+`${isAr()?"عدد البنود":"items"}: ${rows.length}`;
+  const phone=(sup&&sup.phone)?String(sup.phone).replace(/[^0-9]/g,""):"";
+  const wa = phone? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  openSheet(`<div class="title">${isAr()?"إرسال الطلب":"Send order"} — ${esc(name||"")}</div>
+    ${sup&&sup.wechat?`<div class="note-box" style="font-size:13px">WeChat: <b>${esc(sup.wechat)}</b></div>`:""}
+    <textarea id="send_msg" style="min-height:180px">${esc(msg)}</textarea>
+    <button class="btn btn-ink btn-big" onclick="poCopyMsg()">${isAr()?"نسخ النص (للصقه في وي تشات)":"Copy text"}</button>
+    <a class="btn btn-ok btn-big" style="text-align:center;display:block;text-decoration:none" href="${wa}" target="_blank" rel="noopener">${isAr()?"إرسال عبر واتساب":"WhatsApp"}</a>
+    <div class="muted" style="font-size:12px">${isAr()?"وي تشات ما يدعم الإرسال المباشر — انسخ النص وافتح وي تشات والصقه في محادثة المورد.":"WeChat: copy text and paste."}</div>`);
+}
+function poCopyMsg(){ const t=el("send_msg"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand("copy");}catch(_){} } alert(isAr()?"تم نسخ النص":"Copied"); }
+
+/* طلب المشتريات للطباعة
 
 /* طلب المشتريات للطباعة — مجمّع بالمورد + مربع لقصاصة الخام */
 function purchaseReq(){
@@ -3161,16 +3288,17 @@ function checklistBlock(d){
     <div style="display:grid;grid-template-columns:1.4fr 0.7fr 0.9fr auto;gap:6px;margin-top:8px;align-items:end">
       <div><label>${isAr()?"الاسم":"Name"}</label><input id="chk_name_${d.id}"></div>
       <div><label>${isAr()?"الكمية":"Qty"}</label><input id="chk_qty_${d.id}" inputmode="decimal"></div>
-      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric">${isAr()?"خام (متر)":"fabric"}</option><option value="accessory">${isAr()?"إكسسوار (عدد)":"accessory"}</option></select></div>
+      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric|متر">${isAr()?"خام (متر)":"fabric (m)"}</option><option value="fabric|يارد">${isAr()?"خام (يارد)":"fabric (yd)"}</option><option value="accessory|عدد">${isAr()?"إكسسوار (عدد)":"accessory"}</option></select></div>
       <button class="btn btn-ink" onclick="chkAdd('${d.id}')">${t("add")}</button>
     </div>
     ${doneAll?`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk);margin-top:8px">${I.done} ${isAr()?"كل البنود تم شراء خاماتها — التصميم جاهز":"All items sourced — ready"}</div>`:""}`;
 }
 async function chkAdd(id){
   const name=(el("chk_name_"+id).value||"").trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Name?");
-  const kind=el("chk_kind_"+id).value, qty=parseFloat(el("chk_qty_"+id).value)||null;
+  const kv=(el("chk_kind_"+id).value||"fabric|متر").split("|"); const kind=kv[0], unit=kv[1]||(kind==="accessory"?"عدد":"متر");
+  const qty=parseFloat(el("chk_qty_"+id).value)||null;
   const d=design_(id); const arr=[...(d.checklist||[])];
-  arr.push({id:"ci-"+Math.random().toString(36).slice(2,9), name, kind, qty, unit: kind==="accessory"?"عدد":"متر"});
+  arr.push({id:"ci-"+Math.random().toString(36).slice(2,9), name, kind, qty, unit});
   await sb.from("design_projects").update({checklist:arr}).eq("id",id);
   d.checklist=arr; reopenDesign(id);
 }
