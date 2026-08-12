@@ -1247,19 +1247,72 @@ function chSamples(){
   const tr=activeTrip();
   let arr=(DB.samples||[]).filter(x=>!tr || x.trip_id===tr.id);
   if(chCompare) arr=arr.filter(x=>x.status==="shortlist");
-  if(chFilterProd) arr=arr.filter(x=>x.product_id===chFilterProd);
-  const prods=[...new Set((DB.samples||[]).map(x=>x.product_id).filter(Boolean))];
+  /* التصميم هو العنصر الأساسي: نجمّع العينات تحت تصاميمها (19ب) */
+  const groups={}; const loose=[];
+  arr.forEach(x=>{ if(x.design_id){ (groups[x.design_id]=groups[x.design_id]||[]).push(x); } else loose.push(x); });
+  const designBlock=(did, list)=>{
+    const d=design_(did)||{name:"?"};
+    const starred=list.filter(x=>x.status==="shortlist");
+    return `<div class="card" style="padding:12px;background:var(--soft)">
+      <div class="title" style="font-size:15px">${I.design} ${esc(d.final_name||d.name||"تصميم")}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}
+        <span class="muted" style="font-size:12px;letter-spacing:0">· ${list.length} ${isAr()?"عينة":"samples"}${starred.length?` · ${starred.length} ★`:""}</span></div>
+      ${list.map(sampleCard).join("")}
+      ${starred.length?`<button class="btn btn-ok btn-big" onclick="approveDesignPurchase('${did}')">${I.done} ${isAr()?"اعتمد → ولّد أوامر الشراء":"Approve → generate POs"}</button>`:""}
+      <button class="btn btn-ghost btn-big" onclick="window._chDesign='${did}';sampleSheet()">＋ ${isAr()?"عينة لهذا التصميم":"Sample for this design"}</button>
+    </div>`;
+  };
   el("chBody").innerHTML=`
-    ${!tr?`<div class="note-box">${isAr()?"سوّ رحلة أول — العينات تنسجل تحتها":"Create a trip first"}</div>`:""}
+    ${!tr?`<div class="note-box">${isAr()?"سوّ دفعة/رحلة أول — العينات تنسجل تحتها":"Create a batch first"}</div>`:""}
     <div class="pillrow" style="margin-bottom:10px">
-      <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:6px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المرشحة فقط":"Shortlist"}</button>
-      ${prods.length?`<select onchange="chFilterProd=this.value;render()" style="max-width:170px">
-        <option value="">${isAr()?"كل الموديلات":"All models"}</option>
-        ${prods.map(pid=>`<option value="${pid}" ${chFilterProd===pid?"selected":""}>${esc(pname(product(pid)))}</option>`).join("")}
-      </select>`:""}
+      <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:6px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المفضّلة فقط ★":"Shortlist"}</button>
     </div>
-    ${arr.length? arr.map(sampleCard).join("") : `<div class="empty">${isAr()?"ما في عينات بعد":"No samples yet"}</div>`}
-    ${tr?`<button class="btn btn-ink btn-big" onclick="sampleSheet()">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`:""}`;
+    <div class="sechead">${isAr()?"تصاميم جديدة":"NEW DESIGNS"}</div>
+    ${Object.keys(groups).length? Object.entries(groups).map(([did,list])=>designBlock(did,list)).join("")
+      : `<div class="muted" style="font-size:13px">${isAr()?"ما في عينات مربوطة بتصميم بعد — أضف عينة واختر لها تصميم":"No design-linked samples yet"}</div>`}
+    ${loose.length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة":"UNLINKED"}</div>${loose.map(sampleCard).join("")}`:""}
+    ${tr?`<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="window._chDesign='';sampleSheet()">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`:""}`;
+}
+/* الاعتماد: يولّد أوامر شراء من العينات المفضّلة + يسجّل المورد + يدخل الخام السجل (19ب.7–11) */
+async function approveDesignPurchase(designId){
+  const tr=activeTrip(chChannel);
+  const d=design_(designId)||{};
+  const chosen=(DB.samples||[]).filter(x=>x.design_id===designId && x.status==="shortlist");
+  if(!chosen.length) return alert(isAr()?"ما في عينات مفضّلة لهذا التصميم":"No starred samples");
+  const chk=(d.checklist||[]);
+  let made=0;
+  for(const x of chosen){
+    /* 1) المورد: سجّله تلقائياً إذا جديد */
+    let supId=x.supplier_id;
+    if(!supId && x.supplier_name){
+      const ex=(DB.suppliers||[]).find(sp=>(sp.name||"")===x.supplier_name && (sp.shop_no||"")===(x.shop_no||""));
+      if(ex) supId=ex.id;
+      else { const sup={id:newId(), kind:"fabric", name:x.supplier_name, shop_no:x.shop_no||null};
+        await sb.from("suppliers").insert(sup); DB.suppliers.unshift(sup); supId=sup.id; }
+    }
+    /* 2) الخام: أدخله سجل الخامات بـ SKU إذا مو موجود */
+    const isAcc=x.kind==="accessory";
+    const fabName=x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
+    let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (m.supplier||"")===(x.supplier_name||""));
+    if(!mat){ mat={id:newId(), sku:genSKU("material"), name:fabName, unit:isAcc?"حبة":"متر",
+        supplier:x.supplier_name||null, price:x.price||null, active:true};
+      await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
+    /* 3) الكمية من التشيك ليست إن وجد بند مطابق */
+    const ci=chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>(c.kind==="accessory")===isAcc);
+    let qty_yd=null, plan_qty=null;
+    if(ci && ci.qty){ if(isAcc) plan_qty=parseInt(ci.qty)||null; else qty_yd = (x.per==="meter"? (ci.qty/0.9144) : ci.qty); }
+    /* 4) أمر الشراء */
+    const po={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, design_id:designId,
+      supplier_id:supId||null, supplier_name:x.supplier_name||null, material_id:mat.id,
+      fabric_name:fabName, kind:isAcc?"accessory":"fabric", unit:isAcc?"count":"yard",
+      qty_yd:qty_yd, plan_qty:plan_qty, unit_price:x.price||null, currency:x.currency||chan(chChannel).currency,
+      status:"planned"};
+    const {error}=await sb.from("purchases").insert(po);
+    if(!error || /queued/i.test(error.message||"")){ if(!(DB.purchases||[]).some(z=>z.id===po.id)) DB.purchases.unshift(po);
+      await sb.from("trip_samples").update({status:"bought"}).eq("id",x.id); const sm=DB.samples.find(z=>z.id===x.id); if(sm) sm.status="bought"; made++; }
+  }
+  cacheDB();
+  alert(isAr()?`تم توليد ${made} أمر شراء — تلقاهم في «أوامر الشراء»`:`${made} POs generated`);
+  chTab="purch"; render();
 }
 async function sampleStatus(id, st){
   await sb.from("trip_samples").update({status:st}).eq("id",id);
@@ -2779,6 +2832,59 @@ async function rmDesignFile(id, field, idx){
   await refresh(); reopenDesign(id);
 }
 function reopenDesign(id){ closeSheet(); openDesign(id); }
+/* ===== تشيك ليست خامات وإكسسوارات التصميم (19أ.3) ===== */
+function checklistBlock(d){
+  const items=d.checklist||[];
+  const stChip=(st)=> st==="star"?`<span class="chip sage">★</span>`: st==="reject"?`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk)">✕</span>`:"";
+  const done=items.length && items.every(x=>x.status==="star");
+  return `<div class="sechead">${I.pack} ${isAr()?"تشيك ليست الخامات والإكسسوارات":"MATERIALS & ACCESSORIES CHECKLIST"}</div>
+    ${items.length? items.map((x,i)=>`<div class="lineitem"><div style="min-width:0">
+        <b>${esc(x.name||"")}</b> ${stChip(x.status)}
+        <div class="muted" style="font-size:12px">${x.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")}${x.qty?` · ${x.qty} ${esc(x.unit|| (x.kind==="accessory"?(isAr()?"قطعة":"pc"):(isAr()?"متر":"m")))}`:""}</div>
+      </div><div class="pillrow" style="flex-wrap:nowrap">
+        <button class="btn ${x.status==="star"?'btn-ink':'btn-ghost'}" style="padding:3px 8px;font-size:12px" onclick="chkStatus('${d.id}',${i},'star')">★</button>
+        <button class="btn ${x.status==="reject"?'btn-ink':'btn-ghost'}" style="padding:3px 8px;font-size:12px" onclick="chkStatus('${d.id}',${i},'reject')">✕</button>
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="chkDel('${d.id}',${i})">${I.trash}</button>
+      </div></div>`).join("")
+      : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود بعد — أضف الخامات والإكسسوارات المطلوبة":"None yet"}</div>`}
+    <div style="display:grid;grid-template-columns:1.4fr 0.7fr 0.9fr auto;gap:6px;margin-top:8px;align-items:end">
+      <div><label>${isAr()?"الاسم":"Name"}</label><input id="chk_name_${d.id}"></div>
+      <div><label>${isAr()?"الكمية":"Qty"}</label><input id="chk_qty_${d.id}" inputmode="decimal"></div>
+      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric">${isAr()?"خام (متر)":"fabric"}</option><option value="accessory">${isAr()?"إكسسوار (عدد)":"accessory"}</option></select></div>
+      <button class="btn btn-ink" onclick="chkAdd('${d.id}')">${t("add")}</button>
+    </div>
+    ${done?`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk);margin-top:8px">${I.done} ${isAr()?"كل البنود مفضّلة — التصميم جاهز للعينة":"All items starred — ready"}</div>`:""}`;
+}
+async function chkAdd(id){
+  const name=(el("chk_name_"+id).value||"").trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Name?");
+  const kind=el("chk_kind_"+id).value, qty=parseFloat(el("chk_qty_"+id).value)||null;
+  const d=design_(id); const arr=[...(d.checklist||[])];
+  arr.push({name, kind, qty, unit: kind==="accessory"?"عدد":"متر", status:"candidate"});
+  await sb.from("design_projects").update({checklist:arr}).eq("id",id);
+  d.checklist=arr; reopenDesign(id);
+}
+async function chkStatus(id,i,st){
+  const d=design_(id); const arr=[...(d.checklist||[])]; if(!arr[i])return;
+  arr[i]={...arr[i], status: arr[i].status===st? "candidate": st};
+  await sb.from("design_projects").update({checklist:arr}).eq("id",id);
+  d.checklist=arr; reopenDesign(id);
+}
+async function chkDel(id,i){
+  const d=design_(id); const arr=[...(d.checklist||[])]; arr.splice(i,1);
+  await sb.from("design_projects").update({checklist:arr}).eq("id",id);
+  d.checklist=arr; reopenDesign(id);
+}
+async function addDesignPattern(id){
+  const d=design_(id); const arr=[...(d.patterns||[])];
+  for(const f of el("d_pat").files){ const u=await uploadFile(f,"patterns"); if(u) arr.push({name:f.name,url:u}); }
+  await sb.from("design_projects").update({patterns:arr}).eq("id",id);
+  d.patterns=arr; reopenDesign(id);
+}
+async function rmDesignPattern(id,i){
+  const d=design_(id); const arr=[...(d.patterns||[])]; arr.splice(i,1);
+  await sb.from("design_projects").update({patterns:arr}).eq("id",id);
+  d.patterns=arr; reopenDesign(id);
+}
 function openDesign(id){
   const d=design_(id); const st=d.stage||"idea";
   const imgs=(arr)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`;
@@ -2797,6 +2903,12 @@ function openDesign(id){
       ${(d.notes||[]).map((n,i)=>`<div class="note-box"><b>${i+1}.</b> ${esc(n.t)} <span class="muted">${esc(n.d)}</span>
         <b style="cursor:pointer;float:inline-end" onclick="rmDesignNote('${id}','notes',${i})">✕</b></div>`).join("")||`<div class="muted">—</div>`}
       <div style="display:flex;gap:6px;margin-top:8px"><input id="d_note" style="flex:1"><button class="btn btn-ghost" onclick="addDesignNote('${id}','notes')">${t("add")}</button></div>
+      <hr class="sep">
+      <div class="sechead">${I.file} ${isAr()?"الباترون":"PATTERN"}</div>
+      ${(d.patterns||[]).filter(Boolean).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer;color:var(--wine)" onclick="rmDesignPattern('${id}',${i})">✕</b></span>`).join("")||`<div class="muted" style="font-size:12px">${isAr()?"ما فيه باترون بعد":"None yet"}</div>`}
+      <input type="file" id="d_pat" multiple onchange="addDesignPattern('${id}')">
+      <hr class="sep">
+      ${checklistBlock(d)}
       <hr class="sep">
       <button class="btn btn-ok btn-big" onclick="setDStage('${id}','prep')">${I.done} ${isAr()?"اعتماد الفكرة → تجهيز العينة":"Approve idea"}</button>`;
   } else if(st==="prep"){
