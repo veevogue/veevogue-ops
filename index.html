@@ -544,6 +544,22 @@ async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
 function el(id){return document.getElementById(id);}
+/* يحوّل الأرقام العربية/الفارسية إلى إنجليزية + الفاصلة العربية (قاعدة على كل حقول الأرقام) */
+function toAsciiDigits(str){
+  if(str==null) return str;
+  return String(str)
+    .replace(/[\u0660-\u0669]/g, d=>String(d.charCodeAt(0)-0x0660))
+    .replace(/[\u06F0-\u06F9]/g, d=>String(d.charCodeAt(0)-0x06F0))
+    .replace(/\u066B/g, ".").replace(/\u066C/g, "");
+}
+document.addEventListener("input", function(e){
+  const t=e.target; if(!t||(t.tagName!=="INPUT"&&t.tagName!=="TEXTAREA")) return;
+  const im=(t.getAttribute("inputmode")||"").toLowerCase();
+  if(t.type==="number"||im==="numeric"||im==="decimal"){
+    const c=toAsciiDigits(t.value);
+    if(c!==t.value){ const pos=t.selectionStart; t.value=c; try{t.setSelectionRange(pos,pos);}catch(_){} }
+  }
+}, true);
 function product(id){return DB.products.find(p=>p.id===id)||{name:"؟",images:[]};}
 function order(id){return DB.orders.find(o=>o.id===id)||{};}
 function worker(id){return DB.workers.find(w=>w.id===id)||{name:"؟",name_en:"?"};}
@@ -2054,7 +2070,7 @@ function tabSettings(){
     <div class="pillrow" id="dayPills">
       ${DAYS.map(d=>`<span class="pill ${(s.work_days||[]).includes(d)?'on':''}" data-d="${d}" onclick="this.classList.toggle('on')">${t(d)}</span>`).join("")}
     </div>
-    <label>${t("breakMin")}</label><input type="number" id="s_break" min="0" value="${s.break_minutes??30}">
+    <label>${t("breakMin")}</label><input id="s_break" inputmode="numeric" value="${s.break_minutes??30}">
     ${session.role==="manager"?`<hr class="sep">
     <div class="title">${I.design} ${isAr()?"صلاحيات «الإبداع والجودة»":"Creative & QC access"}</div>
     <div class="muted">${isAr()?"اختر التبويبات اللي تظهر لهم":"Pick their tabs"}</div>
@@ -2151,7 +2167,7 @@ function tabNewOrder(){
           <div><label>${isAr()?"الأسفل":"Bottom"}</label><select id="cm_bt${i}"><option value="">—</option>${BOTTOMS.map(s=>`<option>${s}</option>`).join("")}</select></div>
         </div>
         <div class="grid2"><div><label>${t("color")}</label><input id="cm_c${i}" value="${esc(m.color||"")}"></div>
-        <div><label>${t("qty")}</label><input id="cm_q${i}" type="number" min="1" value="${m.qty||1}"></div></div>
+        <div><label>${t("qty")}</label><input id="cm_q${i}" inputmode="numeric" value="${m.qty||1}"></div></div>
         <label>${isAr()?"ملاحظات خاصة":"Notes"}</label><input id="cm_n${i}" value="${esc(m.notes||"")}">
       </div>`).join("")}
       <button class="btn btn-ghost" onclick="addModel()">${I.plus} ${isAr()?"إضافة موديل":"Add model"}</button>`;
@@ -2171,7 +2187,7 @@ function tabNewOrder(){
         <select id="ld${i}">${dOpts}</select>
         <input id="ls${i}" placeholder="${t("age")}" value="${esc(l.size||"")}">
         <input id="lc${i}" placeholder="${t("color")}" value="${esc(l.color||"")}">
-        <input id="lq${i}" type="number" min="1" value="${l.qty||1}">
+        <input id="lq${i}" inputmode="numeric" value="${l.qty||1}">
         <button class="btn btn-ghost" onclick="delLine(${i})">✕</button>
       </div>`).join("")}
       <button class="btn btn-ghost" style="margin-top:8px" onclick="addLine()">${I.plus}</button>`;
@@ -2417,15 +2433,15 @@ function redrawParts(){
       <div id="bom_${k}"></div>
       <div style="display:flex;gap:6px;margin-top:6px">
         <select id="bp_${k}" style="flex:1">${mats.map(m=>`<option value="${m.id}">${esc(m.name)}${m.color?" · "+esc(m.color):""}${m.sku?" ("+esc(m.sku)+")":""}</option>`).join("")}</select>
-        <input id="bq_${k}" type="number" step="0.01" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
+        <input id="bq_${k}" inputmode="decimal" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
         <button type="button" class="btn btn-ghost" onclick="addBomP('${esc(c.ar)}')">${I.plus}</button>
       </div>
 
       <div class="grid2 timesrow" style="margin-top:10px">
         <div><label>${isAr()?"وقت القص (د)":"Cut (min)"} ${histAvg(pid_(),"cut",c.ar)}</label>
-          <input id="ec_${k}" type="number" value="${window._estCut[c.ar]||""}"></div>
+          <input id="ec_${k}" inputmode="numeric" value="${window._estCut[c.ar]||""}"></div>
         <div><label>${isAr()?"وقت الخياطة (د)":"Sew (min)"} ${histAvg(pid_(),"sew",c.ar)}</label>
-          <input id="es_${k}" type="number" value="${window._estSew[c.ar]||""}"></div>
+          <input id="es_${k}" inputmode="numeric" value="${window._estSew[c.ar]||""}"></div>
       </div>
 
       <div class="embblock">
@@ -2785,7 +2801,7 @@ function renderCollection(cid){
       return `<div class="sechead">${dlab(st)} <span class="muted" style="letter-spacing:0">(${list.length})</span></div>
       ${list.map(d=>`<div class="card swipe">
         <div class="wtop">${(d.mood&&d.mood[0])?`<img class="thumb" src="${esc(d.mood[0])}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`}
-          <div style="flex:1"><div class="title">${esc(d.final_name||d.name)} ${rowMenu(esc(d.final_name||d.name),[
+          <div style="flex:1"><div class="title">${esc(d.final_name||d.name||(isAr()?"بدون اسم":"Unnamed"))} ${rowMenu(esc(d.final_name||d.name||"—"),[
             {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
             {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delRow("design_projects",d.id)}
           ])}</div>
@@ -2801,15 +2817,18 @@ async function delCollection(id){
   if(!confirm(isAr()?"حذف الكولكشن؟ التصاميم تبقى بدون كولكشن":"Delete collection?")) return;
   await sb.from("collections").delete().eq("id",id); window._curCol=null; await refresh();
 }
-function newDesign(cid){
-  openSheet(`<div class="title">${isAr()?"تصميم جديد":"New design"}</div>
-    <label>${isAr()?"الاسم الأولي":"Working name"}</label><input id="nd_name">
-    <button class="btn btn-ok btn-big" onclick="saveNewDesign('${cid}')">${t("add")}</button>`);
+async function newDesign(cid){
+  const d={id:newId(), name:"", collection_id:cid, stage:"idea", status:"فكرة", sku:genSKU("design"),
+    mood:[], sketches:[], notes:[], patterns:[], checklist:[]};
+  const {error}=await sb.from("design_projects").insert(d);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(!(DB.designs||[]).some(x=>x.id===d.id)) DB.designs.unshift(d);
+  openDesign(d.id);
 }
-async function saveNewDesign(cid){
-  const name=el("nd_name").value.trim(); if(!name) return;
-  await sb.from("design_projects").insert({name, collection_id:cid, stage:"idea", status:"فكرة", sku:genSKU("design")});
-  closeSheet(); await refresh();
+async function renameDesign(id, val){
+  const name=(val||"").trim();
+  await sb.from("design_projects").update({name}).eq("id",id);
+  const d=design_(id); if(d) d.name=name;
 }
 
 /* ---- ورقة التصميم حسب المرحلة ---- */
@@ -2843,7 +2862,6 @@ function checklistBlock(d){
         <div class="muted" style="font-size:12px">${x.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")}${x.qty?` · ${x.qty} ${esc(x.unit|| (x.kind==="accessory"?(isAr()?"قطعة":"pc"):(isAr()?"متر":"m")))}`:""}</div>
       </div><div class="pillrow" style="flex-wrap:nowrap">
         <button class="btn ${x.status==="star"?'btn-ink':'btn-ghost'}" style="padding:3px 8px;font-size:12px" onclick="chkStatus('${d.id}',${i},'star')">★</button>
-        <button class="btn ${x.status==="reject"?'btn-ink':'btn-ghost'}" style="padding:3px 8px;font-size:12px" onclick="chkStatus('${d.id}',${i},'reject')">✕</button>
         <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="chkDel('${d.id}',${i})">${I.trash}</button>
       </div></div>`).join("")
       : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود بعد — أضف الخامات والإكسسوارات المطلوبة":"None yet"}</div>`}
@@ -2890,8 +2908,11 @@ function openDesign(id){
   const imgs=(arr)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`;
   let body="";
   if(st==="idea"||st==="sketch"){
-    /* صفحة واحدة: المود بورد + السكيتشات + الملاحظات */
-    body=`<div class="sechead">${I.design} ${isAr()?"المود بورد":"MOOD BOARD"}</div>
+    /* صفحة واحدة: الاسم + المود بورد + السكيتشات + الملاحظات + الباترون + التشيك ليست */
+    body=`<label>${isAr()?"اسم التصميم":"Design name"}</label>
+      <input id="d_name_${id}" value="${esc(d.name||"")}" placeholder="${isAr()?"اكتب اسم التصميم":"Design name"}" onchange="renameDesign('${id}',this.value)">
+      <hr class="sep">
+      <div class="sechead">${I.design} ${isAr()?"المود بورد":"MOOD BOARD"}</div>
       ${imgGrid(d.mood,id,'mood','moodgrid')}
       <input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
       <hr class="sep">
@@ -2961,7 +2982,7 @@ function openDesign(id){
     body=`<div class="note-box">${I.done} ${isAr()?"معتمد وتحول لمنتج":"Approved → product"}</div>
       ${d.product_id?`<button class="btn btn-ghost btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}`;
   }
-  openSheet(`<div class="title">${esc(d.final_name||d.name)} <span class="chip sage">${dlab(st)}</span></div>${body}
+  openSheet(`<div class="title">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))} <span class="chip sage">${dlab(st)}</span></div>${body}
     ${session.role==="manager"&&st!=="approved"?`<button class="btn btn-ghost btn-big" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
 }
 function captureDChart(){Object.keys(window._dchart||{}).forEach(s=>{MEAS.forEach(m=>{const i=el(`dc_${s}_${m[0]}`); if(i) window._dchart[s][m[0]]=i.value;});});}
@@ -3450,7 +3471,7 @@ function renderWorkersBox(){
     <div class="grid3">
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="m_unit"><option>متر</option><option>حبة</option><option>كيلو</option><option>لفة</option></select></div>
       <div><label>${isAr()?"المورد":"Supplier"}</label><input id="m_sup"></div>
-      <div><label>${isAr()?"السعر":"Price"}</label><input id="m_price" type="number" step="0.01"></div>
+      <div><label>${isAr()?"السعر":"Price"}</label><input id="m_price" inputmode="decimal"></div>
     </div>
     <button class="btn btn-ok btn-big" onclick="saveMaterial()">${t("add")}</button>
     ${(DB.materials||[]).filter(m=>m.active).map(m=>`<div class="lineitem swipe">
