@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.17:APPV-->
+<!--APPV:2026-08-12.20:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -524,6 +524,7 @@ function offBar(){
 /* ================= تشغيل ================= */
 window.addEventListener("DOMContentLoaded", async ()=>{
   sb = supabase.createClient(SUPA_URL, SUPA_KEY, {global:{fetch:vvFetch}});
+  try{ localStorage.removeItem("vv_signed"); }catch(e){}  /* المخزن صار عام — نمسح كاش الروابط الموقّعة القديمة */
   checkDailyLogout();
   applyDir();
   try{ const {data:{session:_as}} = await sb.auth.getSession(); AUTHED=!!_as; }catch(e){ AUTHED=false; }
@@ -582,7 +583,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.17";
+const APP_VERSION="2026-08-12.20";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1235,8 +1236,8 @@ function tabChina(){
     <div class="pillrow" style="margin-bottom:8px">${chanKeys().map(chanChip).join("")}</div>
     <div class="pillrow" style="margin-bottom:12px">
       ${sub("samples", isAr()?"دفتر العينات":"Samples")}
-      ${sub("suppliers", isAr()?"الموردين":"Suppliers")}
       ${sub("purch", isAr()?"أوامر الشراء":"Purchase orders")}
+      ${sub("suppliers", isAr()?"الموردين":"Suppliers")}
       ${sub("calc", isAr()?"الحاسبة":"Calculator")}
     </div>
     <div id="chBody"></div>`;
@@ -1319,6 +1320,7 @@ async function tripDel(id){
 }
 
 /* -- دفتر العينات -- */
+function smpForDesign(x,did){ return x.design_id===did || (x.design_ids||[]).includes(did); }
 function sampleCard(x){
   const ph=(x.photos||[])[0];
   const isAcc=x.kind==="accessory";
@@ -1333,13 +1335,13 @@ function sampleCard(x){
   const stChip = st==="shortlist"? `<span class="chip sage">★ ${isAr()?"معتمدة → شراء":"approved"}</span>`
     : st==="rejected"? `<span class="chip" style="background:#F5EAEC;color:#8E3B4C">✕ ${isAr()?"مرفوضة":"rejected"}</span>` : "";
   return `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:flex-start;${st==="rejected"?"opacity:.6":""}">
-    ${ph?`<img class="thumb" src="${esc(ph)}" style="width:84px;height:84px" onclick="viewImg('${esc(ph)}')">`:`<div class="thumb" style="width:84px;height:84px"></div>`}
+    ${ph?`<span style="position:relative;display:inline-block;flex:0 0 auto"><img class="thumb" src="${esc(ph)}" style="width:84px;height:84px" onclick="viewSamplePhotos('${x.id}')">${(x.photos||[]).length>1?`<span style="position:absolute;bottom:4px;inset-inline-end:4px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 5px;border-radius:8px">📷 ${(x.photos||[]).length}</span>`:""}</span>`:`<div class="thumb" style="width:84px;height:84px"></div>`}
     <div style="flex:1;min-width:0">
       <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))} ${stChip}</div>
       <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${x.shop_no?` · ${isAr()?"محل":"shop"} ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}</div>
       <div style="font-size:13px;margin-top:2px">${x.price!=null?`${x.price} ${esc(x.currency||"CNY")}/${perLbl}`:""}${isAcc&&x.count?` · ${isAr()?"العدد":"count"} ${x.count}`:""}
         ${kd!=null?` <b>≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</b>`:""}</div>
-      ${x.card_photo?`<div class="pillrow" style="margin-top:2px"><img class="thumb" src="${esc(x.card_photo)}" style="width:44px;height:30px" onclick="viewImg('${esc(x.card_photo)}')"><span class="muted" style="font-size:11px">${isAr()?"بزنس كارد":"card"}</span></div>`:""}
+      ${(x.card_photo||(x.card_photos&&x.card_photos.length))?`<div class="pillrow" style="margin-top:2px"><img class="thumb" src="${esc((x.card_photos&&x.card_photos[0])||x.card_photo)}" style="width:44px;height:30px" onclick="viewSampleCard('${x.id}')"><span class="muted" style="font-size:11px">${isAr()?"بزنس كارد":"card"}${(x.card_photos&&x.card_photos.length>1)?" (وجه وظهر)":""}</span></div>`:""}
       ${x.note?`<div class="muted" style="font-size:12px">${esc(x.note)}</div>`:""}
       <div class="pillrow" style="margin-top:6px">
         ${st!=="shortlist"
@@ -1356,14 +1358,18 @@ function sampleCard(x){
 
 function chSamples(){
   const allS=(DB.samples||[]).filter(x=>(x.channel||"china")===chChannel);
-  const desWithSamples=[...new Set(allS.map(x=>x.design_id).filter(Boolean))];
+  const desWithSamples=[...new Set(allS.flatMap(x=>[x.design_id,...(x.design_ids||[])]).filter(Boolean))];
   const desWithChk=activeDesigns().filter(d=>(d.checklist||[]).length).map(d=>d.id);
   const designIds=[...new Set([...desWithChk, ...desWithSamples])];
   const loose=allS.filter(x=>!x.design_id);
   const showList=(list)=> chCompare? list.filter(x=>x.status==="shortlist") : list;
 
   const slotBlock=(d, item)=>{
+    const F=window._smpFilter||"all";
+    if(F==="fabric" && item.kind==="accessory") return "";
+    if(F==="accessory" && item.kind!=="accessory") return "";
     const list=allS.filter(x=>x.design_id===d.id && x.checklist_item_id===item.id);
+    if(F==="nosample" && list.length) return "";
     const shown=showList(list);
     if(chCompare && !shown.length) return "";
     const sourced=list.some(x=>x.status==="shortlist");
@@ -1378,13 +1384,16 @@ function chSamples(){
   const designBlock=(did)=>{
     const d=design_(did)||{name:"?"}; ensureChkIds(d);
     const items=d.checklist||[];
-    const dsamples=allS.filter(x=>x.design_id===did);
+    const dsamples=allS.filter(x=>smpForDesign(x,did));
     const orphan=dsamples.filter(x=>!x.checklist_item_id || !items.some(it=>it.id===x.checklist_item_id));
-    const shownOrphan=showList(orphan);
+    const shownOrphan=applyF(showList(orphan));
     const starTot=dsamples.filter(x=>x.status==="shortlist").length;
-    return `<div class="card" style="padding:12px;background:var(--soft)">
-      <div class="title" style="font-size:15px">${I.design} ${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}
-        <span class="muted" style="font-size:12px;letter-spacing:0">· ${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""}</span></div>
+    return `<div class="card" style="padding:12px;background:#EAF3EA;border:1px solid #CFE3CF">
+      <div onclick="openDesign('${did}')" style="cursor:pointer;text-align:center;padding:4px 0 8px">
+        <div class="title" style="font-size:20px;justify-content:center">${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}</div>
+        ${d.sku?`<div class="muted" style="font-size:12px">${esc(d.sku)}</div>`:""}
+        <div class="muted" style="font-size:12px">${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""} <span style="opacity:.6">— ${isAr()?"اضغط لكرت التصميم":"open design"}</span></div>
+      </div>
       ${items.length? items.map(it=>slotBlock(d,it)).join("")
         : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود تشيك ليست — أضفها من صفحة التصميم":"Add checklist items on the design page"}</div>`}
       ${shownOrphan.length?`<div class="sechead" style="margin-top:8px;font-size:11px">${isAr()?"عينات بدون بند":"UNSLOTTED"}</div>${shownOrphan.map(sampleCard).join("")}`:""}
@@ -1392,8 +1401,17 @@ function chSamples(){
     </div>`;
   };
 
+  const _sf=window._smpFilter||"all";
+  const applyF=(list)=>{ if(_sf==="fabric") return list.filter(s=>s.kind!=="accessory");
+    if(_sf==="accessory") return list.filter(s=>s.kind==="accessory");
+    if(_sf==="nosample") return []; return list; };
+  const _fb=(v,lbl)=>`<button class="btn ${_sf===v?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._smpFilter='${v}';render()">${lbl}</button>`;
   const filterPill=`<div class="pillrow" style="margin-bottom:10px">
-      <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:6px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة فقط ★":"Approved only"}</button>
+      ${_fb("all", isAr()?"الكل":"All")}
+      ${_fb("fabric", isAr()?"خامات":"Fabric")}
+      ${_fb("accessory", isAr()?"كلف":"Trims")}
+      ${_fb("nosample", isAr()?"بلا عينة":"No sample")}
+      <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة ★":"Approved ★"}</button>
     </div>`;
   const tripWarn = "";
   /* تنظيم الدفتر بالكولكشنات: نجمّع التصاميم حسب الكولكشن (زي قسم التصميم) */
@@ -1433,7 +1451,7 @@ function chSamples(){
         </div>`;
       }).join("")
       : `<div class="muted" style="font-size:13px">${isAr()?"ما في تصاميم بعد — عبّي تشيك ليست تصميم من قسم التصميم":"No designs yet"}</div>`}
-    ${loose.length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة بتصميم":"UNLINKED"}</div>${showList(loose).map(sampleCard).join("")}`:""}
+    ${applyF(showList(loose)).length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة بتصميم":"UNLINKED"}</div>${applyF(showList(loose)).map(sampleCard).join("")}`:""}
     <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric')">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`;
 }
 /* يعطي كل بند تشيك ليست معرّف ثابت حتى نربط العينات به */
@@ -1493,6 +1511,7 @@ async function sampleStar(id){
   if(x.status==="shortlist") return;
   if(!(DB.purchases||[]).some(pp=>pp.sample_id===id)){ const ok=await poFromSample(x); if(!ok) return; }
   await sb.from("trip_samples").update({status:"shortlist"}).eq("id",id); x.status="shortlist";
+  if(x.supplier_id){ const sup=(DB.suppliers||[]).find(sx=>sx.id===x.supplier_id); if(sup&&sup.status==="potential"){ await sb.from("suppliers").update({status:"approved"}).eq("id",x.supplier_id); sup.status="approved"; } }
   cacheDB(); render();
 }
 /* تراجع عن الاعتماد: يشيل أمر الشراء المخطط ويرجّع العينة مرشّحة */
@@ -1542,7 +1561,7 @@ async function sampleStatus(id, st){
   render();
 }
 function sampleSheet(designId, itemId, kind){
-  window._smpPhotos=[]; window._smpCard=null; window._smpEdit=null;
+  window._smpPhotos=[]; window._smpCard=null; window._smpCards=[]; window._smpDesigns=[]; window._smpEdit=null;
   window._chDesign = designId||"";
   window._chItem = itemId||"";
   const k = kind||"fabric";
@@ -1582,9 +1601,13 @@ function sampleSheet(designId, itemId, kind){
     </div>
     <label>${isAr()?"لأي تصميم؟":"For design"}</label>
     <select id="smp_design">${designOptions(window._chDesign)}</select>
+    <label style="font-size:12px;color:#8a8172">${isAr()?"نفس الخام يخدم تصاميم ثانية؟ اختر (اختياري)":"Same material used by other designs? (optional)"}</label>
+    <div id="smpDesignPills" class="pillrow" style="max-height:104px;overflow:auto">
+      ${activeDesigns().filter(d=>d.id!==(window._chDesign||"")).map(d=>`<span class="pill" data-did="${d.id}" onclick="smpToggleDesign(this)">${esc(d.final_name||d.name||"")}</span>`).join("")}
+    </div>
     <hr class="sep">
-    <label>${isAr()?"بزنس كارد المورد (صورة تتحفظ للرجوع)":"Business card (photo)"}</label>
-    <input type="file" accept="image/*" id="smp_cardfile" onchange="smpAddCard(this.files)">
+    <label>${isAr()?"بزنس كارد المورد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
+    <input type="file" accept="image/*" multiple id="smp_cardfile" onchange="smpAddCard(this.files)">
     <div id="smpCardRow" class="pillrow" style="min-height:24px"></div>
     <div class="muted" style="font-size:11px">${isAr()?"الحين تتحفظ صورة الكارت — التعبئة التلقائية للبيانات تجي مع قراءة النص لاحقاً":"Card image is saved now; auto-fill from text comes later"}</div>
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="smp_note"></textarea>
@@ -1598,6 +1621,7 @@ function smpKindToggle(){
   if(fb) fb.style.display = k==="accessory"?"none":"block";
   if(ab) ab.style.display = k==="accessory"?"block":"none";
 }
+function smpToggleDesign(elm){ elm.classList.toggle("on"); window._smpDesigns=[...document.querySelectorAll("#smpDesignPills .pill.on")].map(x=>x.dataset.did); }
 async function smpAddPhotos(files){
   for(const f of [...files]){
     const u=await captureSamplePhoto(f);
@@ -1607,9 +1631,28 @@ async function smpAddPhotos(files){
   if(row) row.innerHTML=window._smpPhotos.map(u=>`<img class="thumb" src="${esc(u)}" style="width:52px;height:52px">`).join("");
 }
 async function smpAddCard(files){
-  const f=files&&files[0]; if(!f) return;
-  const u=await captureSamplePhoto(f);
-  if(u){ window._smpCard=u; const r=el("smpCardRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:64px;height:42px">`; }
+  window._smpCards=window._smpCards||[];
+  for(const f of [...(files||[])]){ if(window._smpCards.length>=2) break; const u=await captureSamplePhoto(f); if(u) window._smpCards.push(u); }
+  window._smpCard=window._smpCards[0]||null;
+  smpRenderCards();
+}
+function smpRenderCards(){
+  const r=el("smpCardRow"); if(!r) return;
+  r.innerHTML=(window._smpCards||[]).map((u,idx)=>`<span style="position:relative;display:inline-block;margin-inline-end:6px">
+    <img class="thumb" src="${esc(u)}" style="width:64px;height:42px">
+    <span class="muted" style="position:absolute;bottom:-14px;inset-inline-start:0;font-size:9px">${idx===0?(isAr()?"وجه":"front"):(isAr()?"ظهر":"back")}</span>
+    <button type="button" onclick="smpRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("");
+}
+function smpRmCard(idx){ (window._smpCards||[]).splice(idx,1); window._smpCard=(window._smpCards||[])[0]||null; smpRenderCards(); }
+async function ensurePotentialSupplier(row){
+  if(!row.supplier_name || row.supplier_id) return;
+  const nm=(row.supplier_name||"").trim(); if(!nm) return;
+  const found=(DB.suppliers||[]).find(sx=>(sx.channel||"china")===row.channel && (sx.name||"").trim()===nm);
+  if(found){ row.supplier_id=found.id; return; }
+  const sup={id:newId(), channel:row.channel, kind:"fabric", name:nm, shop_no:row.shop_no||null, status:"potential"};
+  await sb.from("suppliers").insert(sup);
+  if(!(DB.suppliers||[]).some(x=>x.id===sup.id)) DB.suppliers.unshift(sup);
+  row.supplier_id=sup.id;
 }
 async function sampleSave(){
   const tr=activeTrip();
@@ -1620,8 +1663,10 @@ async function sampleSave(){
     shop_no:el("smp_shop").value||null,
     photos:window._smpPhotos||[],
     card_photo:window._smpCard||null,
+    card_photos:window._smpCards||[],
     fabric_type:el("smp_fab").value||null,
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
+    design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...(window._smpDesigns||[])].filter(Boolean))],
     checklist_item_id:window._chItem||null,
     kind:k,
     note:el("smp_note").value||null,
@@ -1637,6 +1682,7 @@ async function sampleSave(){
     row.per=el("smp_per").value;
     row.width=el("smp_width").value||null;
   }
+  await ensurePotentialSupplier(row);
   if(window._smpEdit){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
@@ -1652,7 +1698,10 @@ function sampleEdit(id){
   const x=(DB.samples||[]).find(s=>s.id===id); if(!x) return;
   sampleSheet(x.design_id||"", x.checklist_item_id||"", x.kind||"fabric");
   window._smpEdit=id;
-  window._smpPhotos=[...(x.photos||[])]; window._smpCard=x.card_photo||null;
+  window._smpPhotos=[...(x.photos||[])];
+  window._smpCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : (x.card_photo?[x.card_photo]:[]);
+  window._smpCard=window._smpCards[0]||null;
+  window._smpDesigns=[...(x.design_ids||[])].filter(id=>id&&id!==x.design_id);
   const setv=(idf,v)=>{ const e=el(idf); if(e&&v!=null) e.value=v; };
   if(el("smp_supname")) el("smp_supname").value=x.supplier_name||"";
   if(el("smp_shop")) el("smp_shop").value=x.shop_no||"";
@@ -1663,7 +1712,8 @@ function sampleEdit(id){
   if((x.kind||"fabric")==="accessory"){ setv("smp_aprice",x.price); if(el("smp_acur"))el("smp_acur").value=x.currency||"CNY"; setv("smp_percount",x.per_count); }
   else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); }
   const pr=el("smpPhotoRow"); if(pr) pr.innerHTML=(window._smpPhotos||[]).map(u=>`<img class="thumb" src="${esc(u)}" style="width:52px;height:52px">`).join("");
-  const cr=el("smpCardRow"); if(cr&&window._smpCard) cr.innerHTML=`<img class="thumb" src="${esc(window._smpCard)}" style="width:64px;height:42px">`;
+  smpRenderCards();
+  (window._smpDesigns||[]).forEach(did=>{ const pill=document.querySelector(`#smpDesignPills .pill[data-did="${did}"]`); if(pill) pill.classList.add("on"); });
 }
 
 
@@ -1676,14 +1726,15 @@ function chSuppliers(){
       const g=arr.filter(x=>(x.kind||"fabric")===k);
       return `<div class="title" style="font-size:15px;margin-top:10px">${isAr()?ar:en} (${g.length})</div>
       ${g.map(x=>`<div class="lineitem"><div style="min-width:0">
-          <div style="font-weight:700">${esc(x.name||"")}${x.shop_no?` · ${esc(x.shop_no)}`:""}</div>
+          <div style="font-weight:700">${esc(x.name||"")}${x.shop_no?` · ${esc(x.shop_no)}`:""} ${x.status==="potential"?`<span class="chip" style="background:#FBF0D8;color:#8a6d1f">${isAr()?"محتمل":"potential"}</span>`:""}</div>
           <div class="muted" style="font-size:12px">${[x.market,x.city,x.wechat?("WeChat: "+x.wechat):"",x.phone].filter(Boolean).map(esc).join(" · ")}</div>
           ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:""}
-        </div><div class="pillrow" style="flex-wrap:nowrap"><button class="btn btn-ghost" style="padding:4px 10px" onclick="supSheet('${x.id}')">${t("edit")}</button><button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="supDel('${x.id}')">${I.trash}</button></div></div>`).join("")
+        </div><div class="pillrow" style="flex-wrap:nowrap">${x.status==="potential"?`<button class="btn btn-ok" style="padding:4px 10px" onclick="supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px" onclick="supSheet('${x.id}')">${t("edit")}</button><button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="supDel('${x.id}')">${I.trash}</button></div></div>`).join("")
         || `<div class="muted" style="font-size:12px">—</div>`}`;
     }).join("")}
     <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="supSheet()">＋ ${isAr()?"مورد جديد":"New supplier"}</button>`;
 }
+async function supApprove(id){ await sb.from("suppliers").update({status:"approved"}).eq("id",id); const sup=(DB.suppliers||[]).find(x=>x.id===id); if(sup) sup.status="approved"; cacheDB(); render(); }
 async function supDel(id){
   const sup=(DB.suppliers||[]).find(x=>x.id===id);
   if(!confirm(isAr()?`حذف المورد «${(sup&&sup.name)||""}»؟`:"Delete supplier?")) return;
@@ -1726,7 +1777,7 @@ async function supSave(){
   let error;
   if(window._supEdit){ ({error}=await sb.from("suppliers").update(row).eq("id",window._supEdit));
     const i=(DB.suppliers||[]).findIndex(x=>x.id===window._supEdit); if(i>=0) DB.suppliers[i]={...DB.suppliers[i],...row};
-  } else { row.id=newId(); row.channel=chChannel; ({error}=await sb.from("suppliers").insert(row));
+  } else { row.id=newId(); row.channel=chChannel; row.status="approved"; ({error}=await sb.from("suppliers").insert(row));
     if(!(DB.suppliers||[]).some(x=>x.id===row.id)) DB.suppliers.unshift(row); }
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   closeSheet(); cacheDB(); render();
@@ -3550,14 +3601,32 @@ function imgGrid(arr, id, field, cls){
     <img class="${cls==='moodgrid'?'moodimg':'thumb'}" src="${esc(u)}" onclick="viewImg('${esc(u)}')">
     <button class="rm" onclick="event.stopPropagation();rmDesignFile('${id}','${field}',${i})">✕</button></div>`).join("")}</div>`;
 }
-function viewImg(u){
+function viewImg(u){ viewGallery([u],0); }
+/* عارض صور منزلق — سلايد بين أكثر من صورة */
+function viewGallery(urls, start){
+  urls=(urls||[]).filter(Boolean); if(!urls.length) return;
+  let i=Math.max(0, Math.min(start||0, urls.length-1));
   const ov=document.createElement("div"); ov.className="overlay"; ov.style.zIndex=90;
-  ov.innerHTML=`<div style="max-width:900px;width:100%;text-align:center">
-    <img src="${esc(u)}" style="max-width:100%;max-height:80vh;border-radius:12px">
-    <button class="btn btn-ink btn-big" style="max-width:240px;margin:12px auto">${t("close")}</button></div>`;
+  const draw=()=>{
+    ov.innerHTML=`<div style="max-width:900px;width:100%;text-align:center" onclick="event.stopPropagation()">
+      <img src="${esc(urls[i])}" style="max-width:100%;max-height:78vh;border-radius:12px">
+      ${urls.length>1?`<div style="display:flex;justify-content:center;align-items:center;gap:18px;margin-top:10px">
+        <button class="btn btn-ghost" data-g="prev" style="font-size:24px;padding:4px 18px">‹</button>
+        <span class="muted">${i+1} / ${urls.length}</span>
+        <button class="btn btn-ghost" data-g="next" style="font-size:24px;padding:4px 18px">›</button></div>`:""}
+      <button class="btn btn-ink btn-big" data-g="close" style="max-width:240px;margin:10px auto">${t("close")}</button></div>`;
+    const pv=ov.querySelector('[data-g="prev"]'), nx=ov.querySelector('[data-g="next"]'), cl=ov.querySelector('[data-g="close"]');
+    if(pv) pv.onclick=e=>{e.stopPropagation(); i=(i-1+urls.length)%urls.length; draw();};
+    if(nx) nx.onclick=e=>{e.stopPropagation(); i=(i+1)%urls.length; draw();};
+    if(cl) cl.onclick=()=>ov.remove();
+  };
+  draw();
   ov.addEventListener("click",()=>ov.remove());
   document.body.appendChild(ov);
 }
+function viewSamplePhotos(id){ const s=(DB.samples||[]).find(x=>x.id===id); if(s) viewGallery(s.photos||[],0); }
+function viewSampleCard(id){ const s=(DB.samples||[]).find(x=>x.id===id); if(!s) return;
+  const cs=(s.card_photos&&s.card_photos.length)? s.card_photos : (s.card_photo?[s.card_photo]:[]); viewGallery(cs,0); }
 async function rmDesignFile(id, field, idx){
   const d=design_(id); const arr=[...(d[field]||[])]; arr.splice(idx,1);
   await sb.from("design_projects").update({[field]:arr}).eq("id",id);
@@ -3574,26 +3643,44 @@ function checklistBlock(d){
   return `<div class="sechead">${I.pack} ${isAr()?"تشيك ليست الخامات والإكسسوارات":"MATERIALS & ACCESSORIES CHECKLIST"}</div>
     <div class="muted" style="font-size:12px;margin-bottom:4px">${isAr()?"النجمة تشتعل تلقائياً لما تعتمد عينة لهذا البند في دفتر العينات":"Star lights up automatically when a sample is approved in the samples notebook"}</div>
     ${items.length? items.map((x,i)=>{
+      const smps=samplesOf(x.id);
+      const rep=smps.find(sm=>sm.status==="shortlist")||smps[0]||null;
       const lit=sourced(x.id);
-      return `<div class="lineitem"><div style="min-width:0">
-        <b>${esc(x.name||"")}</b> ${lit?`<span class="chip sage">★</span>`:`<span class="chip" style="opacity:.5">☆</span>`}
-        <div class="muted" style="font-size:12px">${x.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")}${x.qty?` · ${x.qty} ${esc(x.unit|| (x.kind==="accessory"?(isAr()?"قطعة":"pc"):(isAr()?"متر":"m")))}`:""}${lit?` · ${isAr()?"تم شراء الخامة":"sourced"}`:""}</div>
-      </div><div class="pillrow" style="flex-wrap:nowrap">
-        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="chkEdit('${d.id}',${i})">${isAr()?"تعديل":"Edit"}</button>
-        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="chkDel('${d.id}',${i})">${I.trash}</button>
-      </div></div>`; }).join("")
-      : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود بعد — أضف الخامات والإكسسوارات المطلوبة":"None yet"}</div>`}
-    <div style="display:grid;grid-template-columns:1.4fr 0.7fr 0.9fr auto;gap:6px;margin-top:8px;align-items:end">
+      const photos=(rep&&rep.photos)||[];
+      const kindLbl=x.kind==="accessory"?(isAr()?"كلف":"trim"):(isAr()?"خام":"fabric");
+      return `<div class="card" style="display:flex;gap:10px;align-items:stretch;padding:10px;${lit?'border:1px solid #CFE3CF;background:#F3F8F3':''}">
+        <div style="flex:1;min-width:0">
+          <b>${esc(x.name||"")}</b> ${lit?`<span class="chip sage">★</span>`:`<span class="chip" style="opacity:.5">☆</span>`}
+          <div class="muted" style="font-size:12px">${kindLbl}${x.qty?` · ${x.qty} ${esc(x.unit||"")}`:""}</div>
+          ${rep?`<div class="muted" style="font-size:11px">${esc(rep.supplier_name||"")}${rep.price!=null?` · ${rep.price} ${esc(rep.currency||"")}`:""}</div>`:`<div class="muted" style="font-size:11px">${isAr()?"لا عينة بعد — أضفها من دفتر العينات":"no sample yet"}</div>`}
+        </div>
+        ${photos.length?`<div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px">
+          <img src="${esc(photos[0])}" onclick="viewSamplePhotos('${rep.id}')" style="width:92px;height:92px;object-fit:cover;border-radius:10px;cursor:zoom-in">
+          ${photos.length>1?`<span class="muted" style="font-size:10px">📷 ${photos.length}</span>`:""}</div>`
+        :`<div style="flex:0 0 auto;width:92px;height:92px;border-radius:10px;background:var(--soft);display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.pack}</div>`}
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;justify-content:center">
+          ${rep? (rep.status==="shortlist"
+            ? `<button class="btn btn-ghost" title="${isAr()?"تراجع عن الاعتماد":"undo"}" style="padding:4px 9px" onclick="sampleUnstar('${rep.id}')">↺</button>`
+            : `<button class="btn btn-ok" title="${isAr()?"اعتمد → شراء":"approve → buy"}" style="padding:4px 9px" onclick="sampleStar('${rep.id}')">★</button>`):""}
+          <button class="btn btn-ghost" title="${isAr()?"تعديل البند":"edit"}" style="padding:4px 9px" onclick="chkEdit('${d.id}',${i})">${I.edit}</button>
+          ${rep&&rep.status!=="rejected"?`<button class="btn btn-ghost" title="${isAr()?"رفض العينة":"reject"}" style="padding:4px 9px" onclick="sampleReject('${rep.id}')">✕</button>`:""}
+          <button class="btn btn-ghost" title="${isAr()?"حذف البند":"delete"}" style="padding:4px 9px;color:var(--wine)" onclick="chkDel('${d.id}',${i})">${I.trash}</button>
+        </div>
+      </div>`; }).join("")
+      : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود بعد — أضف الخامات والكلف المطلوبة":"None yet"}</div>`}
+    <div style="display:grid;grid-template-columns:1.3fr 0.6fr 0.8fr 0.8fr auto;gap:6px;margin-top:8px;align-items:end">
       <div><label>${isAr()?"الاسم":"Name"}</label><input id="chk_name_${d.id}"></div>
       <div><label>${isAr()?"الكمية":"Qty"}</label><input id="chk_qty_${d.id}" inputmode="decimal"></div>
-      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric|متر">${isAr()?"خام (متر)":"fabric (m)"}</option><option value="fabric|يارد">${isAr()?"خام (يارد)":"fabric (yd)"}</option><option value="accessory|عدد">${isAr()?"إكسسوار (عدد)":"accessory"}</option></select></div>
+      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric">${isAr()?"خام":"fabric"}</option><option value="accessory">${isAr()?"كلف/إكسسوار":"trim/acc"}</option></select></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="chk_unit_${d.id}"><option value="متر">${isAr()?"متر":"m"}</option><option value="يارد">${isAr()?"يارد":"yd"}</option><option value="عدد">${isAr()?"عدد":"pcs"}</option></select></div>
       <button class="btn btn-ink" onclick="chkAdd('${d.id}')">${t("add")}</button>
     </div>
     ${doneAll?`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk);margin-top:8px">${I.done} ${isAr()?"كل البنود تم شراء خاماتها — التصميم جاهز":"All items sourced — ready"}</div>`:""}`;
 }
 async function chkAdd(id){
   const name=(el("chk_name_"+id).value||"").trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Name?");
-  const kv=(el("chk_kind_"+id).value||"fabric|متر").split("|"); const kind=kv[0], unit=kv[1]||(kind==="accessory"?"عدد":"متر");
+  const kind=el("chk_kind_"+id)?el("chk_kind_"+id).value:"fabric";
+  const unit=el("chk_unit_"+id)?el("chk_unit_"+id).value:(kind==="accessory"?"عدد":"متر");
   const qty=parseFloat(el("chk_qty_"+id).value)||null;
   const d=design_(id); const arr=[...(d.checklist||[])];
   arr.push({id:"ci-"+Math.random().toString(36).slice(2,9), name, kind, qty, unit});
