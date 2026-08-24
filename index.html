@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.16:APPV-->
+<!--APPV:2026-08-12.17:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="فيفوق">
 <meta name="theme-color" content="#FFFFFF">
-<link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Aref+Ruqaa:wght@400;700&family=Inter:wght@400;600;700;800&family=Italiana&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Inter:wght@400;600;700;800&family=Italiana&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -79,7 +79,7 @@
   .empty{text-align:center;color:#9b968e;padding:34px 10px;font-size:15px;}
   .ico{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
   .sechead{display:flex;align-items:center;gap:10px;margin:20px 4px 12px;font-family:'Inter';font-weight:800;letter-spacing:2px;font-size:14px;}
-  [dir="rtl"] .sechead{font-family:'Aref Ruqaa',serif;letter-spacing:0;font-size:20px;}
+  [dir="rtl"] .sechead{font-family:'Almarai',sans-serif;font-weight:800;letter-spacing:0;font-size:17px;}
   .note-box{border:1px solid var(--line);}
   .lineitem{border-top:1px solid var(--div);}
   .sechead .ico{width:26px;height:26px;}
@@ -116,7 +116,7 @@
     border-radius:14px;padding:12px 14px;margin-bottom:16px;}
   .colhead-mid{flex:1;text-align:center;min-width:0;}
   .colhead-name{font-weight:800;font-size:19px;line-height:1.25;}
-  [dir="rtl"] .colhead-name{font-family:'Aref Ruqaa',serif;font-size:23px;}
+  [dir="rtl"] .colhead-name{font-family:'Almarai',sans-serif;font-weight:800;font-size:19px;}
   .colhead-sub{font-size:12px;opacity:.85;margin-top:2px;}
   .colback{background:rgba(255,255,255,.18);border:0;color:#fff;width:38px;height:38px;border-radius:10px;
     display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
@@ -249,7 +249,7 @@
 .dpipe .pill.on b{color:#fff}
 .dpipe .pill.on span{color:rgba(255,255,255,.82)}
 
-.smpdiv{height:1px;margin:14px 6px;background:linear-gradient(90deg,transparent,rgba(142,59,76,.28),transparent);border-radius:1px}
+.smpdiv{height:3px;margin:18px 6px;background:linear-gradient(90deg,transparent,rgba(142,59,76,.65),transparent);border-radius:2px}
 </style>
 </head>
 <body>
@@ -582,7 +582,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.16";
+const APP_VERSION="2026-08-12.17";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -669,18 +669,7 @@ async function uploadFile(file, folder){
 const SIGN_TTL = 6*24*3600;
 let SIGNED = {}; try{ SIGNED = JSON.parse(localStorage.getItem("vv_signed")||"{}"); }catch(e){}
 function filePath(u){ const m=String(u).match(/\/object\/(?:public|sign)\/files\/([^?]+)/); return m? decodeURIComponent(m[1]) : null; }
-async function signedUrl(u){
-  const path=filePath(u); if(!path) return u;
-  const c=SIGNED[path];
-  if(c && c.exp > Date.now()/1000 + 3600) return c.url;
-  try{
-    const {data,error}=await sb.storage.from("files").createSignedUrl(path, SIGN_TTL);
-    if(error||!data) return u;
-    SIGNED[path]={url:data.signedUrl, exp:Math.floor(Date.now()/1000)+SIGN_TTL};
-    try{ localStorage.setItem("vv_signed", JSON.stringify(SIGNED)); }catch(e){}
-    return data.signedUrl;
-  }catch(e){ return u; }
-}
+async function signedUrl(u){ return u; }  /* المخزن صار عام — الرابط المباشر يفتح فوراً بدون توقيع (أسرع وما ينكسر) */
 async function fixMedia(){
   if(!AUTHED || !sb) return;
   await Promise.all([...document.querySelectorAll('img[src*="/object/public/files/"]')].map(async n=>{ n.src = await displayUrl(n.getAttribute("src")); }));
@@ -692,6 +681,15 @@ async function fixMedia(){
 }
 let _fixT=null;
 try{ new MutationObserver(()=>{ clearTimeout(_fixT); _fixT=setTimeout(fixMedia,80); }).observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+/* قفل ضد الضغط المزدوج بالغلط على أزرار الحفظ/الإضافة — يمنع تكرار البند لو النظام معلّق */
+try{ document.addEventListener("click",function(e){
+  const b=e.target && e.target.closest && e.target.closest("button[onclick]"); if(!b) return;
+  const oc=b.getAttribute("onclick")||"";
+  if(!/save|Save|sampleStar|approve/.test(oc)) return;   /* أزرار الحفظ/الاعتماد فقط */
+  const now=Date.now();
+  if(b.dataset.lk && now-(+b.dataset.lk)<1500){ e.stopImmediatePropagation(); e.preventDefault(); return; }
+  b.dataset.lk=now;
+}, true); }catch(e){}
 async function signHtml(html){
   const urls=[...new Set(html.match(/https:\/\/[^"'\s)]+\/object\/public\/files\/[^"'\s)]+/g)||[])];
   for(const u of urls){ html = html.split(u).join(await signedUrl(u)); }
