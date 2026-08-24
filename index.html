@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.15:APPV-->
+<!--APPV:2026-08-12.16:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -582,7 +582,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.15";
+const APP_VERSION="2026-08-12.16";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -888,13 +888,34 @@ async function genParts(lineId, lineOpt, otype, stage){
   const o=order(l.order_id); const p=product(l.product_id);
   const ty=otype||o.order_type;
   let comps=(ty==="تصليح")? [{ar:"تصليح",en:"REPAIR"}] : (p.components&&p.components.length? p.components : [{ar:"القطعة",en:"PIECE"}]);
-  await sb.from("line_parts").insert(comps.map(c=>({line_id:l.id, part_ar:c.ar, part_en:c.en, stage:st})));
+  /* إعادة ضبط: نمسح قطع الإنتاج القديمة (نبقي التطريز) قبل ما ننشئ قطع المرحلة */
+  await sb.from("line_parts").delete().eq("line_id",l.id).neq("stage","emb");
+  await sb.from("line_parts").insert(comps.map(c=>({line_id:l.id, part_ar:c.ar, part_en:c.en, stage:st, status:"waiting"})));
+}
+/* يعيد حساب مرحلة السطر من مراحل قطعه: قص إن بقيت قطعة/تطريز بالقص، وإلا خياطة، وإلا الجودة */
+async function rollLine(lineId){
+  const l=DB.lines.find(x=>x.id===lineId); if(!l) return;
+  /* نحسب من الذاكرة (يشتغل بدون إنترنت) — على أن wDone حدّث القطع بالذاكرة قبل النداء */
+  const notDone=DB.parts.filter(x=>x.line_id===lineId && x.status!=="done");
+  const anyCut=notDone.some(x=>(x.stage||"sew")==="cut");
+  const embCut=notDone.some(x=>x.stage==="emb"&&WHEN2STAGE[x.emb_when||"after_sew"]==="cut");
+  const anySew=notDone.some(x=>(x.stage||"sew")==="sew");
+  const embSew=notDone.some(x=>x.stage==="emb"&&WHEN2STAGE[x.emb_when||"after_sew"]==="sew");
+  let ns;
+  if(anyCut||embCut) ns="cut";
+  else if(anySew||embSew) ns="sew";
+  else ns="qc";
+  if(l.stage!==ns){ l.stage=ns; l.stage_status="waiting"; l.claimed_by=null;
+    await sb.from("order_lines").update({stage:ns,stage_status:"waiting",claimed_by:null}).eq("id",lineId); }
 }
 /* ينشئ مهمة تطريز لقطعة واحدة بعد ما تخلص مرحلتها */
 async function spawnEmb(l, pt, e, isFix){
-  await sb.from("line_parts").insert({line_id:l.id, part_ar:pt.part_ar, part_en:pt.part_en, stage:"emb",
+  const row={line_id:l.id, part_ar:pt.part_ar, part_en:pt.part_en, stage:"emb",
     status:"waiting", emb_kind:e.kind, emb_when:e.when||"after_sew", emb_note:e.note||null,
-    emb_artwork:e.artwork||null, is_fix:!!isFix});
+    emb_artwork:e.artwork||null, is_fix:!!isFix};
+  await sb.from("line_parts").insert(row);
+  if(!DB.parts.some(x=>x.line_id===l.id&&x.stage==="emb"&&x.part_ar===pt.part_ar&&x.emb_kind===e.kind&&x.status==="waiting"))
+    DB.parts.push({...row, id:newId()});
 }
 /* ===== التقدير = متوسط أداء كل العمال، لا تقدير المدير ===== */
 const EST_MIN_SAMPLE = 3;    /* أقل عدد قراءات سليمة قبل ما نعتمد المتوسط كتقدير */
@@ -2504,13 +2525,13 @@ function stageStats(){
       const ps=DB.parts.filter(p=>p.stage==="emb"&&p.status!=="done"&&actIds.has(p.line_id));
       return {all:ps.length, go:ps.filter(p=>p.status==="sent").length, wait:ps.filter(p=>p.status==="waiting").length};
     }
-    const ls=act.filter(l=>l.stage===st);
     if(st==="sew"||st==="cut"){
       let go=0,wait=0,all=0;
-      ls.forEach(l=>{const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage||"sew")===st&&p.status!=="done");
-        all+=ps.length||1; go+=ps.filter(p=>p.status==="working").length; wait+=ps.filter(p=>p.status==="waiting").length;});
+      act.forEach(l=>{const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage||"sew")===st&&p.status!=="done");
+        all+=ps.length; go+=ps.filter(p=>p.status==="working").length; wait+=ps.filter(p=>p.status!=="working").length;});
       return {all,go,wait};
     }
+    const ls=act.filter(l=>l.stage===st);
     return {all:ls.length, go:ls.filter(l=>l.stage_status==="working").length, wait:ls.filter(l=>l.stage_status!=="working").length};
   };
   const c=cnt("cut"), e=cnt("emb"), s=cnt("sew");
@@ -2586,7 +2607,9 @@ function stageFilterView(stg){
       </div>`).join("");
     }).join("");
   }
-  const act=DB.lines.filter(l=>activeLine(l)&&l.stage===stg);
+  const act=(stg==="cut"||stg==="sew")
+    ? DB.lines.filter(l=>activeLine(l)&&DB.parts.some(p=>p.line_id===l.id&&(p.stage||"sew")===stg&&p.status!=="done"))
+    : DB.lines.filter(l=>activeLine(l)&&l.stage===stg);
   const rows=[];
   act.forEach(l=>{
     if(stg==="cut"||stg==="sew"){
@@ -2626,8 +2649,15 @@ function stageFilterView(stg){
 }
 function lineChip(l){
   const w=l.claimed_by?worker(l.claimed_by):null;
-  const partsInfo=l.stage==="sew"? (()=>{const ps=DB.parts.filter(p=>p.line_id===l.id);const d=ps.filter(p=>p.status==="done").length;return ps.length>1?` ${d}/${ps.length}`:"";})():"";
-  return `<span class="chip ${l.stage_status==='working'?'working':''}">${I[l.stage]||""} ${t(STAGE_KEY[l.stage]||l.stage)}${partsInfo}${w?` · ${esc(wname(w))}`:""}</span>`;
+  if(l.stage==="cut"||l.stage==="sew"){
+    const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage==="cut"||p.stage==="sew"));
+    if(ps.length>1){
+      const lab=p=>p.status==="done"? "✓" : (t(STAGE_KEY[p.stage]||p.stage)+(p.status==="working"?" ●":""));
+      const brk=ps.map(p=>`${esc(isAr()?p.part_ar:p.part_en)}: ${lab(p)}`).join(" · ");
+      return `<span class="chip ${l.stage_status==='working'?'working':''}">${brk}</span>`;
+    }
+  }
+  return `<span class="chip ${l.stage_status==='working'?'working':''}">${I[l.stage]||""} ${t(STAGE_KEY[l.stage]||l.stage)}${w?` · ${esc(wname(w))}`:""}</span>`;
 }
 function orderCard(o){
   const ls=DB.lines.filter(l=>l.order_id===o.id);
@@ -3903,6 +3933,7 @@ async function receiveJob(jobId){
   for(const pid of (j.part_ids||[])){
     const x=DB.parts.find(y=>y.id===pid); if(!x) continue;
     await sb.from("line_parts").update({status:"done", finished_at:now}).eq("id",pid);
+    x.status="done"; x.finished_at=now;
     touched.add(x.line_id);
   }
   const doneIds=(j.part_ids||[]);
@@ -3917,10 +3948,17 @@ async function receiveJob(jobId){
       continue;
     }
     if(l.stage==="qc") continue;   /* إرجاع تطريز والسطر واقف عند الجودة — يرجع للقائمة تلقائياً */
-    const own=DB.parts.filter(x=>x.line_id===lineId && (x.stage||"sew")===l.stage && x.status!=="done");
-    const embLeft=DB.parts.filter(x=>x.line_id===lineId && x.stage==="emb" && x.status!=="done"
-      && !doneIds.includes(x.id) && WHEN2STAGE[x.emb_when||"after_sew"]===l.stage);
-    if(!own.length && !embLeft.length) await moveLine(lineId, nextStage(l.stage,p));
+    /* تطريز بعد القص رجع → القطعة نفسها تنتقل للخياطة بروحها */
+    for(const rp of DB.parts.filter(x=>x.line_id===lineId && doneIds.includes(x.id) && x.stage==="emb")){
+      if((rp.emb_when||"after_sew")==="after_cut"){
+        const comp=DB.parts.find(x=>x.line_id===lineId && x.part_ar===rp.part_ar && (x.stage||"sew")==="cut");
+        if(comp){ await sb.from("line_parts").update({stage:"sew",status:"waiting",worker_id:null,started_at:null,finished_at:null}).eq("id",comp.id);
+          comp.stage="sew";comp.status="waiting";comp.worker_id=null;comp.started_at=null;comp.finished_at=null; }
+        else { const nr={line_id:lineId,part_ar:rp.part_ar,part_en:rp.part_en,stage:"sew",status:"waiting"};
+          await sb.from("line_parts").insert(nr); DB.parts.push({...nr,id:newId()}); }
+      }
+    }
+    await rollLine(lineId);
   }
   for(const id of (j.line_ids||[])){
     const l=DB.lines.find(x=>x.id===id); if(!l) continue;
@@ -4046,10 +4084,23 @@ function tabQuality(){
   const all=DB.lines.filter(l=>l.stage==="qc" && activeLine(l));
   const ls=all.filter(l=>!waitEmb(l));
   const held=all.filter(waitEmb);
+  /* ملابس ناقصة قطعة: بعض قطعها خلصت خياطة والباقي لا — تبين باهتة بانتظار الاكتمال */
+  const partial=DB.lines.filter(l=>activeLine(l) && (l.stage==="cut"||l.stage==="sew") && (()=>{
+    const ps=DB.parts.filter(p=>p.line_id===l.id && p.stage!=="emb");
+    return ps.length>1 && ps.some(p=>p.stage==="sew"&&p.status==="done") && ps.some(p=>p.status!=="done");
+  })());
+  const partBrk=l=>{const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage==="cut"||p.stage==="sew"));
+    return ps.map(p=>`${esc(isAr()?p.part_ar:p.part_en)}: ${p.status==="done"?"✓":(t(STAGE_KEY[p.stage]||p.stage))}`).join(" · ");};
   el("tabbody").innerHTML=`
     ${held.length?`<div class="note-box">${I.emb} ${isAr()
       ?`${held.length} ${held.length===1?"قطعة":"قطع"} واقفة لين يرجع تطريزها: `
       :`${held.length} waiting on embroidery: `}${held.map(l=>esc(pname(product(l.product_id)))).join(" · ")}</div>`:""}
+    ${partial.length?`<div class="sechead">${I.clock} ${isAr()?"بانتظار اكتمال القطع":"Waiting for pieces"} (${partial.length})</div>
+      ${partial.map(l=>{const p=product(l.product_id),o=order(l.order_id);
+        return `<div class="wcard" style="opacity:.5">
+          <div class="wtop">${thumb(p)}<div><div class="title">${esc(pname(p))}</div>
+          <div class="muted">#${o.order_no} — ${t("age")} ${esc(l.size||"—")}</div>
+          <div class="muted">${partBrk(l)}</div></div></div></div>`;}).join("")}`:""}
     <div class="sechead">${I.qc} ${t("qc")} (${ls.length})</div>
     ${ls.length? ls.map(l=>{
       const p=product(l.product_id), o=order(l.order_id);
@@ -4082,24 +4133,36 @@ function qcFixSheet(lineId){
   /* كل التطريزات والطباعات على هذا الموديل — عشان يقدر يرجّع وحدة منها بس */
   const embs=[];
   Object.keys(p.emb_parts||{}).forEach(part=>embOf(p,part).forEach((e,i)=>embs.push({part,e,i})));
+  const comps=(p.components&&p.components.length)? p.components : [{ar:"القطعة",en:"PIECE"}];
   openSheet(`<div class="title">${I.fix} ${t("fix")}</div>
-    ${embs.length?`<label>${isAr()?"وين المشكلة؟":"Where is the problem?"}</label>
+    <label>${isAr()?"وين المشكلة؟ (اختر قطعة أو أكثر)":"Where is the problem? (pick one or more)"}</label>
     <div class="pillrow" id="fixTarget">
-      <span class="pill on" data-t="garment" onclick="pickFixTarget(this)">${isAr()?"الخياطة / الموديل":"Garment"}</span>
+      ${comps.map(c=>`<span class="pill" data-t="part" data-ar="${esc(c.ar)}" onclick="pickFixTarget(this)">${I.sew} ${esc(isAr()?c.ar:c.en)}</span>`).join("")}
       ${embs.map((x,n)=>`<span class="pill" data-t="emb" data-n="${n}" onclick="pickFixTarget(this)">${esc(x.e.kind)} · ${esc(x.part)}</span>`).join("")}
     </div>
+    <div class="note-box" style="font-size:12px">${isAr()
+      ?"لو ما اخترت أي قطعة يرجع الموديل كامل للخياطة. اختيار تطريز يرجّعه للمطرّز وحده."
+      :"None selected = whole garment back to sewing. Picking an embroidery sends only that back."}</div>
     <div class="note-box" id="fixHint" style="display:none">${isAr()
       ?"راح ترجع هذي القطعة للمطرّز وحدها — الموديل يبقى واقفاً عند الجودة لين ترجع."
-      :"Only this piece goes back to the embroiderer."}</div>`:""}
+      :"Only this piece goes back to the embroiderer."}</div>
     <label>${t("reason")}</label>
     <div class="pillrow" id="qcReasons">${DB.reasons.filter(r=>r.active).map((r,i)=>`<span class="pill ${i===0?'on':''}" data-r="${esc(r.label)}" onclick="[...document.querySelectorAll('#qcReasons .pill')].forEach(p=>p.classList.remove('on'));this.classList.add('on')">${esc(r.label)}</span>`).join("")}</div>
     <label>${isAr()?"صورة العيب (اختياري)":"Defect photo (optional)"}</label><input type="file" id="qc_img" accept="image/*">
     <button class="btn btn-bad btn-big" onclick="sendFix('${lineId}')">${I.fix} ${isAr()?"إرجاع للتصليح":"Send back"}</button>`);
 }
 function pickFixTarget(elm){
-  document.querySelectorAll("#fixTarget .pill").forEach(x=>x.classList.remove("on"));
-  elm.classList.add("on");
-  const h=el("fixHint"); if(h) h.style.display = elm.dataset.t==="emb"? "":"none";
+  if(elm.dataset.t==="emb"){
+    /* تطريز = اختيار مفرد ويلغي اختيار القطع */
+    document.querySelectorAll("#fixTarget .pill").forEach(x=>x.classList.remove("on"));
+    elm.classList.add("on");
+    const h=el("fixHint"); if(h) h.style.display="";
+  }else{
+    /* قطعة خياطة = تبديل حر (متعدد) ويلغي التطريز */
+    document.querySelectorAll("#fixTarget .pill[data-t='emb']").forEach(x=>x.classList.remove("on"));
+    elm.classList.toggle("on");
+    const h=el("fixHint"); if(h) h.style.display="none";
+  }
 }
 /* هل هذا السطر منفَّذ خارجياً؟ */
 function isExternalLine(l){
@@ -4145,8 +4208,16 @@ async function sendFix(lineId){
     return;
   }
   const lastSew=DB.events.filter(e=>e.line_id===lineId&&e.stage==="sew"&&e.worker_id&&e.finished_at).slice(-1)[0];
+  const selParts=[...document.querySelectorAll("#fixTarget .pill.on[data-t='part']")].map(x=>x.dataset.ar);
+  const sewParts=DB.parts.filter(x=>x.line_id===lineId && (x.stage||"sew")==="sew");
+  const targets = selParts.length? sewParts.filter(x=>selParts.includes(x.part_ar)) : sewParts;
   await sb.from("order_lines").update({stage:"sew",stage_status:"waiting",claimed_by:null,fix_reason:reason,fix_image:img}).eq("id",lineId);
-  await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX",worker_id:lastSew?lastSew.worker_id:null});
+  if(targets.length){
+    for(const tp of targets)
+      await sb.from("line_parts").update({stage:"sew",status:"waiting",worker_id:lastSew?lastSew.worker_id:null,started_at:null,finished_at:null,is_fix:true}).eq("id",tp.id);
+  }else{
+    await sb.from("line_parts").insert({line_id:lineId,part_ar:"إصلاح",part_en:"FIX",stage:"sew",status:"waiting",worker_id:lastSew?lastSew.worker_id:null,is_fix:true});
+  }
   await logIt("fix","order_lines",lineId, lineLabel(lineId)+(reason?" · "+reason:""), null,
     {reason, worker_id: lastSew? lastSew.worker_id : null});
   closeSheet(); await refresh();
@@ -4436,16 +4507,16 @@ async function sampleDone(id){
 }
 function cutTasks(w){
   const out=[];
-  DB.lines.filter(l=>l.stage==="cut" && activeLine(l)).forEach(l=>{
-    const parts=DB.parts.filter(p=>p.line_id===l.id && p.stage==="cut" && p.status!=="done" && (!p.worker_id||p.worker_id===w.id));
+  DB.lines.filter(l=>activeLine(l)).forEach(l=>{
+    const parts=DB.parts.filter(p=>p.line_id===l.id && (p.stage||"sew")==="cut" && p.status!=="done" && (!p.worker_id||p.worker_id===w.id));
     if(parts.length) parts.forEach(p=>out.push(workerCard(l,"cut",p)));
-    else if(!DB.parts.some(p=>p.line_id===l.id&&p.stage==="cut") && (!l.claimed_by||l.claimed_by===w.id)) out.push(workerCard(l,"cut",null));
+    else if(l.stage==="cut" && !DB.parts.some(p=>p.line_id===l.id&&(p.stage||"sew")==="cut") && (!l.claimed_by||l.claimed_by===w.id)) out.push(workerCard(l,"cut",null));
   });
   return out;
 }
 function sewTasks(w){
   const out=[];
-  DB.lines.filter(l=>l.stage==="sew" && activeLine(l)).forEach(l=>{
+  DB.lines.filter(l=>activeLine(l)).forEach(l=>{
     DB.parts.filter(p=>p.line_id===l.id && (p.stage||"sew")==="sew" && p.status!=="done" && (!p.worker_id||p.worker_id===w.id)).forEach(p=>out.push(workerCard(l,"sew",p)));
   });
   return out;
@@ -4462,7 +4533,7 @@ function specsTable(cs){
 function workerCard(l, mode, part){
   const p=product(l.product_id), o=order(l.order_id);
   const working = part? part.status==="working" : (l.stage_status==="working" && l.claimed_by===session.workerId);
-  const ev = DB.events.find(e=> (part? e.part_id===part.id : (e.line_id===l.id&&!e.part_id)) && e.stage===l.stage && e.started_at && !e.finished_at);
+  const ev = DB.events.find(e=> part? (e.part_id===part.id && e.started_at && !e.finished_at) : (e.line_id===l.id&&!e.part_id&&e.stage===l.stage&&e.started_at&&!e.finished_at));
   const m = ev? workedMins(ev.started_at) : 0;
   const estTotal = (mode==="cut"||mode==="sew")? estFor(p, mode, part?part.part_ar:null, l.qty) : null;
   const over = estTotal? m > estTotal : m > 480;
@@ -4559,17 +4630,25 @@ async function wDone(lineId, partId){
   const took=evNow? workedMins(evNow.started_at,now) : null;
   if(partId){
     const pt=DB.parts.find(x=>x.id===partId); const pstage=(pt&&pt.stage)||"sew";
-    await sb.from("line_parts").update({status:"done",finished_at:now}).eq("id",partId);
     const ev=DB.events.find(e=>e.part_id===partId&&e.started_at&&!e.finished_at);
     if(ev) await sb.from("stage_events").update({finished_at:now}).eq("id",ev.id);
-    /* هل هذي القطعة تحتاج تطريز عند هذي المرحلة؟ نرسلها لحالها ونكمل الباقي */
-    let added=false;
-    if(pstage!=="emb"){
+    /* هل هذي القطعة تحتاج تطريز عند هذي المرحلة؟ نرسلها للتطريز أول */
+    let addedEmb=false;
+    if(pstage==="cut"||pstage==="sew"){
       for(const e2 of embOf(p, pt&&pt.part_ar)){
-        if(WHEN2STAGE[e2.when||"after_sew"]===pstage){ await spawnEmb(l, pt, e2); added=true; }
+        if(WHEN2STAGE[e2.when||"after_sew"]===pstage){ await spawnEmb(l, pt, e2); addedEmb=true; }
       }
     }
-    if(!stageBlocked(lineId, pstage, partId, added)) await moveLine(lineId, nextStage(pstage,p));
+    if(pstage==="cut" && !addedEmb){
+      /* خلصت القص → تنتقل للخياطة بروحها حتى لو باقي إخوانها بالقص */
+      await sb.from("line_parts").update({stage:"sew",status:"waiting",worker_id:null,started_at:null,finished_at:null}).eq("id",partId);
+      if(pt){pt.stage="sew";pt.status="waiting";pt.worker_id=null;pt.started_at=null;pt.finished_at=null;}
+    }else{
+      /* قص+تطريز أو خياطة أو تطريز: علّمها منجزة */
+      await sb.from("line_parts").update({status:"done",finished_at:now}).eq("id",partId);
+      if(pt){pt.status="done";pt.finished_at=now;}
+    }
+    await rollLine(lineId);
   }else{
     const ev=DB.events.find(e=>e.line_id===lineId&&!e.part_id&&e.stage===l.stage&&e.started_at&&!e.finished_at);
     if(ev) await sb.from("stage_events").update({finished_at:now}).eq("id",ev.id);
