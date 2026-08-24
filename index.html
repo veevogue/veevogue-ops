@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.22:APPV-->
+<!--APPV:2026-08-12.23:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -583,7 +583,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.22";
+const APP_VERSION="2026-08-12.23";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1662,11 +1662,22 @@ async function smpReadCard(){
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
   const nm=(row.supplier_name||"").trim(); if(!nm) return;
-  const found=(DB.suppliers||[]).find(sx=>(sx.channel||"china")===row.channel && (sx.name||"").trim()===nm);
-  if(found){ row.supplier_id=found.id; return; }
   const cf=window._smpCardFields||{};
+  const cards=(window._smpCards&&window._smpCards.length)? [...window._smpCards] : null;
+  const found=(DB.suppliers||[]).find(sx=>(sx.channel||"china")===row.channel && (sx.name||"").trim()===nm);
+  if(found){
+    row.supplier_id=found.id;
+    /* إثراء المورد الموجود بأي بيانات ناقصة من الكارت */
+    const patch={}; const setIf=(k,v)=>{ if(v && !found[k]) patch[k]=v; };
+    setIf("shop_no",row.shop_no||cf.shop_no); setIf("phone",cf.phone); setIf("wechat",cf.wechat);
+    setIf("market",cf.market); setIf("floor",cf.floor); setIf("contact_person",cf.contact_person); setIf("city",cf.city);
+    if(cards && !(found.card_photos&&found.card_photos.length)) patch.card_photos=cards;
+    if(Object.keys(patch).length){ await sb.from("suppliers").update(patch).eq("id",found.id); Object.assign(found,patch); }
+    return;
+  }
   const sup={id:newId(), channel:row.channel, kind:"fabric", name:nm, shop_no:row.shop_no||cf.shop_no||null, status:"potential",
-    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null, floor:cf.floor||null, contact_person:cf.contact_person||null, city:cf.city||null};
+    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null, floor:cf.floor||null, contact_person:cf.contact_person||null, city:cf.city||null,
+    card_photos:cards};
   await sb.from("suppliers").insert(sup);
   if(!(DB.suppliers||[]).some(x=>x.id===sup.id)) DB.suppliers.unshift(sup);
   row.supplier_id=sup.id;
@@ -1746,7 +1757,7 @@ function chSuppliers(){
           <div style="font-weight:700">${esc(x.name||"")}${x.shop_no?` · ${esc(x.shop_no)}`:""} ${x.status==="potential"?`<span class="chip" style="background:#FBF0D8;color:#8a6d1f">${isAr()?"محتمل":"potential"}</span>`:""}</div>
           <div class="muted" style="font-size:12px">${[x.market,x.city,x.wechat?("WeChat: "+x.wechat):"",x.phone].filter(Boolean).map(esc).join(" · ")}</div>
           ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:""}
-        </div><div class="pillrow" style="flex-wrap:nowrap">${x.status==="potential"?`<button class="btn btn-ok" style="padding:4px 10px" onclick="supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px" onclick="supSheet('${x.id}')">${t("edit")}</button><button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="supDel('${x.id}')">${I.trash}</button></div></div>`).join("")
+        </div><div class="pillrow" style="flex-wrap:nowrap;align-items:center">${(x.card_photos&&x.card_photos.length)?`<img src="${esc(x.card_photos[0])}" style="width:42px;height:28px;object-fit:cover;border-radius:6px;cursor:zoom-in" onclick="viewSupplierCard('${x.id}')" title="${isAr()?"بزنس كارد":"card"}">`:""}${x.status==="potential"?`<button class="btn btn-ok" style="padding:4px 10px" onclick="supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px" onclick="supSheet('${x.id}')">${t("edit")}</button><button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="supDel('${x.id}')">${I.trash}</button></div></div>`).join("")
         || `<div class="muted" style="font-size:12px">—</div>`}`;
     }).join("")}
     <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="supSheet()">＋ ${isAr()?"مورد جديد":"New supplier"}</button>`;
@@ -1761,6 +1772,7 @@ async function supDel(id){
 function supSheet(id){
   const x=id? (DB.suppliers||[]).find(s=>s.id===id)||{} : {};
   window._supEdit=id||null;
+  window._supCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : [];
   openSheet(`<div class="title">${id?(isAr()?"تعديل مورد":"Edit supplier"):(isAr()?"مورد جديد":"New supplier")}</div>
     <label>${isAr()?"النوع":"Kind"}</label>
     <select id="sup_kind">${SUP_KINDS.map(([k,ar,en])=>`<option value="${k}" ${x.kind===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select>
@@ -1781,15 +1793,34 @@ function supSheet(id){
       <div><label>WeChat</label><input id="sup_wechat" value="${esc(x.wechat||"")}"></div>
       <div><label>${isAr()?"اسم الموظف":"Staff name"}</label><input id="sup_person" value="${esc(x.contact_person||"")}"></div>
     </div>
+    <label>${isAr()?"بزنس كارد (وجه وظهر)":"Business card (front & back)"}</label>
+    <input type="file" accept="image/*" multiple id="sup_cardfile" onchange="supAddCard(this.files)">
+    <div id="supCardRow" class="pillrow" style="min-height:24px"></div>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="sup_notes">${esc(x.notes||"")}</textarea>
     <button class="btn btn-ink btn-big" onclick="supSave()">${t("save")}</button>`);
+  supRenderCards();
 }
+function supRenderCards(){
+  const r=el("supCardRow"); if(!r) return;
+  r.innerHTML=(window._supCards||[]).map((u,idx)=>`<span style="position:relative;display:inline-block;margin-inline-end:6px">
+    <img class="thumb" src="${esc(u)}" style="width:64px;height:42px" onclick="viewGallery(window._supCards||[],${idx})">
+    <span class="muted" style="position:absolute;bottom:-14px;inset-inline-start:0;font-size:9px">${idx===0?(isAr()?"وجه":"front"):(isAr()?"ظهر":"back")}</span>
+    <button type="button" onclick="supRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("");
+}
+async function supAddCard(files){
+  window._supCards=window._supCards||[];
+  for(const fl of [...(files||[])]){ if(window._supCards.length>=2) break; const u=await captureSamplePhoto(fl); if(u) window._supCards.push(u); }
+  supRenderCards();
+}
+function supRmCard(idx){ (window._supCards||[]).splice(idx,1); supRenderCards(); }
+function viewSupplierCard(id){ const sp=(DB.suppliers||[]).find(x=>x.id===id); if(sp&&sp.card_photos&&sp.card_photos.length) viewGallery(sp.card_photos,0); }
 async function supSave(){
   const row={kind:el("sup_kind").value, name:el("sup_name").value||null, shop_no:el("sup_shop").value||null,
     market:el("sup_market").value||null, city:el("sup_city").value||null, phone:el("sup_phone").value||null,
     wechat:el("sup_wechat").value||null, notes:el("sup_notes").value||null,
     plaza:el("sup_plaza")?el("sup_plaza").value||null:null, floor:el("sup_floor")?el("sup_floor").value||null:null,
-    contact_person:el("sup_person")?el("sup_person").value||null:null};
+    contact_person:el("sup_person")?el("sup_person").value||null:null,
+    card_photos:window._supCards||[]};
   if(!row.name) return alert(isAr()?"اكتب الاسم":"Name?");
   let error;
   if(window._supEdit){ ({error}=await sb.from("suppliers").update(row).eq("id",window._supEdit));
