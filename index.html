@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.23:APPV-->
+<!--APPV:2026-08-12.24:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -583,7 +583,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.23";
+const APP_VERSION="2026-08-12.24";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1823,8 +1823,17 @@ async function supSave(){
     card_photos:window._supCards||[]};
   if(!row.name) return alert(isAr()?"اكتب الاسم":"Name?");
   let error;
-  if(window._supEdit){ ({error}=await sb.from("suppliers").update(row).eq("id",window._supEdit));
+  if(window._supEdit){
+    const prev=(DB.suppliers||[]).find(x=>x.id===window._supEdit)||{};
+    ({error}=await sb.from("suppliers").update(row).eq("id",window._supEdit));
     const i=(DB.suppliers||[]).findIndex(x=>x.id===window._supEdit); if(i>=0) DB.suppliers[i]={...DB.suppliers[i],...row};
+    if(row.name && prev.name!==row.name){
+      /* الاسم يتغيّر فوراً في أوامر الشراء والعينات المربوطة بنفس المورد */
+      await sb.from("purchases").update({supplier_name:row.name}).eq("supplier_id",window._supEdit);
+      (DB.purchases||[]).forEach(p=>{ if(p.supplier_id===window._supEdit) p.supplier_name=row.name; });
+      await sb.from("trip_samples").update({supplier_name:row.name}).eq("supplier_id",window._supEdit);
+      (DB.samples||[]).forEach(sm=>{ if(sm.supplier_id===window._supEdit) sm.supplier_name=row.name; });
+    }
   } else { row.id=newId(); row.channel=chChannel; row.status="approved"; ({error}=await sb.from("suppliers").insert(row));
     if(!(DB.suppliers||[]).some(x=>x.id===row.id)) DB.suppliers.unshift(row); }
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
@@ -1924,7 +1933,7 @@ function chPurch(){
     if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
     groups[k].rows.push(po); });
   el("chBody").innerHTML = pills + Object.values(groups).map(g=>{
-    const sup=g.sup||{}; const nm=g.name||sup.name||"—";
+    const sup=g.sup||{}; const nm=(g.sup&&g.sup.name)||g.name||"—";
     const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const paid=supPaid(g.key,cur).paid; const rem=Math.max(0,dinfo.total-paid);
     const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
     return `<div class="card" style="padding:14px 12px;background:var(--soft)">
@@ -1938,9 +1947,9 @@ function chPurch(){
         <div style="font-size:12px">${isAr()?"مدفوع":"paid"}: <b>${fmtN(paid)} ${esc(cur)}</b> · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
         <button class="btn btn-ink" style="width:auto;display:inline-block;padding:6px 14px;font-size:13px" onclick="poPaySup('${encodeURIComponent(g.key)}')">${isAr()?"الدفع":"Pay"}</button>
       </div>
-      ${g.rows.map(poCard).join('<div class="smpdiv"></div>')}
+      ${(()=>{ const mg={}; g.rows.forEach(po=>{ const mk=(po.material_id||po.fabric_name||"—")+"|"+(po.buy_unit||po.unit||""); (mg[mk]=mg[mk]||[]).push(po); }); return Object.values(mg).map(poGroupCard).join(""); })()}
     </div>`;
-  }).join("") + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
+  }).join('<div class="smpdiv"></div>') + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
     <button class="btn btn-line btn-big" onclick="purchaseReq()">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}</button>`;
 }
 
@@ -1955,6 +1964,35 @@ function poDealTotals(po){
   if(po.paid) paid=total;
   else { const log=Array.isArray(po.pay_log)?po.pay_log:[]; paid = log.length? log.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0) : (po.deposit?toCur(po.deposit,po.currency,cur):0); }
   return {cur, total, paid:Math.min(paid,total), remaining:Math.max(0,total-paid)};
+}
+function poGroupCard(rows){
+  if(!rows||!rows.length) return "";
+  if(rows.length===1) return poCard(rows[0]);
+  const x0=rows[0]; const cur=x0.currency||"KWD"; const _stg=x0.stage||"sample";
+  const stgChip=_stg==="sample"
+    ? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
+    : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"production"}</span>`;
+  const dmap={ordered:isAr()?"لم يُرسل":"not sent", sent:isAr()?"أُرسل":"sent", ready:isAr()?"جاهز":"ready", received:isAr()?"استُلم":"received"};
+  let totalQty=0, totalDeal=0, totalKWD=0; const unit=poQtyUnit(x0).unit;
+  rows.forEach(r=>{ const q=poQtyUnit(r); totalQty+=(q.qty||0); const dt=poDealTotals(r); totalDeal+=dt.total;
+    const lc=landedCost({channel:r.channel,qty_yd:r.qty_yd,buy_qty:r.buy_qty,unit_price:r.unit_price,currency:r.currency,plan_qty:r.plan_qty}); if(lc) totalKWD+=lc.total; });
+  const dName=r=>{ const des=r.design_id?(design_(r.design_id)||{}):null; return des?(des.final_name||des.name):(r.product_id?pname(product(r.product_id)):(isAr()?"—":"—")); };
+  return `<div class="card" style="padding:12px">
+    <div style="font-weight:700">${esc(x0.fabric_name||(isAr()?"خام":"fabric"))} ${stgChip} <span class="chip" style="font-size:10px">${rows.length} ${isAr()?"تصاميم":"designs"}</span></div>
+    ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — out of stock"}</div>`:""}
+    <div style="font-size:13px;margin-top:3px">${isAr()?"الكمية الإجمالية للتصاميم":"total for all"}: <b>${fmtN(totalQty)} ${unitAr(unit)}</b> × ${x0.unit_price||0} ${esc(cur)}</div>
+    <div style="font-size:14px;margin-top:2px"><b>${fmtN(totalDeal)} ${esc(cur)}</b>${totalKWD?` <span class="muted" style="font-size:11px">≈ ${fmtKD(totalKWD)} ${isAr()?"د.ك":"KWD"}</span>`:""}</div>
+    <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">
+      ${rows.map(r=>{ const q=poQtyUnit(r); const ds=r.deliver_status||"ordered";
+        return `<div class="lineitem" style="font-size:12px;padding:5px 0">
+          <div style="min-width:0"><b>${esc(dName(r))}</b> — ${fmtN(q.qty)} ${unitAr(q.unit)} <span class="muted">· ${esc(dmap[ds])}</span></div>
+          <div class="pillrow" style="flex-wrap:nowrap">
+            <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px" onclick="poDeliver('${r.id}')">${isAr()?"تسليم":"deliv"}</button>
+            <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px" onclick="poEditQty('${r.id}')">${isAr()?"تعديل":"edit"}</button>
+            <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poDel('${r.id}')">${I.trash}</button>
+          </div></div>`; }).join("")}
+    </div>
+  </div>`;
 }
 function poCard(x){
   const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, buy_qty:x.buy_qty, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
