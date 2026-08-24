@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.20:APPV-->
+<!--APPV:2026-08-12.22:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -583,7 +583,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.20";
+const APP_VERSION="2026-08-12.22";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1500,7 +1500,7 @@ async function poFromSample(x){
     fabric_name:fabName, kind:isAcc?"accessory":"fabric", unit:buy_unit,
     buy_unit:buy_unit, buy_qty:buy_qty, plan_meters:plan_meters,
     qty_yd:qty_yd, plan_qty:plan_qty, unit_price:x.price||null, currency:x.currency||chan(chChannel).currency,
-    deliver_status:"ordered", pay_log:[], status:"planned"};
+    deliver_status:"ordered", pay_log:[], status:"planned", stage:"sample"};
   const {error}=await sb.from("purchases").insert(po);
   if(!error || /queued/i.test(error.message||"")){ if(!(DB.purchases||[]).some(z=>z.id===po.id)) DB.purchases.unshift(po); return true; }
   alert(error.message||"error"); return false;
@@ -1561,7 +1561,7 @@ async function sampleStatus(id, st){
   render();
 }
 function sampleSheet(designId, itemId, kind){
-  window._smpPhotos=[]; window._smpCard=null; window._smpCards=[]; window._smpDesigns=[]; window._smpEdit=null;
+  window._smpPhotos=[]; window._smpCard=null; window._smpCards=[]; window._smpDesigns=[]; window._smpCardFields=null; window._smpEdit=null;
   window._chDesign = designId||"";
   window._chItem = itemId||"";
   const k = kind||"fabric";
@@ -1609,7 +1609,8 @@ function sampleSheet(designId, itemId, kind){
     <label>${isAr()?"بزنس كارد المورد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
     <input type="file" accept="image/*" multiple id="smp_cardfile" onchange="smpAddCard(this.files)">
     <div id="smpCardRow" class="pillrow" style="min-height:24px"></div>
-    <div class="muted" style="font-size:11px">${isAr()?"الحين تتحفظ صورة الكارت — التعبئة التلقائية للبيانات تجي مع قراءة النص لاحقاً":"Card image is saved now; auto-fill from text comes later"}</div>
+    <button type="button" class="btn btn-ghost" style="margin-top:6px;font-size:13px" onclick="smpReadCard()">✨ ${isAr()?"اقرأ بيانات المورد من الكارت":"Auto-read card"}</button>
+    <div id="smpCardRead" class="muted" style="font-size:12px;margin-top:4px"></div>
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="smp_note"></textarea>
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
   smpKindToggle();
@@ -1644,12 +1645,28 @@ function smpRenderCards(){
     <button type="button" onclick="smpRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("");
 }
 function smpRmCard(idx){ (window._smpCards||[]).splice(idx,1); window._smpCard=(window._smpCards||[])[0]||null; smpRenderCards(); }
+async function smpReadCard(){
+  const url=(window._smpCards||[])[0];
+  if(!url) return alert(isAr()?"صوّر البزنس كارد أول":"Add a card photo first");
+  const box=el("smpCardRead"); if(box) box.textContent=isAr()?"جارٍ القراءة…":"Reading…";
+  try{
+    const {data,error}=await sb.functions.invoke("read-card",{body:{imageUrl:url}});
+    if(error) throw error;
+    if(!data||!data.ok||!data.fields){ if(box) box.textContent=(isAr()?"ما قدرت أقرأ الكارت — عبّي يدوي":"Could not read")+(data&&data.error?` (${data.error})`:""); return; }
+    const f=data.fields; window._smpCardFields=f;
+    const set=(idf,v)=>{ const e=el(idf); if(e&&v) e.value=v; };
+    set("smp_supname", f.name); set("smp_shop", f.shop_no);
+    if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تمت القراءة":"Read"}</span> — ${[f.name,f.contact_person,f.phone,f.wechat?("WeChat: "+f.wechat):"",f.market,f.floor?((isAr()?"دور ":"floor ")+f.floor):""].filter(Boolean).map(esc).join(" · ")||"—"}`;
+  }catch(e){ if(box) box.textContent=isAr()?"تعذّرت القراءة — تأكد أن مفتاح الـAPI مضبوط":"Read failed — check API key setup"; }
+}
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
   const nm=(row.supplier_name||"").trim(); if(!nm) return;
   const found=(DB.suppliers||[]).find(sx=>(sx.channel||"china")===row.channel && (sx.name||"").trim()===nm);
   if(found){ row.supplier_id=found.id; return; }
-  const sup={id:newId(), channel:row.channel, kind:"fabric", name:nm, shop_no:row.shop_no||null, status:"potential"};
+  const cf=window._smpCardFields||{};
+  const sup={id:newId(), channel:row.channel, kind:"fabric", name:nm, shop_no:row.shop_no||cf.shop_no||null, status:"potential",
+    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null, floor:cf.floor||null, contact_person:cf.contact_person||null, city:cf.city||null};
   await sb.from("suppliers").insert(sup);
   if(!(DB.suppliers||[]).some(x=>x.id===sup.id)) DB.suppliers.unshift(sup);
   row.supplier_id=sup.id;
@@ -1858,14 +1875,24 @@ function ncCalc(){
 
 /* -- أوامر الشراء -- */
 function chPurch(){
-  const arr=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
-  if(!arr.length){ el("chBody").innerHTML=`<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>
+  const all=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
+  const _pf=window._poFilter||"all";
+  const arr = _pf==="all"? all : all.filter(x=>(x.stage||"sample")===_pf);
+  const nS=all.filter(x=>(x.stage||"sample")==="sample").length, nP=all.filter(x=>(x.stage||"sample")==="production").length;
+  const pills=`<div class="pillrow" style="margin-bottom:10px">
+      <button class="btn ${_pf==="all"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='all';render()">${isAr()?"الكل":"All"} (${all.length})</button>
+      <button class="btn ${_pf==="sample"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='sample';render()">${isAr()?"عينات":"Samples"} (${nS})</button>
+      <button class="btn ${_pf==="production"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='production';render()">${isAr()?"إنتاج":"Production"} (${nP})</button>
+    </div>`;
+  if(!all.length){ el("chBody").innerHTML=`<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>
+    <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
+  if(!arr.length){ el("chBody").innerHTML=pills+`<div class="empty">${isAr()?"ما في أوامر بهذي المرحلة":"None in this stage"}</div>
     <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
   const groups={};
   arr.forEach(po=>{ const k=po.supplier_id||("name:"+(po.supplier_name||"—"));
     if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
     groups[k].rows.push(po); });
-  el("chBody").innerHTML = Object.values(groups).map(g=>{
+  el("chBody").innerHTML = pills + Object.values(groups).map(g=>{
     const sup=g.sup||{}; const nm=g.name||sup.name||"—";
     const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const paid=supPaid(g.key,cur).paid; const rem=Math.max(0,dinfo.total-paid);
     const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
@@ -1906,9 +1933,14 @@ function poCard(x){
   const des=x.design_id?(design_(x.design_id)||{}):null;
   const forName=des?(des.final_name||des.name):(x.product_id?pname(product(x.product_id)):"");
   const overdue = x.ready_eta && ds!=="received" && x.ready_eta<=today();
+  const _stg=x.stage||"sample";
+  const _stgChip=_stg==="sample"
+    ? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
+    : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"production"}</span>`;
   return `<div class="card" style="padding:12px">
-    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))}</div>
+    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} ${_stgChip}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
+    ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — meters recorded, out of stock"}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
     ${(()=>{ const dt=poDealTotals(x); return `<div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"قطعة":"pc"}`:""}</span>`:""}</div>`; })()}
     <div class="pillrow" style="margin-top:8px;align-items:center">
@@ -2017,6 +2049,8 @@ function poSheet(){
   const c=chan(chChannel), tr=activeTrip(chChannel);
   const sups=(DB.suppliers||[]).filter(x=>x.kind!=="agent" && (x.channel||"china")===chChannel);
   openSheet(`<div class="title">${isAr()?"أمر شراء":"Purchase order"} — ${esc(chanLabel(chChannel))}</div>
+    <label>${isAr()?"مرحلة الشراء":"Stage"}</label>
+    <select id="po_stage"><option value="production">${isAr()?"إنتاج (كميات كبيرة)":"Production"}</option><option value="sample">${isAr()?"عينات (رسوم عينات)":"Sample fees"}</option></select>
     <label>${isAr()?"المورد":"Supplier"}</label>
     <select id="po_sup" onchange="if(this.value)el('po_supname').value=this.options[this.selectedIndex].text">
       <option value="">—</option>${sups.map(x=>`<option value="${x.id}">${esc(x.name||"")}</option>`).join("")}
@@ -2063,7 +2097,7 @@ async function poSave(){
     product_id:el("po_prod").value||null, design_id:(el("po_design")?el("po_design").value:null)||null, fabric_name:el("po_fab").value||null,
     plan_qty:parseInt(el("po_qty").value)||null, qty_yd:yd, unit_price:pr,
     currency:el("po_cur").value, fx_rate:(el("po_cur").value==="KWD"?null:(chan(chChannel),(fxGet()[el("po_cur").value.toLowerCase()]||null))),
-    deposit:parseFloat(el("po_dep").value)||null, status:"planned"};
+    deposit:parseFloat(el("po_dep").value)||null, status:"planned", stage:(el("po_stage")?el("po_stage").value:"production")};
   const {error}=await sb.from("purchases").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   if(!(DB.purchases||[]).some(x=>x.id===row.id)) DB.purchases.unshift(row);
