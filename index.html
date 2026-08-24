@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.13:APPV-->
+<!--APPV:2026-08-12.15:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -582,7 +582,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.13";
+const APP_VERSION="2026-08-12.15";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -2507,7 +2507,7 @@ function stageStats(){
     const ls=act.filter(l=>l.stage===st);
     if(st==="sew"||st==="cut"){
       let go=0,wait=0,all=0;
-      ls.forEach(l=>{const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage||"sew")===st);
+      ls.forEach(l=>{const ps=DB.parts.filter(p=>p.line_id===l.id&&(p.stage||"sew")===st&&p.status!=="done");
         all+=ps.length||1; go+=ps.filter(p=>p.status==="working").length; wait+=ps.filter(p=>p.status==="waiting").length;});
       return {all,go,wait};
     }
@@ -2602,12 +2602,20 @@ function stageFilterView(stg){
                    : DB.events.find(e=>e.line_id===r.l.id&&!e.part_id&&e.started_at&&!e.finished_at);
     const m=ev? workedMins(ev.started_at):0;
     const estT=estFor(p,stg,r.part?r.part.part_ar:null,r.l.qty);
-    return `<div class="card"><div class="wtop">${thumb(p)}
+    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">
+      <div class="wtop" style="flex:1">${thumb(p)}
       <div style="flex:1"><div class="title">${esc(pname(p))} ${r.part?`<span class="chip">${esc(isAr()?r.part.part_ar:r.part.part_en)}</span>`:""}</div>
       <div class="muted">#${o.order_no} · ${esc(r.l.size||"")} × ${r.l.qty} ${o.due_date?`· ${isLate(o)?`<span class="late">${t("late")}</span>`:t("due")+" "+fmtD(o.due_date)}`:""}</div>
       ${r.who?`<span class="chip working">${I.user} ${esc(wname(worker(r.who)))}</span>`:""}
       ${ev?`<span class="timer ${estT&&m>estT?'t-late':'t-ok'}"> ${m} ${t("minutes")}</span>`:""}
       </div></div>
+      ${session.role==="manager"? rowMenu(esc(pname(p))+" #"+o.order_no,[
+        {label:isAr()?"إرجاع للقص":"Back to cut", icon:I.cut, fn:async()=>{await moveLine(r.l.id,"cut");await refresh();}},
+        {label:isAr()?"إرجاع للخياطة":"Back to sew", icon:I.sew, fn:async()=>{await moveLine(r.l.id,"sew");await refresh();}},
+        {label:isAr()?"قائمة الشراء":"Purchase list", icon:I.pack, fn:()=>showPurchase(r.l.order_id)},
+        {label:isAr()?"حذف السطر":"Delete line", icon:I.trash, danger:true, fn:()=>delRow("order_lines",r.l.id)}
+      ]):""}
+      </div>
       ${r.working&&session.role==="manager"?`<button class="btn btn-warn" style="margin-top:8px;padding:6px 12px;font-size:13px" onclick="undoStart('${r.l.id}','${r.part?r.part.id:""}')">↩ ${isAr()?"إلغاء البدء":"Undo start"}</button>`:""}
     </div>`;};
   return `<div class="sechead">${I[stg]||""} ${t(STAGE_KEY[stg]||stg)} — ${isAr()?"شغال الحين":"in progress"} (${go.length})</div>
