@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.24:APPV-->
+<!--APPV:2026-08-12.25:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -532,11 +532,12 @@ window.addEventListener("DOMContentLoaded", async ()=>{
   if(!AUTHED){ render(); return; }
   await flushQueue();
   await loadAll();
+  try{ await refreshPendCount(); }catch(e){}
   render();
   paintNet();
   autoBackup();
 });
-window.addEventListener("online", ()=>{ NETOK=true; paintNet(); flushQueue(); try{uploadPendingPhotos();}catch(e){} });
+window.addEventListener("online", ()=>{ NETOK=true; paintNet(); flushQueue(); (async()=>{ try{await uploadPendingPhotos(); await refreshPendCount(); render();}catch(e){} })(); });
 window.addEventListener("offline", ()=>{ NETOK=false; paintNet(); render(); });
 function today(){return new Date().toISOString().slice(0,10);}
 function checkDailyLogout(){
@@ -583,7 +584,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.24";
+const APP_VERSION="2026-08-12.25";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1048,6 +1049,7 @@ async function gateSubmit(){
   el("app").innerHTML=`<div class="login-card card"><div class="muted">${isAr()?"جاري التحميل…":"Loading…"}</div></div>`;
   await flushQueue();
   await loadAll();
+  try{ await refreshPendCount(); }catch(e){}
   render();
   paintNet();
   autoBackup();
@@ -1204,6 +1206,30 @@ async function uploadPendingPhotos(){
     }
   }catch(e){} finally{ _pupBusy=false; }
 }
+let _pendCount=0;
+async function refreshPendCount(){ try{ await pendInit(); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; } return _pendCount; }
+async function syncPhotosNow(){
+  await refreshPendCount();
+  if(!_pendCount){ alert(isAr()?"ما فيه صور معلّقة على هذا الجهاز":"No pending photos on this device"); return; }
+  const n=_pendCount;
+  if(!NETOK){ alert(isAr()?"ما فيه إنترنت — تأكد من الاتصال وحاول":"No internet"); return; }
+  await uploadPendingPhotos();
+  await refreshPendCount();
+  const done=n-_pendCount;
+  alert(isAr()?`تم رفع ${done} صورة${_pendCount?` — باقي ${_pendCount}`:" ✓"}`:`Uploaded ${done}`);
+  await refresh();
+}
+function photoSyncBanner(){
+  if(!_pendCount) return "";
+  return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <div>📷 <b>${_pendCount}</b> ${isAr()?"صورة محفوظة على هذا الجهاز ولم تُرفع للسيرفر":"photos saved on this device, not uploaded"}</div>
+    <button class="btn btn-ink" style="width:auto;padding:5px 14px;font-size:13px" onclick="syncPhotosNow()">${isAr()?"ارفعها الآن":"Upload now"}</button>
+  </div>`;
+}
+function smpIsOpen(did){ try{ return JSON.parse(localStorage.getItem("vv_smpopen")||"[]").includes(did);}catch(e){return false;} }
+function smpToggleOpen(did){ let a; try{a=JSON.parse(localStorage.getItem("vv_smpopen")||"[]");}catch(e){a=[];} a=a.includes(did)?a.filter(x=>x!==did):[...a,did]; try{localStorage.setItem("vv_smpopen",JSON.stringify(a));}catch(e){} render(); }
+function purIsOpen(k){ try{ return JSON.parse(localStorage.getItem("vv_puropen")||"[]").includes(k);}catch(e){return false;} }
+function purToggleOpen(kEnc){ const k=decodeURIComponent(kEnc); let a; try{a=JSON.parse(localStorage.getItem("vv_puropen")||"[]");}catch(e){a=[];} a=a.includes(k)?a.filter(x=>x!==k):[...a,k]; try{localStorage.setItem("vv_puropen",JSON.stringify(a));}catch(e){} render(); }
 async function captureSamplePhoto(file){
   const f=await compressImage(file, 1400, 0.8);
   const path=`samples/${Date.now()}-${Math.random().toString(36).slice(2,7)}.jpg`;
@@ -1388,16 +1414,22 @@ function chSamples(){
     const orphan=dsamples.filter(x=>!x.checklist_item_id || !items.some(it=>it.id===x.checklist_item_id));
     const shownOrphan=applyF(showList(orphan));
     const starTot=dsamples.filter(x=>x.status==="shortlist").length;
+    const _open=smpIsOpen(did);
     return `<div class="card" style="padding:12px;background:#EAF3EA;border:1px solid #CFE3CF">
-      <div onclick="openDesign('${did}')" style="cursor:pointer;text-align:center;padding:4px 0 8px">
-        <div class="title" style="font-size:20px;justify-content:center">${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}</div>
-        ${d.sku?`<div class="muted" style="font-size:12px">${esc(d.sku)}</div>`:""}
-        <div class="muted" style="font-size:12px">${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""} <span style="opacity:.6">— ${isAr()?"اضغط لكرت التصميم":"open design"}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="smpToggleOpen('${did}')">
+        <span style="font-size:18px;color:#3d6b3d">${_open?"▾":"▸"}</span>
+        <div style="flex:1;text-align:center;min-width:0">
+          <div class="title" style="font-size:18px;justify-content:center">${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}</div>
+          ${d.sku?`<div class="muted" style="font-size:12px">${esc(d.sku)}</div>`:""}
+          <div class="muted" style="font-size:12px">${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""}</div>
+        </div>
+        <button class="btn btn-ghost" style="width:auto;padding:4px 8px;font-size:11px;white-space:nowrap" onclick="event.stopPropagation();openDesign('${did}')">${I.design} ${isAr()?"التصميم":"design"}</button>
       </div>
+      ${_open?`
       ${items.length? items.map(it=>slotBlock(d,it)).join("")
         : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود تشيك ليست — أضفها من صفحة التصميم":"Add checklist items on the design page"}</div>`}
       ${shownOrphan.length?`<div class="sechead" style="margin-top:8px;font-size:11px">${isAr()?"عينات بدون بند":"UNSLOTTED"}</div>${shownOrphan.map(sampleCard).join("")}`:""}
-      <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="sampleSheet('${did}','','fabric')">＋ ${isAr()?"عينة عامة لهذا التصميم":"Sample for this design"}</button>
+      <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="sampleSheet('${did}','','fabric')">＋ ${isAr()?"عينة عامة لهذا التصميم":"Sample for this design"}</button>`:""}
     </div>`;
   };
 
@@ -1424,7 +1456,7 @@ function chSamples(){
     const c=cid==="__none"?{name:isAr()?"بدون كولكشن":"No collection"}:collection_(cid);
     const blocks=byCol[cid].map(designBlock).join('<div class="smpdiv"></div>');
     el("chBody").innerHTML=`
-      ${tripWarn}
+      ${tripWarn}${photoSyncBanner()}
       <div class="colhead"><button class="colback" onclick="window._smpCol=null;render()" title="${isAr()?"الكولكشنات":"Collections"}">
         <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
         <div class="colhead-mid"><div class="colhead-name">${esc(c.name||"")}</div>
@@ -1436,7 +1468,7 @@ function chSamples(){
   }
 
   el("chBody").innerHTML=`
-    ${tripWarn}
+    ${tripWarn}${photoSyncBanner()}
     ${filterPill}
     <div class="sechead">${isAr()?"الكولكشنات":"COLLECTIONS"}</div>
     ${colKeys.length? colKeys.map(cid=>{
@@ -1936,18 +1968,22 @@ function chPurch(){
     const sup=g.sup||{}; const nm=(g.sup&&g.sup.name)||g.name||"—";
     const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const paid=supPaid(g.key,cur).paid; const rem=Math.max(0,dinfo.total-paid);
     const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
+    const _po=purIsOpen(g.key);
     return `<div class="card" style="padding:14px 12px;background:var(--soft)">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <div style="font-size:20px;font-weight:800;border-inline-start:4px solid var(--wine);padding-inline-start:10px;line-height:1.2;min-width:0">${esc(nm)}</div>
-        <button class="btn btn-ghost" style="width:auto;display:inline-flex;align-items:center;gap:5px;padding:6px 12px;font-size:13px;white-space:nowrap" onclick="poSend('${encodeURIComponent(g.key)}')">📤 ${isAr()?"إرسال الطلب":"Send"}</button>
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="purToggleOpen('${encodeURIComponent(g.key)}')">
+        <span style="font-size:18px;color:var(--wine)">${_po?"▾":"▸"}</span>
+        <div style="flex:1;min-width:0;border-inline-start:4px solid var(--wine);padding-inline-start:10px">
+          <div style="font-size:18px;font-weight:800;line-height:1.2">${esc(nm)}</div>
+          <div class="muted" style="font-size:12px">${g.rows.length} ${isAr()?"بند":"items"} · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع":"paid"}</b>`}</div>
+        </div>
       </div>
-      ${contact?`<div class="muted" style="font-size:12px;margin-top:6px">${contact}</div>`:""}
-      <div class="muted" style="font-size:12px;margin-top:2px">${g.rows.length} ${isAr()?"بند":"items"} · ${isAr()?"الإجمالي المستحق":"total due"} <b>${fmtN(dinfo.total)} ${esc(cur)}</b></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;background:var(--paper);border-radius:10px">
-        <div style="font-size:12px">${isAr()?"مدفوع":"paid"}: <b>${fmtN(paid)} ${esc(cur)}</b> · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
-        <button class="btn btn-ink" style="width:auto;display:inline-block;padding:6px 14px;font-size:13px" onclick="poPaySup('${encodeURIComponent(g.key)}')">${isAr()?"الدفع":"Pay"}</button>
+      ${_po?`
+      ${contact?`<div class="muted" style="font-size:12px;margin-top:8px">${contact}</div>`:""}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;background:var(--paper);border-radius:10px;flex-wrap:wrap">
+        <div style="font-size:12px">${isAr()?"مدفوع":"paid"}: <b>${fmtN(paid)} ${esc(cur)}</b> · ${isAr()?"المستحق":"due"} <b>${fmtN(dinfo.total)} ${esc(cur)}</b></div>
+        <div class="pillrow" style="flex-wrap:nowrap"><button class="btn btn-ghost" style="width:auto;padding:5px 10px;font-size:12px" onclick="poSend('${encodeURIComponent(g.key)}')">📤 ${isAr()?"إرسال":"Send"}</button><button class="btn btn-ink" style="width:auto;padding:5px 12px;font-size:12px" onclick="poPaySup('${encodeURIComponent(g.key)}')">${isAr()?"الدفع":"Pay"}</button></div>
       </div>
-      ${(()=>{ const mg={}; g.rows.forEach(po=>{ const mk=(po.material_id||po.fabric_name||"—")+"|"+(po.buy_unit||po.unit||""); (mg[mk]=mg[mk]||[]).push(po); }); return Object.values(mg).map(poGroupCard).join(""); })()}
+      ${(()=>{ const mg={}; g.rows.forEach(po=>{ const mk=(po.material_id||po.fabric_name||"—")+"|"+(po.buy_unit||po.unit||""); (mg[mk]=mg[mk]||[]).push(po); }); return Object.values(mg).map(poGroupCard).join(""); })()}`:""}
     </div>`;
   }).join('<div class="smpdiv"></div>') + `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>
     <button class="btn btn-line btn-big" onclick="purchaseReq()">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}</button>`;
