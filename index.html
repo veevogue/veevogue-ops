@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.25:APPV-->
+<!--APPV:2026-08-12.26:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -584,7 +584,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.25";
+const APP_VERSION="2026-08-12.26";
 async function checkVersion(){
   try{
     const url=location.pathname.split("?")[0];
@@ -1358,28 +1358,23 @@ function sampleCard(x){
     if(isAcc){ const per=x.per_count||12; kd=toKWD(x.price/per, x.currency||"CNY"); }
     else { const perM=x.per==="yard"? x.price/YARD : x.price; kd=toKWD(perM, x.currency||"CNY"); }
   }
-  const stChip = st==="shortlist"? `<span class="chip sage">★ ${isAr()?"معتمدة → شراء":"approved"}</span>`
-    : st==="rejected"? `<span class="chip" style="background:#F5EAEC;color:#8E3B4C">✕ ${isAr()?"مرفوضة":"rejected"}</span>` : "";
-  return `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:flex-start;${st==="rejected"?"opacity:.6":""}">
-    ${ph?`<span style="position:relative;display:inline-block;flex:0 0 auto"><img class="thumb" src="${esc(ph)}" style="width:84px;height:84px" onclick="viewSamplePhotos('${x.id}')">${(x.photos||[]).length>1?`<span style="position:absolute;bottom:4px;inset-inline-end:4px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 5px;border-radius:8px">📷 ${(x.photos||[]).length}</span>`:""}</span>`:`<div class="thumb" style="width:84px;height:84px"></div>`}
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))} ${stChip}</div>
+  const approved = st==="shortlist";
+  return `<div class="card" style="padding:10px;display:flex;gap:12px;align-items:stretch;${st==="rejected"?"opacity:.55":""}">
+    <div style="flex:1;min-width:0;padding-inline-end:4px">
+      <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))}</div>
       <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${x.shop_no?` · ${isAr()?"محل":"shop"} ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}</div>
-      <div style="font-size:13px;margin-top:2px">${x.price!=null?`${x.price} ${esc(x.currency||"CNY")}/${perLbl}`:""}${isAcc&&x.count?` · ${isAr()?"العدد":"count"} ${x.count}`:""}
-        ${kd!=null?` <b>≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</b>`:""}</div>
-      ${(x.card_photo||(x.card_photos&&x.card_photos.length))?`<div class="pillrow" style="margin-top:2px"><img class="thumb" src="${esc((x.card_photos&&x.card_photos[0])||x.card_photo)}" style="width:44px;height:30px" onclick="viewSampleCard('${x.id}')"><span class="muted" style="font-size:11px">${isAr()?"بزنس كارد":"card"}${(x.card_photos&&x.card_photos.length>1)?" (وجه وظهر)":""}</span></div>`:""}
-      ${x.note?`<div class="muted" style="font-size:12px">${esc(x.note)}</div>`:""}
-      <div class="pillrow" style="margin-top:6px">
-        ${st!=="shortlist"
-          ? `<button class="btn btn-ok" style="padding:3px 12px;font-size:13px" onclick="sampleStar('${x.id}')">★ ${isAr()?"اعتمد → شراء":"approve"}</button>`
-          : `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleUnstar('${x.id}')">↺ ${isAr()?"تراجع":"undo"}</button>`}
-        ${st!=="rejected"
-          ? `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleReject('${x.id}')">✕</button>`
-          : `<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleRestore('${x.id}')">↺ ${isAr()?"رجّع":"restore"}</button>`}
-        <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="sampleEdit('${x.id}')">${isAr()?"تعديل":"edit"}</button>
-        <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;color:var(--wine)" onclick="sampleDelete('${x.id}')">${I.trash}</button>
-      </div>
-    </div></div>`;
+      <div style="font-size:13px;margin-top:2px">${x.price!=null?`${x.price} ${esc(x.currency||"CNY")}/${perLbl}`:""}${isAcc&&x.count?` · ${isAr()?"العدد":"count"} ${x.count}`:""}${kd!=null?` <b>≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</b>`:""}</div>
+      ${(x.card_photo||(x.card_photos&&x.card_photos.length))?`<div class="pillrow" style="margin-top:3px"><img class="thumb" src="${esc((x.card_photos&&x.card_photos[0])||x.card_photo)}" style="width:40px;height:28px" onclick="viewSampleCard('${x.id}')"><span class="muted" style="font-size:11px">${isAr()?"كارت":"card"}</span></div>`:""}
+      ${x.note?`<div class="muted" style="font-size:12px;margin-top:2px">${esc(x.note)}</div>`:""}
+    </div>
+    ${ph?`<div style="flex:0 0 auto;position:relative;align-self:center"><img src="${esc(ph)}" style="width:108px;height:108px;object-fit:cover;border-radius:12px;cursor:zoom-in" onclick="viewSamplePhotos('${x.id}')">${(x.photos||[]).length>1?`<span style="position:absolute;bottom:5px;inset-inline-end:5px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px">📷 ${(x.photos||[]).length}</span>`:""}</div>`:`<div style="flex:0 0 auto;width:108px;height:108px;border-radius:12px;background:var(--soft);align-self:center"></div>`}
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:5px;justify-content:center">
+      <button class="btn btn-ghost" title="${approved?(isAr()?'تراجع':'undo'):(isAr()?'اعتمد → شراء':'approve')}" style="padding:4px 9px;font-size:17px;line-height:1;color:${approved?'var(--green)':'#c8c2b8'}" onclick="${approved?`sampleUnstar('${x.id}')`:`sampleStar('${x.id}')`}">★</button>
+      <button class="btn btn-ghost" title="${isAr()?'تعديل':'edit'}" style="padding:4px 9px" onclick="sampleEdit('${x.id}')">${I.edit}</button>
+      ${st!=="rejected"?`<button class="btn btn-ghost" title="${isAr()?'رفض':'reject'}" style="padding:4px 9px" onclick="sampleReject('${x.id}')">✕</button>`:`<button class="btn btn-ghost" title="${isAr()?'رجّع':'restore'}" style="padding:4px 9px" onclick="sampleRestore('${x.id}')">↺</button>`}
+      <button class="btn btn-ghost" title="${isAr()?'حذف':'delete'}" style="padding:4px 9px;color:var(--wine)" onclick="sampleDelete('${x.id}')">${I.trash}</button>
+    </div>
+  </div>`;
 }
 
 function chSamples(){
@@ -1415,13 +1410,19 @@ function chSamples(){
     const shownOrphan=applyF(showList(orphan));
     const starTot=dsamples.filter(x=>x.status==="shortlist").length;
     const _open=smpIsOpen(did);
-    return `<div class="card" style="padding:12px;background:#EAF3EA;border:1px solid #CFE3CF">
+    const _F=window._smpFilter||"all";
+    let _cnt, _cntLbl=(isAr()?"عينة":"samples");
+    if(_F==="fabric") _cnt=dsamples.filter(x=>x.kind!=="accessory").length;
+    else if(_F==="accessory") _cnt=dsamples.filter(x=>x.kind==="accessory").length;
+    else if(_F==="nosample"){ _cnt=items.filter(it=>!allS.some(sm=>smpForDesign(sm,did)&&sm.checklist_item_id===it.id)).length; _cntLbl=(isAr()?"بند بلا عينة":"no-sample"); }
+    else _cnt=dsamples.length;
+    return `<div class="card" style="padding:12px;padding-inline-start:14px;border-inline-start:4px solid var(--wine)">
       <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="smpToggleOpen('${did}')">
-        <span style="font-size:18px;color:#3d6b3d">${_open?"▾":"▸"}</span>
+        <span style="font-size:18px;color:var(--wine)">${_open?"▾":"▸"}</span>
         <div style="flex:1;text-align:center;min-width:0">
           <div class="title" style="font-size:18px;justify-content:center">${esc(d.final_name||d.name||(isAr()?"تصميم":"design"))}</div>
           ${d.sku?`<div class="muted" style="font-size:12px">${esc(d.sku)}</div>`:""}
-          <div class="muted" style="font-size:12px">${dsamples.length} ${isAr()?"عينة":"samples"}${starTot?` · ${starTot} ★`:""}</div>
+          <div class="muted" style="font-size:12px">${_cnt} ${_cntLbl}${starTot&&_F==="all"?` · ${starTot} ★`:""}</div>
         </div>
         <button class="btn btn-ghost" style="width:auto;padding:4px 8px;font-size:11px;white-space:nowrap" onclick="event.stopPropagation();openDesign('${did}')">${I.design} ${isAr()?"التصميم":"design"}</button>
       </div>
@@ -1437,13 +1438,13 @@ function chSamples(){
   const applyF=(list)=>{ if(_sf==="fabric") return list.filter(s=>s.kind!=="accessory");
     if(_sf==="accessory") return list.filter(s=>s.kind==="accessory");
     if(_sf==="nosample") return []; return list; };
-  const _fb=(v,lbl)=>`<button class="btn ${_sf===v?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._smpFilter='${v}';render()">${lbl}</button>`;
+  const _fb=(v,lbl)=>`<button class="btn btn-ghost" style="padding:5px 12px;${_sf===v?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._smpFilter='${v}';render()">${lbl}</button>`;
   const filterPill=`<div class="pillrow" style="margin-bottom:10px">
       ${_fb("all", isAr()?"الكل":"All")}
       ${_fb("fabric", isAr()?"خامات":"Fabric")}
       ${_fb("accessory", isAr()?"كلف":"Trims")}
       ${_fb("nosample", isAr()?"بلا عينة":"No sample")}
-      <button class="btn ${chCompare?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة ★":"Approved ★"}</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;${chCompare?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة ★":"Approved ★"}</button>
     </div>`;
   const tripWarn = "";
   /* تنظيم الدفتر بالكولكشنات: نجمّع التصاميم حسب الكولكشن (زي قسم التصميم) */
@@ -1633,10 +1634,9 @@ function sampleSheet(designId, itemId, kind){
     </div>
     <label>${isAr()?"لأي تصميم؟":"For design"}</label>
     <select id="smp_design">${designOptions(window._chDesign)}</select>
-    <label style="font-size:12px;color:#8a8172">${isAr()?"نفس الخام يخدم تصاميم ثانية؟ اختر (اختياري)":"Same material used by other designs? (optional)"}</label>
-    <div id="smpDesignPills" class="pillrow" style="max-height:104px;overflow:auto">
-      ${activeDesigns().filter(d=>d.id!==(window._chDesign||"")).map(d=>`<span class="pill" data-did="${d.id}" onclick="smpToggleDesign(this)">${esc(d.final_name||d.name||"")}</span>`).join("")}
-    </div>
+    <label style="font-size:12px;color:#8a8172">${isAr()?"نفس الخام يخدم تصاميم ثانية؟":"Same material used by other designs?"}</label>
+    <div id="smpExtraList" class="pillrow" style="min-height:20px"></div>
+    <button type="button" class="btn btn-ghost" style="font-size:13px;padding:5px 12px" onclick="smpAddExtraDesign()">＋ ${isAr()?"أضف تصميم يستخدم نفس الخام":"Add design"}</button>
     <hr class="sep">
     <label>${isAr()?"بزنس كارد المورد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
     <input type="file" accept="image/*" multiple id="smp_cardfile" onchange="smpAddCard(this.files)">
@@ -1645,7 +1645,7 @@ function sampleSheet(designId, itemId, kind){
     <div id="smpCardRead" class="muted" style="font-size:12px;margin-top:4px"></div>
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="smp_note"></textarea>
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
-  smpKindToggle();
+  smpKindToggle(); smpRenderExtra();
 }
 function smpSupPick(id){ const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return; const n=el("smp_supname"); if(n)n.value=spx.name||""; const sh=el("smp_shop"); if(sh)sh.value=spx.shop_no||""; }
 function smpKindToggle(){
@@ -1654,7 +1654,51 @@ function smpKindToggle(){
   if(fb) fb.style.display = k==="accessory"?"none":"block";
   if(ab) ab.style.display = k==="accessory"?"block":"none";
 }
-function smpToggleDesign(elm){ elm.classList.toggle("on"); window._smpDesigns=[...document.querySelectorAll("#smpDesignPills .pill.on")].map(x=>x.dataset.did); }
+function smpRenderExtra(){
+  const box=el("smpExtraList"); if(!box) return;
+  box.innerHTML=(window._smpDesigns||[]).map((x,i)=>{ const d=design_(x.did)||{}; return `<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk)">${esc(d.final_name||d.name||"")}${x.qty?` · ${x.qty} ${esc(x.unit||"")}`:""} <b style="cursor:pointer" onclick="window._smpDesigns.splice(${i},1);smpRenderExtra()">✕</b></span>`; }).join("");
+}
+function smpAddExtraDesign(){
+  const isAcc=(el("smp_kind")&&el("smp_kind").value==="accessory");
+  const cur=(el("smp_design")?el("smp_design").value:"")||window._chDesign||"";
+  const opts=activeDesigns().filter(d=>d.id!==cur && !(window._smpDesigns||[]).some(x=>x.did===d.id));
+  if(!opts.length){ alert(isAr()?"ما فيه تصاميم أخرى":"No other designs"); return; }
+  const ov=document.createElement("div"); ov.className="overlay"; ov.id="ov2"; ov.style.zIndex=95;
+  ov.innerHTML=`<div class="sheet">
+    <div class="title">${isAr()?"تصميم يستخدم نفس الخام":"Design using same material"}</div>
+    <label>${isAr()?"التصميم":"Design"}</label>
+    <select id="ed_design">${opts.map(d=>`<option value="${d.id}">${esc(d.final_name||d.name||"")}${d.sku?` (${esc(d.sku)})`:""}</option>`).join("")}</select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>${isAr()?"الكمية المطلوبة":"Qty"}</label><input id="ed_qty" inputmode="decimal" placeholder="${isAr()?"كم يحتاج هذا التصميم":"qty"}"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="ed_unit">${isAcc?`<option value="عدد">${isAr()?"عدد":"pcs"}</option><option value="متر">${isAr()?"متر":"m"}</option>`:`<option value="متر">${isAr()?"متر":"m"}</option><option value="يارد">${isAr()?"يارد":"yd"}</option><option value="عدد">${isAr()?"عدد":"pcs"}</option>`}</select></div>
+    </div>
+    <div class="muted" style="font-size:11px">${isAr()?"باقي بيانات الخام تُنقل تلقائياً، ويُضاف كبند لهذا التصميم":"Material data carries over as a checklist item"}</div>
+    <button class="btn btn-ink btn-big" onclick="smpExtraAdd()">${t("add")}</button>
+    <button class="btn btn-ghost btn-big" onclick="var o=el('ov2');if(o)o.remove()">${t("close")}</button>
+  </div>`;
+  ov.addEventListener("click",e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
+function smpExtraAdd(){
+  const did=el("ed_design")?el("ed_design").value:""; if(!did) return;
+  const qty=parseFloat(el("ed_qty").value)||null; const unit=el("ed_unit")?el("ed_unit").value:"متر";
+  window._smpDesigns=window._smpDesigns||[];
+  if(!window._smpDesigns.some(x=>x.did===did)) window._smpDesigns.push({did, qty, unit});
+  const o=el("ov2"); if(o) o.remove();
+  smpRenderExtra();
+}
+async function linkExtraDesigns(row){
+  const extras=window._smpDesigns||[];
+  for(const e of extras){
+    const d=design_(e.did); if(!d) continue; ensureChkIds(d);
+    const nm=row.fabric_type||(row.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
+    const chk=[...(d.checklist||[])];
+    if(!chk.some(c=>String(c.name||"").trim()===String(nm).trim() && (c.kind||"fabric")===(row.kind||"fabric"))){
+      chk.push({id:"ci-"+newId().slice(0,8), name:nm, kind:row.kind==="accessory"?"accessory":"fabric", qty:e.qty||null, unit:e.unit||(row.kind==="accessory"?"عدد":"متر")});
+      await sb.from("design_projects").update({checklist:chk}).eq("id",d.id); d.checklist=chk;
+    }
+  }
+}
 async function smpAddPhotos(files){
   for(const f of [...files]){
     const u=await captureSamplePhoto(f);
@@ -1726,7 +1770,7 @@ async function sampleSave(){
     card_photos:window._smpCards||[],
     fabric_type:el("smp_fab").value||null,
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
-    design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...(window._smpDesigns||[])].filter(Boolean))],
+    design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:window._chItem||null,
     kind:k,
     note:el("smp_note").value||null,
@@ -1743,6 +1787,7 @@ async function sampleSave(){
     row.width=el("smp_width").value||null;
   }
   await ensurePotentialSupplier(row);
+  await linkExtraDesigns(row);
   if(window._smpEdit){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
@@ -1761,7 +1806,7 @@ function sampleEdit(id){
   window._smpPhotos=[...(x.photos||[])];
   window._smpCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : (x.card_photo?[x.card_photo]:[]);
   window._smpCard=window._smpCards[0]||null;
-  window._smpDesigns=[...(x.design_ids||[])].filter(id=>id&&id!==x.design_id);
+  window._smpDesigns=[...(x.design_ids||[])].filter(id=>id&&id!==x.design_id).map(did=>({did, qty:null, unit:null}));
   const setv=(idf,v)=>{ const e=el(idf); if(e&&v!=null) e.value=v; };
   if(el("smp_supname")) el("smp_supname").value=x.supplier_name||"";
   if(el("smp_shop")) el("smp_shop").value=x.shop_no||"";
@@ -1773,26 +1818,52 @@ function sampleEdit(id){
   else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); }
   const pr=el("smpPhotoRow"); if(pr) pr.innerHTML=(window._smpPhotos||[]).map(u=>`<img class="thumb" src="${esc(u)}" style="width:52px;height:52px">`).join("");
   smpRenderCards();
-  (window._smpDesigns||[]).forEach(did=>{ const pill=document.querySelector(`#smpDesignPills .pill[data-did="${did}"]`); if(pill) pill.classList.add("on"); });
+  smpRenderExtra();
 }
 
 
 /* -- الموردين -- */
 const SUP_KINDS=[["fabric","مورد خام","Fabric"],["factory","مصنع","Factory"],["agent","وساطة/شحن","Agent"]];
 function chSuppliers(){
-  const arr=(DB.suppliers||[]).filter(x=>(x.channel||"china")===chChannel);
-  el("chBody").innerHTML=`
-    ${SUP_KINDS.map(([k,ar,en])=>{
+  const q=(window._supQ||"").trim().toLowerCase();
+  let arr=(DB.suppliers||[]).filter(x=>(x.channel||"china")===chChannel);
+  if(q) arr=arr.filter(x=>[x.name,x.shop_no,x.market,x.plaza,x.floor,x.city,x.phone,x.wechat,x.contact_person,x.notes].filter(Boolean).map(v=>String(v).toLowerCase()).join(" § ").includes(q));
+  const search=`<input id="supQ" placeholder="${isAr()?'بحث… اسم، رقم محل، تلفون، ويتشات':'Search…'}" value="${esc(window._supQ||"")}" oninput="window._supQ=this.value;chSuppliers();var e=el('supQ');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}" style="margin-bottom:10px">`;
+  el("chBody").innerHTML=search+
+    SUP_KINDS.map(([k,ar,en])=>{
       const g=arr.filter(x=>(x.kind||"fabric")===k);
       return `<div class="title" style="font-size:15px;margin-top:10px">${isAr()?ar:en} (${g.length})</div>
-      ${g.map(x=>`<div class="lineitem"><div style="min-width:0">
-          <div style="font-weight:700">${esc(x.name||"")}${x.shop_no?` · ${esc(x.shop_no)}`:""} ${x.status==="potential"?`<span class="chip" style="background:#FBF0D8;color:#8a6d1f">${isAr()?"محتمل":"potential"}</span>`:""}</div>
-          <div class="muted" style="font-size:12px">${[x.market,x.city,x.wechat?("WeChat: "+x.wechat):"",x.phone].filter(Boolean).map(esc).join(" · ")}</div>
-          ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:""}
-        </div><div class="pillrow" style="flex-wrap:nowrap;align-items:center">${(x.card_photos&&x.card_photos.length)?`<img src="${esc(x.card_photos[0])}" style="width:42px;height:28px;object-fit:cover;border-radius:6px;cursor:zoom-in" onclick="viewSupplierCard('${x.id}')" title="${isAr()?"بزنس كارد":"card"}">`:""}${x.status==="potential"?`<button class="btn btn-ok" style="padding:4px 10px" onclick="supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px" onclick="supSheet('${x.id}')">${t("edit")}</button><button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="supDel('${x.id}')">${I.trash}</button></div></div>`).join("")
+      ${g.map(x=>{ const pot=x.status==="potential";
+        return `<div class="lineitem" style="${pot?'background:var(--wine-lt);border-radius:10px;padding:9px 10px;':''}">
+          <div style="min-width:0;flex:1;cursor:pointer" onclick="supDetail('${x.id}')">
+            <div style="font-weight:700">${esc(x.name||"")} ${pot?`<span class="chip" style="background:#fff;color:var(--wine-dk);font-size:10px">${isAr()?"محتمل":"potential"}</span>`:""}</div>
+            ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:`<div class="muted" style="font-size:11px;opacity:.6">${isAr()?"اضغط لعرض البيانات":"tap for details"}</div>`}
+          </div>
+          <div class="pillrow" style="flex-wrap:nowrap;align-items:center">
+            ${pot?`<button class="btn btn-ok" style="padding:4px 10px" onclick="event.stopPropagation();supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}
+            <button class="btn btn-ghost" style="padding:4px 10px" onclick="event.stopPropagation();supSheet('${x.id}')">${t("edit")}</button>
+            <button class="btn btn-ghost" style="padding:4px 10px;color:var(--wine)" onclick="event.stopPropagation();supDel('${x.id}')">${I.trash}</button>
+          </div></div>`;}).join("")
         || `<div class="muted" style="font-size:12px">—</div>`}`;
-    }).join("")}
-    <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="supSheet()">＋ ${isAr()?"مورد جديد":"New supplier"}</button>`;
+    }).join("")+
+    `<button class="btn btn-ink btn-big" style="margin-top:12px" onclick="supSheet()">＋ ${isAr()?"مورد جديد":"New supplier"}</button>`;
+}
+function supDetail(id){
+  const x=(DB.suppliers||[]).find(s=>s.id===id); if(!x) return;
+  const row=(lbl,v)=> v? `<div class="lineitem"><div class="muted" style="font-size:12px">${lbl}</div><div style="font-weight:600;text-align:end">${esc(String(v))}</div></div>`:"";
+  const cards=(x.card_photos&&x.card_photos.length)? x.card_photos : (x.card_photo?[x.card_photo]:[]);
+  openSheet(`<div class="title">${esc(x.name||"")} ${x.status==="potential"?`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:11px">${isAr()?"محتمل":"potential"}</span>`:""}</div>
+    ${cards.length?`<div class="pillrow" style="margin-bottom:8px">${cards.map((u,i)=>`<img class="thumb" src="${esc(u)}" style="width:96px;height:62px" onclick="viewSupplierCard('${x.id}')">`).join("")}</div>`:""}
+    ${row(isAr()?"رقم المحل":"Shop", x.shop_no)}
+    ${row(isAr()?"السوق":"Market", x.market)}
+    ${row(isAr()?"المجمع":"Mall", x.plaza)}
+    ${row(isAr()?"الدور":"Floor", x.floor)}
+    ${row(isAr()?"المدينة":"City", x.city)}
+    ${row(isAr()?"تلفون":"Phone", x.phone)}
+    ${row("WeChat", x.wechat)}
+    ${row(isAr()?"اسم الموظف":"Staff", x.contact_person)}
+    ${row(isAr()?"ملاحظات":"Notes", x.notes)}
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="closeSheet();supSheet('${x.id}')">${I.edit} ${isAr()?"تعديل":"Edit"}</button>`);
 }
 async function supApprove(id){ await sb.from("suppliers").update({status:"approved"}).eq("id",id); const sup=(DB.suppliers||[]).find(x=>x.id===id); if(sup) sup.status="approved"; cacheDB(); render(); }
 async function supDel(id){
@@ -1951,10 +2022,11 @@ function chPurch(){
   const _pf=window._poFilter||"all";
   const arr = _pf==="all"? all : all.filter(x=>(x.stage||"sample")===_pf);
   const nS=all.filter(x=>(x.stage||"sample")==="sample").length, nP=all.filter(x=>(x.stage||"sample")==="production").length;
+  const _pw=(v)=>_pf===v?'background:var(--wine);color:#fff;border-color:var(--wine)':'';
   const pills=`<div class="pillrow" style="margin-bottom:10px">
-      <button class="btn ${_pf==="all"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='all';render()">${isAr()?"الكل":"All"} (${all.length})</button>
-      <button class="btn ${_pf==="sample"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='sample';render()">${isAr()?"عينات":"Samples"} (${nS})</button>
-      <button class="btn ${_pf==="production"?'btn-ink':'btn-ghost'}" style="padding:5px 12px" onclick="window._poFilter='production';render()">${isAr()?"إنتاج":"Production"} (${nP})</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;${_pw("all")}" onclick="window._poFilter='all';render()">${isAr()?"الكل":"All"} (${all.length})</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;${_pw("sample")}" onclick="window._poFilter='sample';render()">${isAr()?"عينات":"Samples"} (${nS})</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;${_pw("production")}" onclick="window._poFilter='production';render()">${isAr()?"إنتاج":"Production"} (${nP})</button>
     </div>`;
   if(!all.length){ el("chBody").innerHTML=`<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>
     <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
@@ -3761,6 +3833,9 @@ function viewGallery(urls, start){
   };
   draw();
   ov.addEventListener("click",()=>ov.remove());
+  let _sx=0;
+  ov.addEventListener("touchstart",e=>{ _sx=e.changedTouches[0].clientX; },{passive:true});
+  ov.addEventListener("touchend",e=>{ const dx=e.changedTouches[0].clientX-_sx; if(Math.abs(dx)>40 && urls.length>1){ i=(dx<0? (i+1) : (i-1+urls.length))%urls.length; draw(); } },{passive:true});
   document.body.appendChild(ov);
 }
 function viewSamplePhotos(id){ const s=(DB.samples||[]).find(x=>x.id===id); if(s) viewGallery(s.photos||[],0); }
@@ -3787,20 +3862,16 @@ function checklistBlock(d){
       const lit=sourced(x.id);
       const photos=(rep&&rep.photos)||[];
       const kindLbl=x.kind==="accessory"?(isAr()?"كلف":"trim"):(isAr()?"خام":"fabric");
-      return `<div class="card" style="display:flex;gap:10px;align-items:stretch;padding:10px;${lit?'border:1px solid #CFE3CF;background:#F3F8F3':''}">
-        <div style="flex:1;min-width:0">
-          <b>${esc(x.name||"")}</b> ${lit?`<span class="chip sage">★</span>`:`<span class="chip" style="opacity:.5">☆</span>`}
+      return `<div class="card" style="display:flex;gap:12px;align-items:stretch;padding:10px">
+        <div style="flex:1;min-width:0;padding-inline-end:4px">
+          <b>${esc(x.name||"")}</b>
           <div class="muted" style="font-size:12px">${kindLbl}${x.qty?` · ${x.qty} ${esc(x.unit||"")}`:""}</div>
           ${rep?`<div class="muted" style="font-size:11px">${esc(rep.supplier_name||"")}${rep.price!=null?` · ${rep.price} ${esc(rep.currency||"")}`:""}</div>`:`<div class="muted" style="font-size:11px">${isAr()?"لا عينة بعد — أضفها من دفتر العينات":"no sample yet"}</div>`}
         </div>
-        ${photos.length?`<div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px">
-          <img src="${esc(photos[0])}" onclick="viewSamplePhotos('${rep.id}')" style="width:92px;height:92px;object-fit:cover;border-radius:10px;cursor:zoom-in">
-          ${photos.length>1?`<span class="muted" style="font-size:10px">📷 ${photos.length}</span>`:""}</div>`
-        :`<div style="flex:0 0 auto;width:92px;height:92px;border-radius:10px;background:var(--soft);display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.pack}</div>`}
-        <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;justify-content:center">
-          ${rep? (rep.status==="shortlist"
-            ? `<button class="btn btn-ghost" title="${isAr()?"تراجع عن الاعتماد":"undo"}" style="padding:4px 9px" onclick="sampleUnstar('${rep.id}')">↺</button>`
-            : `<button class="btn btn-ok" title="${isAr()?"اعتمد → شراء":"approve → buy"}" style="padding:4px 9px" onclick="sampleStar('${rep.id}')">★</button>`):""}
+        ${photos.length?`<div style="flex:0 0 auto;position:relative;align-self:center"><img src="${esc(photos[0])}" onclick="viewSamplePhotos('${rep.id}')" style="width:108px;height:108px;object-fit:cover;border-radius:12px;cursor:zoom-in">${photos.length>1?`<span style="position:absolute;bottom:5px;inset-inline-end:5px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px">📷 ${photos.length}</span>`:""}</div>`
+        :`<div style="flex:0 0 auto;width:108px;height:108px;border-radius:12px;background:var(--soft);display:flex;align-items:center;justify-content:center;color:#c8c2b8;align-self:center">${I.pack}</div>`}
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:5px;justify-content:center">
+          <button class="btn btn-ghost" title="${lit?(isAr()?"معتمد — تراجع":"undo"):(isAr()?"اعتمد → شراء":"approve")}" style="padding:4px 9px;font-size:17px;line-height:1;color:${lit?'var(--green)':'#c8c2b8'}" ${rep?`onclick="${lit?`sampleUnstar('${rep.id}')`:`sampleStar('${rep.id}')`}"`:'disabled'}>★</button>
           <button class="btn btn-ghost" title="${isAr()?"تعديل البند":"edit"}" style="padding:4px 9px" onclick="chkEdit('${d.id}',${i})">${I.edit}</button>
           ${rep&&rep.status!=="rejected"?`<button class="btn btn-ghost" title="${isAr()?"رفض العينة":"reject"}" style="padding:4px 9px" onclick="sampleReject('${rep.id}')">✕</button>`:""}
           <button class="btn btn-ghost" title="${isAr()?"حذف البند":"delete"}" style="padding:4px 9px;color:var(--wine)" onclick="chkDel('${d.id}',${i})">${I.trash}</button>
@@ -3853,6 +3924,18 @@ async function rmDesignPattern(id,i){
   await sb.from("design_projects").update({patterns:arr}).eq("id",id);
   d.patterns=arr; reopenDesign(id);
 }
+function designRecap(d){
+  const hasIdea=(d.sketches&&d.sketches.length)||(d.mood&&d.mood.length)||(d.notes&&d.notes.length)||(d.patterns&&d.patterns.filter(Boolean).length);
+  if(!hasIdea) return "";
+  const row=(lbl,arr,cls)=> (arr&&arr.length)? `<div class="muted" style="font-size:11px;margin-top:6px">${lbl}</div><div class="imgrow">${arr.map(u=>`<img class="${cls||'thumb'}" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>` : "";
+  return `<details class="dsec" open style="border-inline-start:3px solid var(--wine);padding-inline-start:10px;background:transparent">
+    <summary style="cursor:pointer;font-weight:800;font-size:13px;color:var(--wine-dk)">${I.design} ${isAr()?"الفكرة — السكيتش والمود بورد":"Idea — sketches & mood"}</summary>
+    ${row(isAr()?"السكيتشات":"Sketches", d.sketches)}
+    ${row(isAr()?"المود بورد":"Mood board", d.mood, "moodimg")}
+    ${(d.notes&&d.notes.length)?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"ملاحظات":"Notes"}</div>${d.notes.map((n,i)=>`<div class="muted" style="font-size:12px">${i+1}. ${esc(n.t)}</div>`).join("")}`:""}
+    ${(d.patterns&&d.patterns.filter(Boolean).length)?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"الباترون":"Pattern"}: ${d.patterns.filter(Boolean).map(x=>esc(x.name)).join(" · ")}</div>`:""}
+  </details>`;
+}
 function openDesign(id){
   const d=design_(id); const st=d.stage||"idea";
   const imgs=(arr)=>`<div class="imgrow">${(arr||[]).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`;
@@ -3887,6 +3970,7 @@ function openDesign(id){
       <button class="btn btn-ok btn-big" onclick="setDStage('${id}','materials')">${I.done} ${isAr()?"اعتماد الفكرة ← شراء المواد":"Approve idea → Materials"}</button>`;
   } else if(st==="materials"){
     body=`
+      ${designRecap(d)}
       <div class="dsec">
         ${checklistBlock(d)}
       </div>
@@ -3897,6 +3981,7 @@ function openDesign(id){
     const ws=DB.workers.filter(w=>w.active&&(w.specialties||[]).includes("sample"));
     window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
     body=`
+      ${designRecap(d)}
       <div class="dsec">
         ${imgs(d.sketches)}
         <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
