@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.29:APPV-->
+<!--APPV:2026-08-12.30:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -584,7 +584,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.29";
+const APP_VERSION="2026-08-12.30";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2894,9 +2894,10 @@ function stageFilterView(stg){
     const m=ev? workedMins(ev.started_at):0;
     const estT=estFor(p,stg,r.part?r.part.part_ar:null,r.l.qty);
     return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">
-      <div class="wtop" style="flex:1">${thumb(p)}
+      <div class="wtop" style="flex:1;cursor:pointer" onclick="lineDetail('${r.l.id}')">${thumb(p)}
       <div style="flex:1"><div class="title">${esc(pname(p))} ${r.part?`<span class="chip">${esc(isAr()?r.part.part_ar:r.part.part_en)}</span>`:""}</div>
-      <div class="muted">#${o.order_no} · ${esc(r.l.size||"")} × ${r.l.qty} ${o.due_date?`· ${isLate(o)?`<span class="late">${t("late")}</span>`:t("due")+" "+fmtD(o.due_date)}`:""}</div>
+      <div class="muted">#${o.order_no} · ${isAr()?"العمر":"age"} <b>${esc(r.l.size||"—")}</b> · ${isAr()?"العدد":"qty"} <b>${r.l.qty}</b> ${o.due_date?`· ${isLate(o)?`<span class="late">${t("late")}</span>`:t("due")+" "+fmtD(o.due_date)}`:""}</div>
+      <div style="font-size:11px;color:var(--wine)">${isAr()?"اضغط للتفاصيل ←":"tap for details"}</div>
       ${r.who?`<span class="chip working">${I.user} ${esc(wname(worker(r.who)))}</span>`:""}
       ${ev?`<span class="timer ${estT&&m>estT?'t-late':'t-ok'}"> ${m} ${t("minutes")}</span>`:""}
       </div></div>
@@ -2914,6 +2915,59 @@ function stageFilterView(stg){
     <hr class="sep">
     <div class="sechead">${isAr()?"ما بدأ بعد":"not started"} (${wait.length})</div>
     ${wait.length? wait.map(card).join("") : `<div class="empty">—</div>`}`;
+}
+function lineDetail(lineId){
+  const l=DB.lines.find(x=>x.id===lineId); if(!l) return;
+  const p=product(l.product_id), o=order(l.order_id);
+  const row=(lbl,v)=> (v||v===0)? `<div class="lineitem"><div class="muted" style="font-size:12px">${lbl}</div><div style="font-weight:700;text-align:end">${esc(String(v))}</div></div>`:"";
+  openSheet(`<div class="title">${esc(pname(p))}</div>
+    ${thumb(p)}
+    ${row(isAr()?"رقم الأمر":"Order", "#"+(o.order_no||"")+(o.order_type?(" · "+o.order_type):""))}
+    ${row(isAr()?"الفاتورة":"Invoice", o.customer_ref)}
+    ${row(isAr()?"العمر / السايز":"Age / Size", l.size||"—")}
+    ${row(isAr()?"اللون":"Color", l.color)}
+    ${row(isAr()?"العدد":"Quantity", l.qty)}
+    ${row(isAr()?"المرحلة":"Stage", t(STAGE_KEY[l.stage]||l.stage))}
+    ${o.due_date? row(isAr()?"التسليم":"Due", fmtD(o.due_date)) : ""}
+    ${o.repair_reason?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.fix} ${esc(o.repair_reason)}${o.repair_note?` — ${esc(o.repair_note)}`:""}${o.repair_image?`<div><img class="thumb" src="${esc(o.repair_image)}" onclick="viewImg('${esc(o.repair_image)}')"></div>`:""}</div>`:""}
+    ${l.fix_reason?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.fix} ${esc(l.fix_reason)}${l.fix_image?`<div><img class="thumb" src="${esc(l.fix_image)}" onclick="viewImg('${esc(l.fix_image)}')"></div>`:""}</div>`:""}
+    ${l.custom_specs? specsTable(l.custom_specs) : ""}
+    ${lineEditable(l)?`<button class="btn btn-wine btn-big" style="margin-top:8px" onclick="closeSheet();editLineSheet('${l.id}')">${I.edit} ${isAr()?"تعديل الطلب":"Edit order"}</button>`
+      :`<div class="note-box" style="font-size:12px;text-align:center">${isAr()?"بدأ التنفيذ — لا يمكن التعديل":"Started — locked"}</div>`}
+    <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="closeSheet();showPurchase('${o.id}')">${I.pack} ${isAr()?"قائمة الشراء لهذا الأمر":"Purchase list"}</button>`);
+}
+/* التعديل مسموح فقط ما دام السطر عند القص ولا بدأ ولا راحت قطعة للخياطة */
+function lineEditable(l){
+  if(!l || l.stage!=="cut") return false;
+  const parts=DB.parts.filter(p=>p.line_id===l.id && p.stage!=="emb");
+  if(parts.some(p=>(p.stage||"sew")!=="cut" || p.status==="done" || p.status==="working")) return false;
+  if(l.stage_status==="working") return false;
+  return true;
+}
+function editLineSheet(lineId){
+  const l=DB.lines.find(x=>x.id===lineId); if(!l) return;
+  if(!lineEditable(l)) return alert(isAr()?"ما يمكن التعديل — الأمر بدأ التنفيذ":"Cannot edit — already started");
+  const cs=l.custom_specs||null;
+  openSheet(`<div class="title">${I.edit} ${isAr()?"تعديل الطلب":"Edit order"}</div>
+    <div class="grid2">
+      <div><label>${isAr()?"العمر/السايز":"Age/Size"}</label><input id="el_size" value="${esc(l.size||"")}"></div>
+      <div><label>${t("color")}</label><input id="el_color" value="${esc(l.color||"")}"></div>
+    </div>
+    <label>${t("qty")}</label><input id="el_qty" inputmode="numeric" value="${l.qty||1}">
+    ${cs?`<div class="sechead" style="font-size:12px;margin-top:8px">${I.ruler} ${isAr()?"القياسات الخاصة":"Custom measurements"}</div>
+      <div class="grid3">${allMeas().map(x=>`<div><label>${isAr()?x[1]:x[2]}</label><input id="el_${x[0]}" inputmode="decimal" value="${esc(cs[x[0]]||"")}"></div>`).join("")}</div>
+      <label>${isAr()?"ملاحظات":"Notes"}</label><input id="el_notes" value="${esc(cs.notes||"")}">`:""}
+    <button class="btn btn-wine btn-big" onclick="saveLineEdit('${lineId}',${cs?'true':'false'})">${t("save")}</button>`);
+}
+async function saveLineEdit(lineId, hasCs){
+  const l=DB.lines.find(x=>x.id===lineId); if(!l) return;
+  if(!lineEditable(l)) return alert(isAr()?"ما يمكن التعديل — بدأ التنفيذ":"locked");
+  const upd={size:el("el_size").value||null, color:el("el_color").value||null, qty:parseInt(el("el_qty").value)||1};
+  if(hasCs){ const cs={...(l.custom_specs||{})}; allMeas().forEach(x=>cs[x[0]]=el("el_"+x[0]).value||null); cs.notes=el("el_notes").value||null; upd.custom_specs=cs; }
+  await sb.from("order_lines").update(upd).eq("id",lineId);
+  Object.assign(l,upd);
+  await logIt("edit","order_lines",lineId, lineLabel(lineId));
+  closeSheet(); cacheDB(); render();
 }
 function lineChip(l){
   const w=l.claimed_by?worker(l.claimed_by):null;
@@ -2948,7 +3002,7 @@ function orderCard(o){
       ${o.customer_ref?`<div class="muted">${t("invoice")}: ${esc(o.customer_ref)}</div>`:""}
       ${o.repair_reason?`<div class="muted">${t("reason")}: ${esc(o.repair_reason)}</div>`:""}
       ${ls.map(l=>`<div class="lineitem">
-        <div style="flex:1"><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${esc(l.size||"")} ${esc(l.color||"")} × ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
+        <div style="flex:1"><b>${esc(pname(product(l.product_id)))}</b> <span class="muted">${isAr()?"عمر":"age"} ${esc(l.size||"—")}${l.color?` · ${esc(l.color)}`:""} · ${isAr()?"عدد":"qty"} ${l.qty}</span>${l.custom_specs?` <span class="chip sage">${I.ruler}</span>`:""}</div>
         <div>${lineChip(l)} ${l.stage==="pack"&&session.role==="manager"?`<button class="btn btn-ok" style="padding:5px 10px;font-size:12px" onclick="shipLine('${l.id}')">${I.shipped}</button>`:""}
         ${session.role==="manager"? rowMenu(esc(pname(product(l.product_id)))+" "+esc(l.size||""),[
           {label:isAr()?"إرجاع للقص":"Back to cut", icon:I.cut, fn:async()=>{await moveLine(l.id,"cut");await refresh();}},
