@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.28:APPV-->
+<!--APPV:2026-08-12.29:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -584,8 +584,9 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.28";
+const APP_VERSION="2026-08-12.29";
 async function checkVersion(){
+  if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
     const url=location.pathname.split("?")[0];
     const r=await fetch(url+"?cb="+Date.now(), {cache:"no-store", headers:{Range:"bytes=0-2047"}});
@@ -1005,7 +1006,15 @@ function breakBar(){
 }
 
 /* ================= التحديث التلقائي ================= */
-function startAuto(){ stopAuto(); autoTimer=setInterval(()=>{ flushQueue(); if(!document.getElementById("ov")) refresh(); }, 30000); }
+/* لا نحدّث تلقائياً وأنت تعبّي بيانات — عشان ما تنمسح قبل الحفظ */
+function userBusy(){
+  if(mTab==="newOrder") return true;
+  if(document.getElementById("ov")) return true;
+  const a=document.activeElement;
+  if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return true;
+  return false;
+}
+function startAuto(){ stopAuto(); autoTimer=setInterval(()=>{ flushQueue(); if(!userBusy()) refresh(); }, 30000); }
 function stopAuto(){ if(autoTimer){clearInterval(autoTimer); autoTimer=null;} }
 
 /* ================= العرض ================= */
