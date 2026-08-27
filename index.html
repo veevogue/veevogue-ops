@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.32:APPV-->
+<!--APPV:2026-08-12.33:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -532,6 +532,7 @@ window.addEventListener("DOMContentLoaded", async ()=>{
   if(!AUTHED){ render(); return; }
   await flushQueue();
   await loadAll();
+  if(enforceAccess()) return;
   try{ await refreshPendCount(); }catch(e){}
   render();
   paintNet();
@@ -581,10 +582,24 @@ async function loadAll(){
       trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[], expenses:exp.data||[], supplier_payments:sp.data||[]};
   NETOK=true; cacheDB(); paintNet();
 }
-async function refresh(){await loadAll(); render(); paintNet();}
+async function refresh(){await loadAll(); if(enforceAccess())return; render(); paintNet();}
+/* إيقاف فوري لدخول العامل الموقوف أو المحذوف — يشتغل مع التحديث التلقائي كل 30 ثانية وعند فتح التطبيق */
+function enforceAccess(){
+  if(!NETOK) return false;                         /* ما نطرد أحد على بيانات قديمة/بدون نت */
+  if(session && session.role==="worker"){
+    if(!DB.workers || !DB.workers.length) return false;
+    const me=DB.workers.find(w=>w.id===session.workerId);
+    if(!me || me.active===false){
+      logout();
+      setTimeout(()=>alert(isAr()?"تم إيقاف دخولك من الإدارة.":"Your access was revoked by the manager."),60);
+      return true;
+    }
+  }
+  return false;
+}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.32";
+const APP_VERSION="2026-08-12.33";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -738,10 +753,10 @@ async function logIt(action, entity, entityId, label, before, after){
 }
 const AUDIT_AR={start:"بدأ",done:"أنهى",undo:"تراجع عن البدء",qc:"فحص جودة",fix:"أرجع للتصليح",
   del:"حذف",order_new:"أمر جديد",order_close:"أقفل أمر",order_cancel:"ألغى أمر",settings:"عدّل الإعدادات",
-  wipe:"مسح بيانات",ext_send:"أرسل للخارج",ext_recv:"استلم من الخارج",worker:"عدّل عامل"};
+  wipe:"مسح بيانات",ext_send:"أرسل للخارج",ext_recv:"استلم من الخارج",worker:"عدّل عامل",worker_disable:"أوقف دخول عامل",worker_enable:"فعّل دخول عامل"};
 const AUDIT_EN={start:"started",done:"finished",undo:"undid start",qc:"quality check",fix:"sent to fix",
   del:"deleted",order_new:"new order",order_close:"closed order",order_cancel:"cancelled order",settings:"settings",
-  wipe:"wiped data",ext_send:"sent external",ext_recv:"received external",worker:"worker edit"};
+  wipe:"wiped data",ext_send:"sent external",ext_recv:"received external",worker:"worker edit",worker_disable:"revoked access",worker_enable:"re-enabled access"};
 function auditWord(a){ return (isAr()?AUDIT_AR:AUDIT_EN)[a] || a; }
 async function openAudit(){
   openSheet(`<div class="title">${I.clock} ${isAr()?"سجل التغييرات":"Change log"}</div>
@@ -4674,11 +4689,19 @@ function renderWorkersBox(){
     <div><button class="btn btn-ghost" onclick="editWorker('${w.id}')">${I.edit}</button>
     ${rowMenu(esc(wname(w)),[
       {label:isAr()?"تعديل":"Edit", icon:I.edit, fn:()=>editWorker(w.id)},
-      {label:isAr()?"إيقاف (يبقى سجله)":"Disable", icon:I.file, fn:()=>stopWorker(w.id)},
+      {label:isAr()?"إيقاف الدخول (يقفل تلفونه)":"Revoke access", icon:I.file, fn:()=>stopWorker(w.id)},
       {label:isAr()?`مسح سجل عمله (${evN})`:"Clear history", icon:I.clock, danger:true, fn:async()=>{await sb.from("stage_events").delete().eq("worker_id",w.id); await sb.from("breaks").delete().eq("worker_id",w.id); await reloadWorkers();}},
       {label:isAr()?"حذف العامل نهائياً":"Delete worker", icon:I.trash, danger:true, fn:()=>delRow("workers",w.id,reloadWorkers)}
     ])}</div>
   </div>`;}).join("")}
+  ${(()=>{const off=DB.workers.filter(w=>w.active===false); return off.length?`<div class="card">
+    <div class="title" style="color:var(--gray)">${I.user} ${isAr()?"عمال موقوفين (دخولهم مقفول)":"Disabled workers"}</div>
+    ${off.map(w=>`<div class="lineitem">
+      <div style="flex:1;text-decoration:line-through;color:#999">${esc(wname(w))}</div>
+      <button class="btn btn-ok" style="padding:5px 12px;font-size:13px" onclick="resumeWorker('${w.id}')">${isAr()?"تفعيل الدخول":"Re-enable"}</button>
+    </div>`).join("")}
+    <div class="muted" style="font-size:12px;margin-top:6px">${isAr()?"الموقوف يختفي من شاشة الدخول وينقفل دخوله من تلفونه خلال ثواني. سجل عمله محفوظ.":"Disabled workers can't log in."}</div>
+  </div>`:"";})()}
   <div class="card"><div class="title">${I.pack} ${isAr()?"سجل الخامات":"Materials"}</div>
     <div class="grid3">
       <div><label>${isAr()?"الكود":"SKU"}</label><input id="m_sku" dir="ltr"></div>
@@ -4762,7 +4785,18 @@ async function updateWorker(id){
   await sb.from("workers").update({name:el("ew_name").value, name_en:el("ew_name_en").value||null, specialties:specs, pin:el("ew_pin").value||null}).eq("id",id);
   closeSheet(); await reloadWorkers();
 }
-async function stopWorker(id){if(confirm("?")){await sb.from("workers").update({active:false}).eq("id",id); await reloadWorkers();}}
+async function stopWorker(id){
+  if(confirm(isAr()?`إيقاف دخول «${wname(worker(id))}»؟\nراح ينقفل دخوله من تلفونه خلال ثواني، ويختفي من شاشة الدخول. سجل عمله يبقى محفوظ، وتقدر ترجّعه أي وقت.`:`Revoke access for ${wname(worker(id))}?`)){
+    await sb.from("workers").update({active:false}).eq("id",id);
+    await logIt("worker_disable","workers",id,wname(worker(id)));
+    await reloadWorkers();
+  }
+}
+async function resumeWorker(id){
+  await sb.from("workers").update({active:true}).eq("id",id);
+  await logIt("worker_enable","workers",id,wname(worker(id)));
+  await reloadWorkers();
+}
 async function delWorker(id){if(confirm(isAr()?"حذف نهائي للعامل وكل بياناته؟":"Delete permanently?")){await logIt("del","workers",id,wname(worker(id))); await sb.from("workers").delete().eq("id",id); await reloadWorkers();}}
 async function addReason(){const tx=el("newReason").value.trim(); if(!tx)return; await sb.from("repair_reasons").insert({label:tx}); await reloadWorkers();}
 async function toggleReason(id,cur){await sb.from("repair_reasons").update({active:!cur}).eq("id",id); await reloadWorkers();}
