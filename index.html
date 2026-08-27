@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.30:APPV-->
+<!--APPV:2026-08-12.32:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -584,7 +584,7 @@ async function loadAll(){
 async function refresh(){await loadAll(); render(); paintNet();}
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.30";
+const APP_VERSION="2026-08-12.32";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2858,7 +2858,7 @@ function tabBoard(){
     </div>
     <hr class="sep">
     ${window._bFilter? stageFilterView(window._bFilter)
-      : (activeOrders.length? activeOrders.map(orderCard).join("") : `<div class="empty">${t("noOrders")}</div>`)}`;
+      : (activeOrders.length? groupedOrders(activeOrders) : `<div class="empty">${t("noOrders")}</div>`)}`;
 }
 /* عرض مفلتر لمرحلة واحدة: الشغال فوق ثم اللي ما بدأ */
 function stageFilterView(stg){
@@ -2895,12 +2895,13 @@ function stageFilterView(stg){
     const estT=estFor(p,stg,r.part?r.part.part_ar:null,r.l.qty);
     return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">
       <div class="wtop" style="flex:1;cursor:pointer" onclick="lineDetail('${r.l.id}')">${thumb(p)}
-      <div style="flex:1"><div class="title">${esc(pname(p))} ${r.part?`<span class="chip">${esc(isAr()?r.part.part_ar:r.part.part_en)}</span>`:""}</div>
+      <div style="flex:1"><div class="title">${esc(pname(p))} ${otypeChip(o.order_type,true)} ${r.part?`<span class="chip">${esc(isAr()?r.part.part_ar:r.part.part_en)}</span>`:""}</div>
       <div class="muted">#${o.order_no} · ${isAr()?"العمر":"age"} <b>${esc(r.l.size||"—")}</b> · ${isAr()?"العدد":"qty"} <b>${r.l.qty}</b> ${o.due_date?`· ${isLate(o)?`<span class="late">${t("late")}</span>`:t("due")+" "+fmtD(o.due_date)}`:""}</div>
       <div style="font-size:11px;color:var(--wine)">${isAr()?"اضغط للتفاصيل ←":"tap for details"}</div>
       ${r.who?`<span class="chip working">${I.user} ${esc(wname(worker(r.who)))}</span>`:""}
       ${ev?`<span class="timer ${estT&&m>estT?'t-late':'t-ok'}"> ${m} ${t("minutes")}</span>`:""}
       </div></div>
+      ${lineEditable(r.l)&&session.role!=="worker"?`<button class="btn btn-ghost" style="padding:4px 9px;align-self:flex-start" onclick="editOrder('${o.id}')" title="${isAr()?'تعديل الطلب':'edit'}">${I.edit}</button>`:""}
       ${session.role==="manager"? rowMenu(esc(pname(p))+" #"+o.order_no,[
         {label:isAr()?"إرجاع للقص":"Back to cut", icon:I.cut, fn:async()=>{await moveLine(r.l.id,"cut");await refresh();}},
         {label:isAr()?"إرجاع للخياطة":"Back to sew", icon:I.sew, fn:async()=>{await moveLine(r.l.id,"sew");await refresh();}},
@@ -2932,7 +2933,7 @@ function lineDetail(lineId){
     ${o.repair_reason?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.fix} ${esc(o.repair_reason)}${o.repair_note?` — ${esc(o.repair_note)}`:""}${o.repair_image?`<div><img class="thumb" src="${esc(o.repair_image)}" onclick="viewImg('${esc(o.repair_image)}')"></div>`:""}</div>`:""}
     ${l.fix_reason?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.fix} ${esc(l.fix_reason)}${l.fix_image?`<div><img class="thumb" src="${esc(l.fix_image)}" onclick="viewImg('${esc(l.fix_image)}')"></div>`:""}</div>`:""}
     ${l.custom_specs? specsTable(l.custom_specs) : ""}
-    ${lineEditable(l)?`<button class="btn btn-wine btn-big" style="margin-top:8px" onclick="closeSheet();editLineSheet('${l.id}')">${I.edit} ${isAr()?"تعديل الطلب":"Edit order"}</button>`
+    ${lineEditable(l)?`<button class="btn btn-wine btn-big" style="margin-top:8px" onclick="closeSheet();editOrder('${o.id}')">${I.edit} ${isAr()?"تعديل الطلب":"Edit order"}</button>`
       :`<div class="note-box" style="font-size:12px;text-align:center">${isAr()?"بدأ التنفيذ — لا يمكن التعديل":"Started — locked"}</div>`}
     <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="closeSheet();showPurchase('${o.id}')">${I.pack} ${isAr()?"قائمة الشراء لهذا الأمر":"Purchase list"}</button>`);
 }
@@ -2981,6 +2982,29 @@ function lineChip(l){
   }
   return `<span class="chip ${l.stage_status==='working'?'working':''}">${I[l.stage]||""} ${t(STAGE_KEY[l.stage]||l.stage)}${w?` · ${esc(wname(w))}`:""}</span>`;
 }
+/* لون وأيقونة موحّدة لكل نوع أمر — تنطبق على العرض المفلتر وغير المفلتر */
+function otypeMeta(ty){
+  ty=ty||"إنتاج كمي";
+  if(ty==="تصليح")       return {icon:I.fix,   style:'background:#F6E7D8;color:#8a5a20'};
+  if(ty==="قياسات خاصة") return {icon:I.ruler, style:'background:#E4EAF3;color:#33507a'};
+  if(ty==="طلب")         return {icon:I.user,  style:'background:var(--wine-lt);color:var(--wine-dk)'};
+  return                        {icon:I.pack,  style:'background:var(--green-lt);color:var(--green-dk)'}; /* إنتاج كمي */
+}
+function otypeChip(ty,small){
+  const m=otypeMeta(ty);
+  return `<span class="chip" style="${small?'font-size:10px;':''}${m.style}">${m.icon} ${esc(ty||"إنتاج كمي")}</span>`;
+}
+/* العرض غير المفلتر: نجمع الأوامر حسب النوع بعناوين واضحة بدل ما تكون عايمة كلها مع بعض */
+function groupedOrders(list){
+  const pref=["إنتاج كمي","طلب","قياسات خاصة","تصليح"];
+  const seen={}; list.forEach(o=>{const k=o.order_type||"إنتاج كمي"; (seen[k]=seen[k]||[]).push(o);});
+  const keys=pref.filter(k=>seen[k]).concat(Object.keys(seen).filter(k=>!pref.includes(k)));
+  return keys.map(k=>{
+    const m=otypeMeta(k);
+    return `<div class="sechead"><span class="chip" style="${m.style}">${m.icon} ${esc(k)}</span><span class="muted" style="font-weight:600">(${seen[k].length})</span></div>`
+      + seen[k].map(orderCard).join("");
+  }).join("");
+}
 function orderCard(o){
   const ls=DB.lines.filter(l=>l.order_id===o.id);
   const openIds=JSON.parse(localStorage.getItem("vv_open")||"[]");
@@ -2989,7 +3013,7 @@ function orderCard(o){
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
       <div style="flex:1;cursor:pointer" onclick="toggleOrder('${o.id}')">
-        <div class="title">${t("order")} #${o.order_no} <span class="chip wine">${esc(o.order_type)}</span> <span class="muted">${doneN}/${ls.length}</span></div>
+        <div class="title">${t("order")} #${o.order_no} ${otypeChip(o.order_type)} <span class="muted">${doneN}/${ls.length}</span></div>
         <div class="muted">${o.due_date?(isLate(o)?`<span class="late">${t("late")} ${fmtD(o.due_date)}</span>`:`${t("due")} ${fmtD(o.due_date)}`):""} ${isOpen?"▾":"▸"}</div>
       </div>
       ${session.role==="manager"? rowMenu(`${t("order")} #${o.order_no}`,[
@@ -3166,6 +3190,7 @@ function tabNewOrder(){
   const prods=DB.products.filter(p=>p.active);
   if(!prods.length){el("tabbody").innerHTML=`<div class="empty">${isAr()?"أضف منتجات أولاً":"Add products first"}</div>`;return;}
   const ty=window._otype||"إنتاج كمي";
+  const editOrd = window._editOrderId? (DB.orders||[]).find(oo=>oo.id===window._editOrderId):null;
   const dOpts=prods.map(p=>`<option value="${p.id}">${esc(pname(p))}</option>`).join("");
   let body="";
   if(ty==="قياسات خاصة"){
@@ -3207,6 +3232,7 @@ function tabNewOrder(){
       <button class="btn btn-ghost" style="margin-top:8px" onclick="addLine()">${I.plus}</button>`;
   }
   el("tabbody").innerHTML=`<div class="card">
+    ${editOrd?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">${I.edit} <b>${isAr()?"تعديل الأمر":"Editing"} #${editOrd.order_no}</b> — ${isAr()?"عدّل ما تبي واحفظ ليستبدل القديم":"edit & save to replace"} <span onclick="window._editOrderId=null;newLines=[];customModels=[];window._otype='إنتاج كمي';render()" style="cursor:pointer;text-decoration:underline">${isAr()?"إلغاء":"cancel"}</span></div>`:""}
     <label>${isAr()?"نوع الأمر":"Order type"}</label>
     <div class="pillrow">${["إنتاج كمي","طلب","تصليح","قياسات خاصة"].map(x=>`<span class="pill ${ty===x?'on':''}" onclick="window._otype='${x}';captureOrder();render()">${x}</span>`).join("")}</div>
     <div id="obody">${body}</div>
@@ -3216,11 +3242,34 @@ function tabNewOrder(){
       <span class="pill ${window._oext?'on':''}" onclick="window._oext=true;captureOrder();render()">${I.ext} ${isAr()?"تنفيذ خارجي":"External"}</span>
     </div>
     <label>${t("due")}</label><input type="date" id="o_due">
-    <button class="btn btn-wine btn-big" onclick="saveOrder()">${t("save")}</button>
+    <button class="btn btn-wine btn-big" onclick="saveOrder()">${window._editOrderId?(isAr()?"حفظ التعديل":"Save changes"):t("save")}</button>
   </div>`;
   newLines.forEach((l,i)=>{if(l.product_id&&el("ld"+i))el("ld"+i).value=l.product_id;});
   customModels.forEach((m,i)=>{if(m.product_id&&el("cm_p"+i))el("cm_p"+i).value=m.product_id;
     if(m.sleeve&&el("cm_sl"+i))el("cm_sl"+i).value=m.sleeve; if(m.bottom&&el("cm_bt"+i))el("cm_bt"+i).value=m.bottom;});
+  if(editOrd){
+    if(el("o_ref")) el("o_ref").value=editOrd.customer_ref||"";
+    if(el("o_due")) el("o_due").value=editOrd.due_date||"";
+    if(editOrd.repair_reason){ const rp=[...document.querySelectorAll("#reasonPills .pill")].find(x=>x.dataset.r===editOrd.repair_reason);
+      if(rp){ document.querySelectorAll("#reasonPills .pill").forEach(x=>x.classList.remove("on")); rp.classList.add("on"); }
+      if(el("o_rnote")) el("o_rnote").value=editOrd.repair_note||""; }
+  }
+}
+function editOrder(orderId){
+  const o=order(orderId); const ls=DB.lines.filter(l=>l.order_id===orderId);
+  if(!ls.length) return;
+  if(!ls.every(lineEditable)) return alert(isAr()?"ما يمكن التعديل — الأمر بدأ التنفيذ":"Cannot edit — already started");
+  window._editOrderId=orderId;
+  window._otype=o.order_type||"إنتاج كمي";
+  window._oext=!!ls[0].external_make;
+  if(o.order_type==="قياسات خاصة"){
+    customModels=ls.map(l=>{ const cs=l.custom_specs||{}; const m={product_id:l.product_id, age:l.size||cs.age||"", color:l.color||"", qty:l.qty||1, sleeve:cs.sleeve||"", bottom:cs.bottom||"", notes:cs.notes||""}; allMeas().forEach(x=>m[x[0]]=cs[x[0]]||""); return m; });
+    newLines=[];
+  } else {
+    newLines=ls.map(l=>({product_id:l.product_id, size:l.size||"", color:l.color||"", qty:l.qty||1}));
+    customModels=[];
+  }
+  mTab="newOrder"; localStorage.setItem("vv2_tab","newOrder"); render();
 }
 function captureOrder(){
   newLines=newLines.map((l,i)=>el("ld"+i)?{product_id:el("ld"+i).value,size:el("ls"+i).value,color:el("lc"+i).value,qty:+el("lq"+i).value||1}:l);
@@ -3251,7 +3300,11 @@ function addModel(){
   customModels.push(copy); render();
 }
 function rmModel(i){captureOrder();customModels.splice(i,1);render();}
+let _savingOrder=false;
 async function saveOrder(){
+  if(_savingOrder) return;   /* قفل ضد التكرار — يمنع إنشاء أمر مرتين */
+  _savingOrder=true;
+  try{
   captureOrder();
   const ty=window._otype||"إنتاج كمي";
   let reason=null, rnote=null, rimg=null;
@@ -3262,8 +3315,12 @@ async function saveOrder(){
     rnote=el("o_rnote").value||null;
     const f=el("o_rimg").files[0]; if(f) rimg=await uploadFile(f,"repairs");
   }
-  const {data:o,error}=await sb.from("orders").insert({order_type:ty, customer_ref:(ty==="طلب"||ty==="قياسات خاصة")?(el("o_ref")?.value||null):null,
-    repair_reason:reason, repair_note:rnote, repair_image:rimg, due_date:el("o_due").value||null}).select().single();
+  const ordFields={order_type:ty, customer_ref:(ty==="طلب"||ty==="قياسات خاصة")?(el("o_ref")?.value||null):null,
+    repair_reason:reason, repair_note:rnote, due_date:el("o_due").value||null};
+  let o, error;
+  if(window._editOrderId){ o={id:window._editOrderId}; if(rimg)ordFields.repair_image=rimg;
+    ({error}=await sb.from("orders").update(ordFields).eq("id",o.id)); }
+  else { ordFields.repair_image=rimg; ({data:o,error}=await sb.from("orders").insert(ordFields).select().single()); }
   if(error) return alert(error.message);
   let rows=[];
   if(ty==="قياسات خاصة"){
@@ -3277,15 +3334,18 @@ async function saveOrder(){
     rows=newLines.filter(l=>l.product_id).map(l=>({order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,
       external_make:!!window._oext, stage:startStageFor(l.product_id,ty,window._oext)}));
   }
-  if(!rows.length){await sb.from("orders").delete().eq("id",o.id);return alert(isAr()?"أضف قطعة واحدة على الأقل":"Add at least one item");}
+  if(!rows.length){ if(!window._editOrderId) await sb.from("orders").delete().eq("id",o.id); return alert(isAr()?"أضف قطعة واحدة على الأقل":"Add at least one item");}
+  if(window._editOrderId){ const oldIds=DB.lines.filter(l=>l.order_id===o.id).map(l=>l.id);
+    if(oldIds.length){ await sb.from("line_parts").delete().in("line_id",oldIds); await sb.from("order_lines").delete().eq("order_id",o.id); } }
   const {data:ins}=await sb.from("order_lines").insert(rows).select();
   for(const l of (ins||[])){
     if(l.stage==="sew") await genParts(l.id,l,ty,"sew");
     if(l.stage==="cut") await genParts(l.id,l,ty,"cut");
   }
   await logIt("order_new","orders",o.id, `#${o.order_no||""} · ${ty} · ${rows.length} ${isAr()?"سطر":"lines"}`);
-  newLines=[];customModels=[];window._otype="إنتاج كمي";window._oext=false;mTab="board";localStorage.setItem("vv2_tab","board");
+  newLines=[];customModels=[];window._otype="إنتاج كمي";window._oext=false;window._editOrderId=null;mTab="board";localStorage.setItem("vv2_tab","board");
   await refresh();
+  } finally { _savingOrder=false; }
 }
 
 /* ---- المنتجات ---- */
@@ -5032,6 +5092,39 @@ async function wDone(lineId, partId){
   await logIt("done","order_lines",lineId, lbl + (took!=null? ` · ${took} ${isAr()?"دقيقة":"min"}`:""), null, took!=null?{minutes:took}:null);
   await refresh();
 }
+
+/* ============ حارس عام ضد الضغط المزدوج (تعميم إصلاح تكرار الأمر على كل النظام) ============ */
+/* يمنع أي دالة حفظ/إضافة من التنفيذ مرتين وهي لسا شغّالة (نفس الدالة ونفس المدخلات).
+   مركزها هنا فقط — أي إصلاح مستقبلي نضيف اسم الدالة للقائمة وينطبق على النظام كله. */
+(function(){
+  window._inflight = window._inflight || new Set();
+  const GUARDED = ["saveOrder","poSave","sampleSave","supSave","saveProduct","saveCollection",
+    "newDesign","expSave","saveMaterial","saveWorker","scSave","tripSave","fxSaveManual",
+    "poFromSample","poPaySupAdd","poEditQtySave","poPayAdd","approveDesignPurchase","finishApprove",
+    "jobSaveImg","shootDone","addReason","chkAdd","addDesignPattern","addDesignFiles","addDesignNote",
+    "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
+    "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
+    "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone"];
+  GUARDED.forEach(function(name){
+    var orig = window[name];
+    if(typeof orig !== "function" || orig.__guarded) return;
+    function wrapped(){
+      var args = Array.prototype.slice.call(arguments);
+      var key = name;
+      try{ key = name + "|" + args.map(function(a){ return (a && typeof a==="object")?"[o]":String(a); }).join(","); }catch(e){}
+      if(window._inflight.has(key)) return;              /* نفس العملية شغّالة الحين — تجاهل الضغطة الثانية */
+      window._inflight.add(key);
+      var done = function(){ window._inflight.delete(key); };
+      var r;
+      try{ r = orig.apply(this, args); }
+      catch(e){ done(); throw e; }
+      if(r && typeof r.then === "function"){ return r.then(function(v){ done(); return v; }, function(e){ done(); throw e; }); }
+      done(); return r;
+    }
+    wrapped.__guarded = true;
+    window[name] = wrapped;
+  });
+})();
 </script>
 </body>
 </html>
