@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.33:APPV-->
+<!--APPV:2026-08-12.34:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -599,7 +599,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.33";
+const APP_VERSION="2026-08-12.34";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1747,16 +1747,31 @@ function smpRmCard(idx){ (window._smpCards||[]).splice(idx,1); window._smpCard=(
 async function smpReadCard(){
   const url=(window._smpCards||[])[0];
   if(!url) return alert(isAr()?"صوّر البزنس كارد أول":"Add a card photo first");
+  if(!NETOK) return alert(isAr()?"لازم إنترنت لقراءة الكارت":"Need internet");
   const box=el("smpCardRead"); if(box) box.textContent=isAr()?"جارٍ القراءة…":"Reading…";
   try{
-    const {data,error}=await sb.functions.invoke("read-card",{body:{imageUrl:url}});
+    /* نرسل الصورة بايتات مباشرة (base64) بدل رابطها — لأن الصورة ممكن تكون لسا معلّقة على الجهاز وما رُفعت للسيرفر */
+    const body = await cardBody(url);
+    const {data,error}=await sb.functions.invoke("read-card",{body});
     if(error) throw error;
     if(!data||!data.ok||!data.fields){ if(box) box.textContent=(isAr()?"ما قدرت أقرأ الكارت — عبّي يدوي":"Could not read")+(data&&data.error?` (${data.error})`:""); return; }
     const f=data.fields; window._smpCardFields=f;
-    const set=(idf,v)=>{ const e=el(idf); if(e&&v) e.value=v; };
+    const set=(idf,v)=>{ const e=el(idf); if(e&&v && !e.value) e.value=v; };
     set("smp_supname", f.name); set("smp_shop", f.shop_no);
     if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تمت القراءة":"Read"}</span> — ${[f.name,f.contact_person,f.phone,f.wechat?("WeChat: "+f.wechat):"",f.market,f.floor?((isAr()?"دور ":"floor ")+f.floor):""].filter(Boolean).map(esc).join(" · ")||"—"}`;
-  }catch(e){ if(box) box.textContent=isAr()?"تعذّرت القراءة — تأكد أن مفتاح الـAPI مضبوط":"Read failed — check API key setup"; }
+  }catch(e){ if(box) box.textContent=(isAr()?"تعذّرت القراءة — ":"Read failed — ")+((e&&e.message)||e); }
+}
+/* يحوّل صورة الكارت (من الطابور المحلي أو من السيرفر) إلى base64 عشان نرسلها للقارئ مباشرة */
+async function cardBody(url){
+  try{
+    const disp = await displayUrl(url);            /* blob: من IndexedDB لو معلّقة، أو رابط موقّع لو مرفوعة */
+    const resp = await fetch(disp);
+    const blob = await resp.blob();
+    const dataUrl = await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=()=>rej(rd.error||new Error("read")); rd.readAsDataURL(blob); });
+    const mm = /^data:(image\/[^;]+);base64,(.+)$/.exec(dataUrl||"");
+    if(mm) return { imageBase64: mm[2], mediaType: mm[1] };
+  }catch(e){}
+  return { imageUrl: url };                          /* احتياط: لو فشل التحويل نرسل الرابط */
 }
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
@@ -1900,6 +1915,11 @@ function supSheet(id){
   window._supEdit=id||null;
   window._supCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : [];
   openSheet(`<div class="title">${id?(isAr()?"تعديل مورد":"Edit supplier"):(isAr()?"مورد جديد":"New supplier")}</div>
+    <div class="note-box" style="background:var(--green-lt);color:var(--green-dk);padding:12px">
+      <label style="margin-top:0">${I.cam} ${isAr()?"صوّر كرت المورّد — تعبئة تلقائية":"Scan business card"}</label>
+      <input type="file" accept="image/*" capture="environment" id="sup_card" onchange="readCardSupplier(this.files[0])">
+      <div id="sup_cardStatus" class="muted" style="font-size:12px;min-height:16px;margin-top:4px"></div>
+    </div>
     <label>${isAr()?"النوع":"Kind"}</label>
     <select id="sup_kind">${SUP_KINDS.map(([k,ar,en])=>`<option value="${k}" ${x.kind===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select>
     <label>${isAr()?"الاسم":"Name"}</label><input id="sup_name" value="${esc(x.name||"")}">
@@ -1964,6 +1984,42 @@ async function supSave(){
     if(!(DB.suppliers||[]).some(x=>x.id===row.id)) DB.suppliers.unshift(row); }
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   closeSheet(); cacheDB(); render();
+}
+
+/* ====== قراءة كرت المورّد بالذكاء الاصطناعي (OCR) — نرسل الصورة مباشرة base64، ما نعتمد على رفعها أول ====== */
+async function readCard(file, map, statusId){
+  if(!file) return null;
+  const st = statusId? el(statusId) : null;
+  const setSt = (txt)=>{ if(st) st.textContent = txt; };
+  if(!NETOK){ setSt(isAr()?"⚠ لازم إنترنت لقراءة الكرت":"Need internet"); return null; }
+  setSt(isAr()?"⏳ جاري قراءة الكرت…":"Reading card…");
+  try{
+    const c = await compressImage(file, 1600, 0.85);
+    const dataUrl = await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=()=>rej(rd.error||new Error("read")); rd.readAsDataURL(c); });
+    const mm = /^data:(image\/[^;]+);base64,(.+)$/.exec(dataUrl||"");
+    if(!mm){ setSt(""); alert(isAr()?"تعذّر تجهيز الصورة":"Bad image"); return null; }
+    const { data, error } = await sb.functions.invoke("read-card", { body:{ imageBase64: mm[2], mediaType: mm[1] } });
+    if(error){ setSt(""); alert((isAr()?"فشل الاتصال بالقارئ: ":"Reader failed: ")+(error.message||error)); return null; }
+    if(!data || !data.ok || !data.fields){ setSt(""); alert((isAr()?"ما قدرت أقرأ الكرت — عبّي يدوي":"Couldn't read the card")+(data&&data.error?` (${data.error})`:"")); return null; }
+    const f = data.fields;
+    let n=0;
+    Object.keys(map||{}).forEach(k=>{
+      const box = el(map[k]); if(!box) return;
+      const v = f[k];
+      if(v!=null && String(v).trim()!=="" && !box.value){ box.value = String(v).trim(); n++; }
+    });
+    setSt((isAr()?"✓ تعبّت ":"✓ filled ")+n+(isAr()?" حقول — راجعها":" fields"));
+    return f;
+  }catch(e){ setSt(""); alert((isAr()?"خطأ: ":"Error: ")+(e.message||e)); return null; }
+}
+async function readCardSupplier(file){
+  const f = await readCard(file, {name:"sup_name", shop_no:"sup_shop", market:"sup_market", city:"sup_city", phone:"sup_phone", wechat:"sup_wechat"}, "sup_cardStatus");
+  if(!f) return;
+  const notes = el("sup_notes");
+  if(notes){
+    const extra = [ f.contact_person?((isAr()?"المسؤول: ":"Contact: ")+f.contact_person):"", f.floor?((isAr()?"طابق: ":"Floor: ")+f.floor):"" ].filter(Boolean).join(" · ");
+    if(extra) notes.value = notes.value? (notes.value+" · "+extra) : extra;
+  }
 }
 
 /* -- الحاسبة -- */
