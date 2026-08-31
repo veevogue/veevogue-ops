@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.37:APPV-->
+<!--APPV:2026-08-12.38:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -600,7 +600,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.37";
+const APP_VERSION="2026-08-12.38";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1776,7 +1776,7 @@ async function cardBody(url){
   return { imageUrl: url };                          /* احتياط: لو فشل التحويل نرسل الرابط */
 }
 /* لو ما فيه رقم وي تشات مكتوب: نلقّط الكود المربّع من صورة الكارت ونقصّه ونحفظه كصورة */
-async function cropWechatQR(cardUrl){
+async function cropQRFromImage(cardUrl){
   try{
     if(typeof jsQR!=="function") return null;
     const disp=await displayUrl(cardUrl);
@@ -1802,6 +1802,12 @@ async function cropWechatQR(cardUrl){
     const file=new File([outBlob],"wechat-qr.jpg",{type:"image/jpeg"});
     return await captureSamplePhoto(file);   /* يخزّن ويرجّع الرابط */
   }catch(e){ return null; }
+}
+/* نفحص كل صور الكارت (وجه وظهر) — الكود المربّع غالباً على الظهر */
+async function cropWechatQR(cards){
+  const list = Array.isArray(cards)? cards : (cards? [cards] : []);
+  for(const u of list){ const r=await cropQRFromImage(u); if(r) return r; }
+  return null;
 }
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
@@ -2016,12 +2022,13 @@ async function supReadCard(){
     set("sup_city",f.city); set("sup_phone",f.phone); set("sup_wechat",f.wechat);
     set("sup_floor",f.floor); set("sup_person",f.contact_person); set("sup_address",f.address);
     if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تعبّت البيانات — راجعها":"Filled — review"}</span>`;
-    /* لو ما فيه رقم وي تشات مكتوب: نلقّط الكود المربّع كصورة ونرفقه */
-    const wc=el("sup_wechat");
-    if((!wc || !wc.value) && !window._supWechatQR){
-      if(box) box.innerHTML+=` <span class="muted">· ${isAr()?"أدوّر كود وي تشات…":"scanning QR…"}</span>`;
-      const qr=await cropWechatQR(url);
-      if(qr){ window._supWechatQR=qr; supRenderQR(); if(box) box.innerHTML+=` <span style="color:var(--green-dk)">${isAr()?"· أرفقت كود وي تشات كصورة":"· WeChat QR attached"}</span>`; }
+    /* نلقّط الكود المربّع (وي تشات) من وجه/ظهر الكارت ونرفقه كصورة — دايماً لو لقيناه */
+    if(!window._supWechatQR){
+      if(box) box.innerHTML+=` <span class="muted" id="supQRstat">· ${isAr()?"أدوّر كود وي تشات…":"scanning QR…"}</span>`;
+      const qr=await cropWechatQR(window._supCards||[]);
+      const st=el("supQRstat");
+      if(qr){ window._supWechatQR=qr; supRenderQR(); if(st) st.outerHTML=`<span style="color:var(--green-dk)">· ${isAr()?"أرفقت كود وي تشات كصورة":"WeChat QR attached"}</span>`; }
+      else if(st) st.outerHTML=`<span class="muted">· ${isAr()?"ما لقيت كود وي تشات بالصورة":"no QR found"}</span>`;
     }
   }catch(e){ if(box) box.textContent=(isAr()?"تعذّرت القراءة — ":"Read failed — ")+((e&&e.message)||e); }
 }
