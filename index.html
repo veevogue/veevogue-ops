@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.35:APPV-->
+<!--APPV:2026-08-12.37:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -14,6 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Inter:wght@400;600;700;800&family=Italiana&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
   :root{
     /* محايدات نظام الواجهات */
@@ -599,7 +600,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.35";
+const APP_VERSION="2026-08-12.37";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1774,6 +1775,34 @@ async function cardBody(url){
   }catch(e){}
   return { imageUrl: url };                          /* احتياط: لو فشل التحويل نرسل الرابط */
 }
+/* لو ما فيه رقم وي تشات مكتوب: نلقّط الكود المربّع من صورة الكارت ونقصّه ونحفظه كصورة */
+async function cropWechatQR(cardUrl){
+  try{
+    if(typeof jsQR!=="function") return null;
+    const disp=await displayUrl(cardUrl);
+    const blob=await (await fetch(disp)).blob();
+    const bmp=await createImageBitmap(blob);
+    const c=document.createElement("canvas"); c.width=bmp.width; c.height=bmp.height;
+    const ctx=c.getContext("2d"); ctx.drawImage(bmp,0,0);
+    const idata=ctx.getImageData(0,0,c.width,c.height);
+    const q=jsQR(idata.data, c.width, c.height);
+    if(!q || !q.location) return null;
+    const L=q.location, xs=[L.topLeftCorner.x,L.topRightCorner.x,L.bottomLeftCorner.x,L.bottomRightCorner.x],
+          ys=[L.topLeftCorner.y,L.topRightCorner.y,L.bottomLeftCorner.y,L.bottomRightCorner.y];
+    let minx=Math.min.apply(0,xs), maxx=Math.max.apply(0,xs), miny=Math.min.apply(0,ys), maxy=Math.max.apply(0,ys);
+    const padX=(maxx-minx)*0.2, padY=(maxy-miny)*0.2;
+    minx=Math.max(0,minx-padX); miny=Math.max(0,miny-padY);
+    maxx=Math.min(c.width,maxx+padX); maxy=Math.min(c.height,maxy+padY);
+    const w=Math.round(maxx-minx), h=Math.round(maxy-miny);
+    if(w<24 || h<24) return null;
+    const oc=document.createElement("canvas"); oc.width=w; oc.height=h;
+    oc.getContext("2d").drawImage(c, minx,miny,w,h, 0,0,w,h);
+    const outBlob=await new Promise(r=>oc.toBlob(r,"image/jpeg",0.92));
+    if(!outBlob) return null;
+    const file=new File([outBlob],"wechat-qr.jpg",{type:"image/jpeg"});
+    return await captureSamplePhoto(file);   /* يخزّن ويرجّع الرابط */
+  }catch(e){ return null; }
+}
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
   const nm=(row.supplier_name||"").trim(); if(!nm) return;
@@ -1915,6 +1944,7 @@ function supSheet(id){
   const x=id? (DB.suppliers||[]).find(s=>s.id===id)||{} : {};
   window._supEdit=id||null;
   window._supCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : [];
+  window._supWechatQR=x.wechat_qr||null;
   openSheet(`<div class="title">${id?(isAr()?"تعديل مورد":"Edit supplier"):(isAr()?"مورد جديد":"New supplier")}</div>
     <label>${isAr()?"النوع":"Kind"}</label>
     <select id="sup_kind">${SUP_KINDS.map(([k,ar,en])=>`<option value="${k}" ${x.kind===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select>
@@ -1935,10 +1965,12 @@ function supSheet(id){
       <div><label>WeChat</label><input id="sup_wechat" value="${esc(x.wechat||"")}"></div>
       <div><label>${isAr()?"اسم الموظف":"Staff name"}</label><input id="sup_person" value="${esc(x.contact_person||"")}"></div>
     </div>
+    <div id="supQRbox">${x.wechat_qr?`<div class="muted" style="font-size:12px">${isAr()?"كود وي تشات:":"WeChat QR:"}</div><img src="${esc(x.wechat_qr)}" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(x.wechat_qr)}')">`:""}</div>
     <label>${isAr()?"بزنس كارد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
     <input type="file" accept="image/*" multiple id="sup_cardfile" onchange="supAddCard(this.files)">
     <div id="supCardRow" class="pillrow" style="min-height:24px"></div>
     <div id="supCardRead" class="muted" style="font-size:12px;margin-top:4px"></div>
+    <label>${isAr()?"العنوان (كامل من الكارت)":"Address"}</label><textarea id="sup_address" rows="2">${esc(x.address||"")}</textarea>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="sup_notes">${esc(x.notes||"")}</textarea>
     <button class="btn btn-ink btn-big" onclick="supSave()">${t("save")}</button>`);
   supRenderCards();
@@ -1958,6 +1990,15 @@ async function supAddCard(files){
   if(before===0 && (window._supCards||[]).length) supReadCard();   /* قراءة تلقائية أول ما تضيف الكرت — بدون زر */
 }
 function supRmCard(idx){ (window._supCards||[]).splice(idx,1); supRenderCards(); }
+function supRenderQR(){
+  const box=el("supQRbox"); if(!box) return;
+  const u=window._supWechatQR;
+  box.innerHTML = u? `<div class="muted" style="font-size:12px">${isAr()?"كود وي تشات:":"WeChat QR:"}</div>
+    <span style="position:relative;display:inline-block">
+      <img src="${esc(u)}" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(u)}')">
+      <button type="button" onclick="window._supWechatQR=null;supRenderQR()" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>
+    </span>` : "";
+}
 /* قراءة كرت المورّد وتعبئة الحقول تلقائياً — نفس آلية العينة (نرسل بايتات الصورة مباشرة) */
 async function supReadCard(){
   const url=(window._supCards||[])[0];
@@ -1973,8 +2014,15 @@ async function supReadCard(){
     const set=(idf,v)=>{ const e=el(idf); if(e&&v && !e.value) e.value=String(v); };
     set("sup_name",f.name); set("sup_shop",f.shop_no); set("sup_market",f.market);
     set("sup_city",f.city); set("sup_phone",f.phone); set("sup_wechat",f.wechat);
-    set("sup_floor",f.floor); set("sup_person",f.contact_person);
+    set("sup_floor",f.floor); set("sup_person",f.contact_person); set("sup_address",f.address);
     if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تعبّت البيانات — راجعها":"Filled — review"}</span>`;
+    /* لو ما فيه رقم وي تشات مكتوب: نلقّط الكود المربّع كصورة ونرفقه */
+    const wc=el("sup_wechat");
+    if((!wc || !wc.value) && !window._supWechatQR){
+      if(box) box.innerHTML+=` <span class="muted">· ${isAr()?"أدوّر كود وي تشات…":"scanning QR…"}</span>`;
+      const qr=await cropWechatQR(url);
+      if(qr){ window._supWechatQR=qr; supRenderQR(); if(box) box.innerHTML+=` <span style="color:var(--green-dk)">${isAr()?"· أرفقت كود وي تشات كصورة":"· WeChat QR attached"}</span>`; }
+    }
   }catch(e){ if(box) box.textContent=(isAr()?"تعذّرت القراءة — ":"Read failed — ")+((e&&e.message)||e); }
 }
 function viewSupplierCard(id){ const sp=(DB.suppliers||[]).find(x=>x.id===id); if(sp&&sp.card_photos&&sp.card_photos.length) viewGallery(sp.card_photos,0); }
@@ -1984,6 +2032,8 @@ async function supSave(){
     wechat:el("sup_wechat").value||null, notes:el("sup_notes").value||null,
     plaza:el("sup_plaza")?el("sup_plaza").value||null:null, floor:el("sup_floor")?el("sup_floor").value||null:null,
     contact_person:el("sup_person")?el("sup_person").value||null:null,
+    address:el("sup_address")?el("sup_address").value||null:null,
+    wechat_qr:window._supWechatQR||null,
     card_photos:window._supCards||[]};
   if(!row.name) return alert(isAr()?"اكتب الاسم":"Name?");
   let error;
