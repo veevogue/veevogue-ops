@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.38:APPV-->
+<!--APPV:2026-08-12.39:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -600,7 +600,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.38";
+const APP_VERSION="2026-08-12.39";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1776,38 +1776,46 @@ async function cardBody(url){
   return { imageUrl: url };                          /* احتياط: لو فشل التحويل نرسل الرابط */
 }
 /* لو ما فيه رقم وي تشات مكتوب: نلقّط الكود المربّع من صورة الكارت ونقصّه ونحفظه كصورة */
-async function cropQRFromImage(cardUrl){
+async function bmpFromSrc(src){
+  let blob;
+  if(src instanceof Blob) blob=src;
+  else { const disp=await displayUrl(src); blob=await (await fetch(disp)).blob(); }
+  return await createImageBitmap(blob);
+}
+async function cropQRFromImage(src){
   try{
-    if(typeof jsQR!=="function") return null;
-    const disp=await displayUrl(cardUrl);
-    const blob=await (await fetch(disp)).blob();
-    const bmp=await createImageBitmap(blob);
-    const c=document.createElement("canvas"); c.width=bmp.width; c.height=bmp.height;
-    const ctx=c.getContext("2d"); ctx.drawImage(bmp,0,0);
-    const idata=ctx.getImageData(0,0,c.width,c.height);
-    const q=jsQR(idata.data, c.width, c.height);
-    if(!q || !q.location) return null;
-    const L=q.location, xs=[L.topLeftCorner.x,L.topRightCorner.x,L.bottomLeftCorner.x,L.bottomRightCorner.x],
-          ys=[L.topLeftCorner.y,L.topRightCorner.y,L.bottomLeftCorner.y,L.bottomRightCorner.y];
-    let minx=Math.min.apply(0,xs), maxx=Math.max.apply(0,xs), miny=Math.min.apply(0,ys), maxy=Math.max.apply(0,ys);
-    const padX=(maxx-minx)*0.2, padY=(maxy-miny)*0.2;
-    minx=Math.max(0,minx-padX); miny=Math.max(0,miny-padY);
-    maxx=Math.min(c.width,maxx+padX); maxy=Math.min(c.height,maxy+padY);
-    const w=Math.round(maxx-minx), h=Math.round(maxy-miny);
-    if(w<24 || h<24) return null;
-    const oc=document.createElement("canvas"); oc.width=w; oc.height=h;
-    oc.getContext("2d").drawImage(c, minx,miny,w,h, 0,0,w,h);
-    const outBlob=await new Promise(r=>oc.toBlob(r,"image/jpeg",0.92));
-    if(!outBlob) return null;
-    const file=new File([outBlob],"wechat-qr.jpg",{type:"image/jpeg"});
-    return await captureSamplePhoto(file);   /* يخزّن ويرجّع الرابط */
+    const bmp=await bmpFromSrc(src);
+    const scales=[1]; if(Math.max(bmp.width,bmp.height)<2400) scales.push(2);
+    for(const s of scales){
+      const c=document.createElement("canvas"); c.width=Math.round(bmp.width*s); c.height=Math.round(bmp.height*s);
+      const ctx=c.getContext("2d"); if(s>1) ctx.imageSmoothingEnabled=false; ctx.drawImage(bmp,0,0,c.width,c.height);
+      const idata=ctx.getImageData(0,0,c.width,c.height);
+      const q=jsQR(idata.data, c.width, c.height, {inversionAttempts:"attemptBoth"});
+      if(q && q.location){
+        const L=q.location, xs=[L.topLeftCorner.x,L.topRightCorner.x,L.bottomLeftCorner.x,L.bottomRightCorner.x],
+              ys=[L.topLeftCorner.y,L.topRightCorner.y,L.bottomLeftCorner.y,L.bottomRightCorner.y];
+        let minx=Math.min.apply(0,xs), maxx=Math.max.apply(0,xs), miny=Math.min.apply(0,ys), maxy=Math.max.apply(0,ys);
+        const padX=(maxx-minx)*0.25, padY=(maxy-miny)*0.25;
+        minx=Math.max(0,minx-padX); miny=Math.max(0,miny-padY);
+        maxx=Math.min(c.width,maxx+padX); maxy=Math.min(c.height,maxy+padY);
+        const w=Math.round(maxx-minx), h=Math.round(maxy-miny);
+        if(w<24 || h<24) continue;
+        const oc=document.createElement("canvas"); oc.width=w; oc.height=h;
+        oc.getContext("2d").drawImage(c, minx,miny,w,h, 0,0,w,h);
+        const outBlob=await new Promise(r=>oc.toBlob(r,"image/jpeg",0.92));
+        if(!outBlob) continue;
+        return await captureSamplePhoto(new File([outBlob],"wechat-qr.jpg",{type:"image/jpeg"}));
+      }
+    }
+    return null;
   }catch(e){ return null; }
 }
-/* نفحص كل صور الكارت (وجه وظهر) — الكود المربّع غالباً على الظهر */
-async function cropWechatQR(cards){
-  const list = Array.isArray(cards)? cards : (cards? [cards] : []);
-  for(const u of list){ const r=await cropQRFromImage(u); if(r) return r; }
-  return null;
+/* نفحص كل صور الكارت (وجه وظهر) — نفضّل الملفات الأصلية (دقة كاملة) قبل المخزّنة المضغوطة */
+async function cropWechatQR(sources){
+  if(typeof jsQR!=="function") return {status:"nolib"};
+  const list = Array.isArray(sources)? sources : (sources? [sources] : []);
+  for(const s of list){ const u=await cropQRFromImage(s); if(u) return {status:"found", url:u}; }
+  return {status:"none"};
 }
 async function ensurePotentialSupplier(row){
   if(!row.supplier_name || row.supplier_id) return;
@@ -1951,6 +1959,7 @@ function supSheet(id){
   window._supEdit=id||null;
   window._supCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : [];
   window._supWechatQR=x.wechat_qr||null;
+  window._supCardFiles=[];
   openSheet(`<div class="title">${id?(isAr()?"تعديل مورد":"Edit supplier"):(isAr()?"مورد جديد":"New supplier")}</div>
     <label>${isAr()?"النوع":"Kind"}</label>
     <select id="sup_kind">${SUP_KINDS.map(([k,ar,en])=>`<option value="${k}" ${x.kind===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select>
@@ -1974,8 +1983,8 @@ function supSheet(id){
     <div id="supQRbox">${x.wechat_qr?`<div class="muted" style="font-size:12px">${isAr()?"كود وي تشات:":"WeChat QR:"}</div><img src="${esc(x.wechat_qr)}" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(x.wechat_qr)}')">`:""}</div>
     <label>${isAr()?"بزنس كارد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
     <input type="file" accept="image/*" multiple id="sup_cardfile" onchange="supAddCard(this.files)">
-    <div id="supCardRow" class="pillrow" style="min-height:24px"></div>
-    <div id="supCardRead" class="muted" style="font-size:12px;margin-top:4px"></div>
+    <div id="supCardRow" class="pillrow" style="min-height:24px;padding-bottom:20px"></div>
+    <div id="supCardRead" class="muted" style="font-size:12px;margin-top:8px;line-height:1.7"></div>
     <label>${isAr()?"العنوان (كامل من الكارت)":"Address"}</label><textarea id="sup_address" rows="2">${esc(x.address||"")}</textarea>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="sup_notes">${esc(x.notes||"")}</textarea>
     <button class="btn btn-ink btn-big" onclick="supSave()">${t("save")}</button>`);
@@ -1989,13 +1998,13 @@ function supRenderCards(){
     <button type="button" onclick="supRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("");
 }
 async function supAddCard(files){
-  window._supCards=window._supCards||[];
+  window._supCards=window._supCards||[]; window._supCardFiles=window._supCardFiles||[];
   const before=window._supCards.length;
-  for(const fl of [...(files||[])]){ if(window._supCards.length>=2) break; const u=await captureSamplePhoto(fl); if(u) window._supCards.push(u); }
+  for(const fl of [...(files||[])]){ if(window._supCards.length>=2) break; const u=await captureSamplePhoto(fl); if(u){ window._supCards.push(u); window._supCardFiles.push(fl); } }
   supRenderCards();
   if(before===0 && (window._supCards||[]).length) supReadCard();   /* قراءة تلقائية أول ما تضيف الكرت — بدون زر */
 }
-function supRmCard(idx){ (window._supCards||[]).splice(idx,1); supRenderCards(); }
+function supRmCard(idx){ (window._supCards||[]).splice(idx,1); (window._supCardFiles||[]).splice(idx,1); supRenderCards(); }
 function supRenderQR(){
   const box=el("supQRbox"); if(!box) return;
   const u=window._supWechatQR;
@@ -2021,14 +2030,16 @@ async function supReadCard(){
     set("sup_name",f.name); set("sup_shop",f.shop_no); set("sup_market",f.market);
     set("sup_city",f.city); set("sup_phone",f.phone); set("sup_wechat",f.wechat);
     set("sup_floor",f.floor); set("sup_person",f.contact_person); set("sup_address",f.address);
-    if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تعبّت البيانات — راجعها":"Filled — review"}</span>`;
-    /* نلقّط الكود المربّع (وي تشات) من وجه/ظهر الكارت ونرفقه كصورة — دايماً لو لقيناه */
+    if(box) box.innerHTML=`<div style="color:var(--green-dk)">✓ ${isAr()?"تعبّت البيانات — راجعها":"Filled — review"}</div>`;
+    /* نلقّط الكود المربّع (وي تشات) من وجه/ظهر الكارت ونرفقه كصورة — نفضّل الملفات الأصلية للدقة */
     if(!window._supWechatQR){
-      if(box) box.innerHTML+=` <span class="muted" id="supQRstat">· ${isAr()?"أدوّر كود وي تشات…":"scanning QR…"}</span>`;
-      const qr=await cropWechatQR(window._supCards||[]);
+      if(box) box.innerHTML+=`<div class="muted" id="supQRstat">${isAr()?"أدوّر كود وي تشات…":"scanning QR…"}</div>`;
+      const src=(window._supCardFiles&&window._supCardFiles.length)? window._supCardFiles : (window._supCards||[]);
+      const res=await cropWechatQR(src);
       const st=el("supQRstat");
-      if(qr){ window._supWechatQR=qr; supRenderQR(); if(st) st.outerHTML=`<span style="color:var(--green-dk)">· ${isAr()?"أرفقت كود وي تشات كصورة":"WeChat QR attached"}</span>`; }
-      else if(st) st.outerHTML=`<span class="muted">· ${isAr()?"ما لقيت كود وي تشات بالصورة":"no QR found"}</span>`;
+      if(res.status==="found"){ window._supWechatQR=res.url; supRenderQR(); if(st) st.outerHTML=`<div style="color:var(--green-dk)">${isAr()?"أرفقت كود وي تشات كصورة ✓":"WeChat QR attached ✓"}</div>`; }
+      else if(res.status==="nolib"){ if(st) st.outerHTML=`<div class="muted">${isAr()?"تعذّر تحميل قارئ الكود (تأكد من الإنترنت وأعد المحاولة)":"QR reader not loaded"}</div>`; }
+      else if(st) st.outerHTML=`<div class="muted">${isAr()?"ما لقيت كود وي تشات واضح — لو فيه كود صوّره أقرب وأوضح":"no QR found — try a clearer, closer photo"}</div>`;
     }
   }catch(e){ if(box) box.textContent=(isAr()?"تعذّرت القراءة — ":"Read failed — ")+((e&&e.message)||e); }
 }
