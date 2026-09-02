@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.43:APPV-->
+<!--APPV:2026-08-12.44:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -600,7 +600,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.43";
+const APP_VERSION="2026-08-12.44";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3209,12 +3209,24 @@ function allBom(p){
   if(!out.length) (p.bom||[]).forEach(b=>out.push(b));   /* منتجات قديمة */
   return out;
 }
+/* استهلاك الخام للسطر — يدعم استهلاك عام أو مخصّص لكل قياس (per_size جاهز للمستقبل) */
+function bomQtyForSize(b, size){
+  if(b && b.per_size && size!=null && b.per_size[size]!=null) return Number(b.per_size[size])||0;
+  return Number(b&&b.qty)||0;
+}
+/* نسبة الزيادة على الخام = قصور + سبير من قناة مورّد الخام (أو القناة الحالية) */
+function matMarginPct(m){
+  const sup = m&&m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
+  const ck = (sup&&sup.channel) || chChannel || "china";
+  const c = chan(ck);
+  return ((c.shortage||0)+(c.spare||0))/100;
+}
 function purchaseFor(lines){
   const need={};
   lines.forEach(l=>{
     const p=product(l.product_id);
     allBom(p).forEach(b=>{
-      need[b.material_id]=(need[b.material_id]||0)+ (b.qty*(l.qty||1));
+      need[b.material_id]=(need[b.material_id]||0)+ (bomQtyForSize(b,l.size)*(l.qty||1));
     });
   });
   return need;
@@ -3222,16 +3234,28 @@ function purchaseFor(lines){
 function showPurchase(orderId){
   const lines=DB.lines.filter(l=>l.order_id===orderId);
   const need=purchaseFor(lines);
-  const rows=Object.entries(need);
   const noBom=[...new Set(lines.map(l=>l.product_id))].filter(pid=>!allBom(product(pid)).length);
-  let total=0;
+  /* نجمع حسب المورّد */
+  const groups={}; let grand=0;
+  Object.entries(need).forEach(([id,rawQ])=>{
+    const m=material(id);
+    const isMeter=(m.unit||"")==="متر";
+    const q = isMeter? rawQ*(1+matMarginPct(m)) : rawQ;     /* الزيادة تنطبق على الأمتار */
+    const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
+    const key = sup? sup.id : "_none";
+    const cost = m.price? m.price*q : null; if(cost) grand+=cost;
+    (groups[key]=groups[key]||{name: sup? sup.name : (isAr()?"بدون مورّد — حدده لاحقاً":"No supplier yet"), rows:[], sub:0}).rows.push({m,q,cost});
+    if(cost) groups[key].sub+=cost;
+  });
+  const gEntries=Object.entries(groups);
+  const section=([key,g])=>`<div class="sechead" style="font-size:15px">${I.pack} ${esc(g.name)}${g.sub?` <span class="muted" style="font-weight:600">· ${Math.round(g.sub*100)/100}</span>`:""}</div>
+    <table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
+    ${g.rows.map(({m,q,cost})=>`<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
+      <td><b>${Math.round(q*100)/100}</b> ${esc(m.unit||"")}</td><td>${cost?Math.round(cost*100)/100:"—"}</td></tr>`).join("")}</table>`;
   openSheet(`<div class="title">${I.pack} ${isAr()?"قائمة الشراء التقديرية":"Purchase list"} — ${t("order")} #${order(orderId).order_no}</div>
-    ${rows.length?`<table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
-      ${rows.map(([id,q])=>{const m=material(id); const c=m.price? m.price*q:null; if(c) total+=c;
-        return `<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
-        <td><b>${Math.round(q*100)/100}</b> ${esc(m.unit||"")}</td><td>${c?Math.round(c*100)/100:"—"}</td></tr>`;}).join("")}
-      ${total?`<tr><td colspan="3"><b>${isAr()?"الإجمالي":"Total"}</b></td><td><b>${Math.round(total*100)/100}</b></td></tr>`:""}</table>`
-    :`<div class="empty">${isAr()?"ما في خامات مربوطة بمنتجات هذا الأمر":"No materials linked"}</div>`}
+    <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"الكميات تشمل الزيادة (قصور + سبير) من إعدادات القناة، ومجمّعة حسب المورّد.":"Includes channel margin, grouped by supplier."}</div>
+    ${gEntries.length? gEntries.map(section).join("") : `<div class="empty">${isAr()?"ما في خامات مربوطة بمنتجات هذا الأمر":"No materials linked"}</div>`}
+    ${grand?`<div class="lineitem" style="font-weight:800"><div>${isAr()?"الإجمالي التقديري":"Grand total"}</div><div>${Math.round(grand*100)/100}</div></div>`:""}
     ${noBom.length?`<div class="note-box">${isAr()?"منتجات بدون خامات مسجلة":"Products without materials"}: ${noBom.map(pid=>esc(pname(product(pid)))).join(" · ")}</div>`:""}
     <button class="btn btn-ghost btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
 }
@@ -4405,6 +4429,7 @@ async function finishApprove(id){
   const est = (d.sample_started_at&&d.sample_finished_at)? mins(d.sample_started_at,d.sample_finished_at) : null;
   const {data:p,error}=await sb.from("products").insert({
     name, name_en:el("ap_name_en").value||null,
+    sku:d.sku||genSKU("design"),                       /* الكود ينتقل من التصميم — نمشي على نفس الكود */
     images:[...(d.sketches||[]),...(d.mood||[])].slice(0,6),
     size_chart:chart, notes:(d.notes||[]).map(n=>n.t).join(" | ")||null,
     est_sew_min:est
@@ -4847,19 +4872,21 @@ function renderWorkersBox(){
   </div>`:"";})()}
   <div class="card"><div class="title">${I.pack} ${isAr()?"سجل الخامات":"Materials"}</div>
     <div class="grid3">
-      <div><label>${isAr()?"الكود":"SKU"}</label><input id="m_sku" dir="ltr"></div>
+      <div><label>${isAr()?"الكود (تلقائي)":"SKU (auto)"}</label><input id="m_sku" dir="ltr" placeholder="${isAr()?"يتولّد تلقائياً":"auto"}"></div>
       <div><label>${isAr()?"الاسم":"Name"}</label><input id="m_name"></div>
       <div><label>${isAr()?"اللون":"Color"}</label><input id="m_color"></div>
     </div>
     <div class="grid3">
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="m_unit"><option>متر</option><option>حبة</option><option>كيلو</option><option>لفة</option></select></div>
-      <div><label>${isAr()?"المورد":"Supplier"}</label><input id="m_sup"></div>
+      <div><label>${isAr()?"المورّد (تقدر تحدده لاحقاً)":"Supplier (later)"}</label><select id="m_supid"><option value="">${isAr()?"— لاحقاً —":"— later —"}</option>${(DB.suppliers||[]).map(s=>`<option value="${s.id}">${esc(s.name||"")}${s.shop_no?` (${esc(s.shop_no)})`:""}</option>`).join("")}</select></div>
       <div><label>${isAr()?"السعر":"Price"}</label><input id="m_price" inputmode="decimal"></div>
     </div>
     <button class="btn btn-ok btn-big" onclick="saveMaterial()">${t("add")}</button>
-    ${(DB.materials||[]).filter(m=>m.active).map(m=>`<div class="lineitem swipe">
-      <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}${m.supplier?` · ${esc(m.supplier)}`:""}</span></div>
-      ${rowMenu(esc(m.name),[{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delRow("materials",m.id,reloadWorkers)}])}</div>`).join("")}
+    ${(DB.materials||[]).filter(m=>m.active).map(m=>{ const msup=m.supplier_id?(DB.suppliers||[]).find(s=>s.id===m.supplier_id):null; const supTxt=msup?msup.name:(m.supplier||"");
+      return `<div class="lineitem swipe">
+      <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}</span>
+        <div class="muted" style="font-size:12px">${supTxt?`${I.pack} ${esc(supTxt)}`:`<span style="color:var(--wine)">${isAr()?"بدون مورّد — حدده لاحقاً":"no supplier"}</span>`}</div></div>
+      ${rowMenu(esc(m.name),[{label:isAr()?"ربط/تغيير المورّد":"Set supplier", icon:I.pack, fn:()=>matSupplierSheet(m.id)},{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delRow("materials",m.id,reloadWorkers)}])}</div>`;}).join("")}
   </div>
   <div class="card"><div class="title">${I.fix} ${isAr()?"أسباب التصليح":"Repair reasons"}</div>
     ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
@@ -4896,10 +4923,26 @@ async function doWipe(){
 }
 async function saveMaterial(){
   const name=el("m_name").value.trim(); if(!name) return alert(isAr()?"اكتب اسم الخام":"Name?");
+  const supId=el("m_supid")?el("m_supid").value||null:null;
   const {error}=await sb.from("materials").insert({sku:el("m_sku").value||genSKU("material"), name, color:el("m_color").value||null,
-    unit:el("m_unit").value, supplier:el("m_sup").value||null, price:parseFloat(el("m_price").value)||null});
+    unit:el("m_unit").value, supplier_id:supId, price:parseFloat(el("m_price").value)||null});
   if(error) return alert(error.message);
   await reloadWorkers();
+}
+/* ربط/تغيير مورّد الخام لاحقاً — يناسب: تاخذ الخام من الكويت وتلقى مورّده بالصين بعدين */
+function matSupplierSheet(mid){
+  const m=(DB.materials||[]).find(x=>x.id===mid)||{};
+  openSheet(`<div class="title">${I.pack} ${isAr()?"مورّد الخام":"Material supplier"} — ${esc(m.name||"")}</div>
+    <label>${isAr()?"اختر المورّد":"Supplier"}</label>
+    <select id="ms_sup"><option value="">${isAr()?"— بدون —":"— none —"}</option>${(DB.suppliers||[]).map(s=>`<option value="${s.id}" ${m.supplier_id===s.id?"selected":""}>${esc(s.name||"")}${s.shop_no?` (${esc(s.shop_no)})`:""}</option>`).join("")}</select>
+    <div class="muted" style="font-size:12px;margin-top:6px">${isAr()?"ما لقيت المورّد؟ سجّله من تبويب الصين ← الموردين، وبعدين ارجع اربطه هنا.":"Add the supplier first in China ← Suppliers."}</div>
+    <button class="btn btn-ink btn-big" onclick="saveMatSupplier('${mid}')">${t("save")}</button>`);
+}
+async function saveMatSupplier(mid){
+  const supId=el("ms_sup").value||null;
+  await sb.from("materials").update({supplier_id:supId}).eq("id",mid);
+  const m=(DB.materials||[]).find(x=>x.id===mid); if(m) m.supplier_id=supId;
+  closeSheet(); cacheDB(); await reloadWorkers();
 }
 async function delMaterial(id){
   const used=DB.products.some(p=>allBom(p).some(b=>b.material_id===id));
