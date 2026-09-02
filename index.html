@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.44:APPV-->
+<!--APPV:2026-08-12.45:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -600,7 +600,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.44";
+const APP_VERSION="2026-08-12.45";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3971,8 +3971,12 @@ async function delProduct(id, force){
     }
     await sb.from("photoshoots").delete().eq("product_id",id);
   }
+  /* لو المنتج جاي من تصميم: نرجّع التصميم قابل للتعديل بدل ما يعلّق على منتج محذوف */
+  const dlink=(DB.designs||[]).find(x=>x.product_id===id);
+  if(dlink){ await sb.from("design_projects").update({product_id:null, stage:"notes", status:"عينة"}).eq("id",dlink.id); }
   await logIt("del","products",id, pname(product(id)));
-  await sb.from("products").delete().eq("id",id);
+  const {error}=await sb.from("products").delete().eq("id",id);
+  if(error){ alert((isAr()?"ما انمسح المنتج: ":"Delete failed: ")+error.message); await refresh(); return; }
   await refresh();
 }
 function showChart(pid, size){
@@ -4336,12 +4340,18 @@ function openDesign(id){
       <button class="btn btn-ok btn-big" onclick="approveSample('${id}')">${I.done} ${isAr()?"اعتماد العينة":"Approve sample"}</button>`;
   } else {
     body=`<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${I.done} ${isAr()?"معتمد وتحوّل لمنتج":"Approved → product"}</div>
-      ${d.product_id?`<button class="btn btn-ghost btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}`;
+      ${designRecap(d)}
+      ${imgs(d.sketches)}
+      ${d.materials?`<div class="note-box"><b>${isAr()?"الخامات:":"Materials:"}</b> ${esc(d.materials)}</div>`:""}
+      <div class="dsec">${checklistBlock(d)}</div>
+      ${designHistory(d)}
+      ${d.product_id?`<button class="btn btn-ink btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}
+      <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','notes')">↩ ${isAr()?"رجوع خطوة (فتح التصميم للتعديل)":"Back a step"}</button>`;
   }
   openSheet(`<div class="title" style="margin-bottom:4px">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}</div>
     ${designStepper(d)}
     ${body}
-    ${session.role==="manager"&&st!=="approved"?`<button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
+    ${session.role==="manager"?`<button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
 }
 function captureDChart(){Object.keys(window._dchart||{}).forEach(s=>{MEAS.forEach(m=>{const i=el(`dc_${s}_${m[0]}`); if(i) window._dchart[s][m[0]]=i.value;});});}
 function redrawDChart(){
@@ -4427,16 +4437,22 @@ async function finishApprove(id){
   if(!sizes.length) return alert(isAr()?"حدد الأعمار وجدول القياسات":"Add sizes");
   const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
   const est = (d.sample_started_at&&d.sample_finished_at)? mins(d.sample_started_at,d.sample_finished_at) : null;
-  const {data:p,error}=await sb.from("products").insert({
-    name, name_en:el("ap_name_en").value||null,
+  const fields={ name, name_en:el("ap_name_en").value||null,
     sku:d.sku||genSKU("design"),                       /* الكود ينتقل من التصميم — نمشي على نفس الكود */
     images:[...(d.sketches||[]),...(d.mood||[])].slice(0,6),
     size_chart:chart, notes:(d.notes||[]).map(n=>n.t).join(" | ")||null,
-    est_sew_min:est
-  }).select().single();
+    est_sew_min:est };
+  let p, error;
+  const existing = d.product_id && (DB.products||[]).some(x=>x.id===d.product_id);
+  if(existing){                                         /* رجّع خطوة وأعاد الاعتماد → نحدّث نفس المنتج بدل ما ننشئ نسخة مكررة */
+    ({error}=await sb.from("products").update(fields).eq("id",d.product_id));
+    p={id:d.product_id};
+  } else {
+    ({data:p,error}=await sb.from("products").insert(fields).select().single());
+  }
   if(error) return alert(error.message);
   await sb.from("design_projects").update({stage:"approved",status:"معتمد",product_id:p.id,final_name:name,final_name_en:el("ap_name_en").value||null,size_chart:chart}).eq("id",id);
-  await sb.from("photoshoots").insert({product_id:p.id});
+  if(!existing) await sb.from("photoshoots").insert({product_id:p.id});
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
 }
