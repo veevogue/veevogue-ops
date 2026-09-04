@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.48:APPV-->
+<!--APPV:2026-08-12.49:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -606,7 +606,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.48";
+const APP_VERSION="2026-08-12.49";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3345,6 +3345,67 @@ function purchaseFor(lines){
   });
   return need;
 }
+/* أوامر الشراء الفعلية المولّدة من أمر إنتاج */
+function posOfOrder(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===orderId && x.stage==="production"); }
+
+/* تحويل القائمة التقديرية إلى أوامر شراء فعلية — مجمّعة حسب المورّد */
+async function createPOsFromOrder(orderId){
+  const o=order(orderId); if(!o) return;
+  const lines=DB.lines.filter(l=>l.order_id===orderId);
+  const need=purchaseFor(lines);
+  if(!Object.keys(need).length) return alert(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked");
+
+  const existing=posOfOrder(orderId);
+  const locked=existing.filter(x=>x.status!=="planned" || (x.pay_log||[]).length);
+  const replaceable=existing.filter(x=>!locked.some(y=>y.id===x.id));
+  if(existing.length){
+    const msg=isAr()
+      ? `فيه ${existing.length} أمر شراء مولّد لهذا الأمر.\n${locked.length?`${locked.length} منها مدفوع أو مُرسل — ما راح تنمس.\n`:""}نعيد توليد ${replaceable.length}؟`
+      : `${existing.length} POs exist. Regenerate ${replaceable.length}?`;
+    if(!confirm(msg)) return;
+  }
+
+  const tr=activeTrip();
+  const rows=[]; let skipped=0;
+  Object.entries(need).forEach(([mid,rawQ])=>{
+    const m=material(mid); if(!m) return;
+    const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
+    if(!sup){ skipped++; return; }                     /* يحتاج مورّد — يبقى بقائمة البحث */
+    const isMeter=(m.unit||"")==="متر";
+    const withMargin=rawQ*(1+matMarginPct(m));
+    const qty = isMeter? Math.round(withMargin*100)/100 : Math.ceil(withMargin);
+    const ck = sup.channel || chChannel || "china";
+    let buy_unit, buy_qty, plan_meters=null, qty_yd=null, plan_qty=null;
+    if(!isMeter){ buy_unit="count"; buy_qty=qty; plan_qty=qty; }
+    else if(ck==="china"){ buy_unit="yard"; buy_qty=Math.ceil(qty/YARD); plan_meters=qty; qty_yd=buy_qty; }
+    else { buy_unit="meter"; buy_qty=qty; plan_meters=qty; }
+    rows.push({id:newId(), order_id:orderId, trip_id:tr?tr.id:null, channel:ck,
+      supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
+      kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
+      unit_price:m.price||null, currency:chan(ck).currency||"KWD",
+      deliver_status:"planned", pay_log:[], status:"planned", stage:"production"});
+  });
+
+  if(!rows.length) return alert(isAr()
+    ? `ما قدرنا ننشئ أوامر — كل الخامات (${skipped}) بدون مورّد. حدّد لها موردين أول.`
+    : "All materials lack a supplier.");
+
+  for(const x of replaceable){
+    await sb.from("purchases").delete().eq("id",x.id);
+    DB.purchases=(DB.purchases||[]).filter(z=>z.id!==x.id);
+  }
+  const {error}=await sb.from("purchases").insert(rows);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  rows.forEach(r=>{ if(!(DB.purchases||[]).some(z=>z.id===r.id)) DB.purchases.unshift(r); });
+  cacheDB();
+  await logIt("po_gen","orders",orderId, `${rows.length} ${isAr()?"أمر شراء إنتاج":"production POs"}`);
+  const sups=[...new Set(rows.map(r=>r.supplier_name))].length;
+  alert(isAr()
+    ? `تم إنشاء ${rows.length} أمر شراء على ${sups} مورّد.${skipped?`\n\n🔍 ${skipped} خامة بدون مورّد — باقية بقائمة البحث.`:""}`
+    : `Created ${rows.length} POs.`);
+  closeSheet(); await refresh();
+}
+
 function showPurchase(orderId){
   const lines=DB.lines.filter(l=>l.order_id===orderId);
   const need=purchaseFor(lines);
@@ -3373,6 +3434,9 @@ function showPurchase(orderId){
     ${gEntries.length? gEntries.map(section).join("") : `<div class="empty">${isAr()?"ما في خامات مربوطة بمنتجات هذا الأمر":"No materials linked"}</div>`}
     ${grand?`<div class="lineitem" style="font-weight:800"><div>${isAr()?"الإجمالي التقديري":"Grand total"}</div><div>${Math.round(grand*100)/100}</div></div>`:""}
     ${noBom.length?`<div class="note-box">${isAr()?"منتجات بدون خامات مسجلة":"Products without materials"}: ${noBom.map(pid=>esc(pname(product(pid)))).join(" · ")}</div>`:""}
+    ${(()=>{ const ex=posOfOrder(orderId); return ex.length
+        ? `<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${isAr()?`مولّد لهذا الأمر: <b>${ex.length}</b> أمر شراء`:`${ex.length} POs generated`}</div>` : ""; })()}
+    <button class="btn btn-ink btn-big" onclick="createPOsFromOrder('${orderId}')">${isAr()?"أنشئ أوامر الشراء الفعلية":"Create purchase orders"}</button>
     <button class="btn btn-ghost btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
 }
 async function shipLine(id){await moveLine(id,"shipped");await refresh();}
@@ -5519,7 +5583,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
-    "photoAudit","syncPhotosNow","addNewBomMat"];
+    "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder"];
   GUARDED.forEach(function(name){
     var orig = window[name];
     if(typeof orig !== "function" || orig.__guarded) return;
