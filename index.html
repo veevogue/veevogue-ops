@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.56:APPV-->
+<!--APPV:2026-08-12.57:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -667,6 +667,54 @@ async function poReceive(poId){
 }
 function manUnitAr(u){ return u==="yard"?"ياردة":(u==="count"?"حبة":"متر"); }
 
+/* استلام كل خامات وإكسسوارات أمر الإنتاج دفعة واحدة — بالكميات المطلوبة، بدون تعبئة يدوية */
+async function receiveAllForOrder(orderId){
+  const pend=(DB.purchases||[]).filter(x=>x.order_id===orderId && x.stage==="production" && !x.received_at);
+  if(!pend.length) return alert(isAr()?"ما فيه أوامر شراء غير مستلمة لهذا الأمر":"Nothing pending");
+  const prev=pend.map(x=>{ const m=material(x.material_id);
+    return `${m.name||x.fabric_name||"—"}: ${toStockUnit(x.buy_qty,x.buy_unit,m.unit)} ${m.unit||"متر"}`; });
+  if(!confirm((isAr()?`استلام ${pend.length} بند بالكامل؟\n\n`:`Receive ${pend.length}?\n\n`)+prev.join("\n"))) return;
+  let n=0;
+  for(const po of pend){
+    const m=material(po.material_id); if(!m || !m.id) continue;
+    const qty=toStockUnit(po.buy_qty, po.buy_unit, m.unit);
+    if(!(qty>0)) continue;
+    await addMove({item_kind:"material", material_id:m.id, qty, unit:m.unit||"متر",
+      reason:"receive", ref_table:"purchases", ref_id:po.id,
+      design_id:po.design_id||null, order_id:po.order_id||null, collection_id:po.collection_id||null,
+      note:po.supplier_name||null});
+    const patch={received_at:new Date().toISOString(), received_qty:qty, deliver_status:"received"};
+    await sb.from("purchases").update(patch).eq("id",po.id); Object.assign(po,patch); n++;
+  }
+  cacheDB();
+  await logIt("recv","orders",orderId,`${n} ${isAr()?"بند":"items"}`);
+  alert(isAr()?`دخل المخزون ${n} بند. لو الكمية المستلمة تختلف، عدّلها من المخزون ← حركة.`:`Received ${n}.`);
+  render();
+}
+
+/* استلام القطع الجاهزة من المصنع — العدد يتعبّى تلقائياً من أمر الإنتاج */
+async function mfgReceive(jobId){
+  const j=(DB.jobs||[]).find(x=>x.id===jobId); if(!j) return;
+  const lines=DB.lines.filter(l=>l.order_id===j.order_id);
+  if(!lines.length) return alert(isAr()?"أمر الإنتاج ما فيه سطور":"No lines");
+  const total=lines.reduce((a,l)=>a+(l.qty||1),0);
+  const prev=lines.map(l=>`${pname(product(l.product_id))} · ${l.size||"—"}${l.color?" · "+l.color:""}: ${l.qty||1}`);
+  if(!confirm((isAr()?`استلام ${total} قطعة من المصنع ودخولها المخزون؟\n\n`:`Receive ${total} pieces?\n\n`)+prev.join("\n"))) return;
+  let n=0;
+  for(const l of lines){
+    await addMove({item_kind:"product", product_id:l.product_id, size:l.size||null, color:l.color||null,
+      qty:(l.qty||1), unit:"قطعة", reason:"produce", ref_table:"ext_jobs", ref_id:j.id,
+      order_id:j.order_id||null, collection_id:j.collection_id||null,
+      note:((DB.suppliers||[]).find(x=>x.id===j.supplier_id)||{}).name||j.vendor||null});
+    n+=(l.qty||1);
+  }
+  const patch={received_qty:n, status:"received", returned_at:today()};
+  await sb.from("ext_jobs").update(patch).eq("id",j.id); Object.assign(j,patch); cacheDB();
+  await logIt("recv","ext_jobs",j.id,`${n} ${isAr()?"قطعة":"pcs"}`);
+  alert(isAr()?`دخل المخزون ${n} قطعة جاهزة.`:`${n} pieces in stock.`);
+  closeSheet(); render();
+}
+
 /* ---- صرف خامات أمر إنتاج: ينقص المخزون بالمخطط ---- */
 async function issueForOrder(orderId){
   const lines=DB.lines.filter(l=>l.order_id===orderId);
@@ -860,6 +908,8 @@ function mfgSheet(orderId){
         <button class="btn btn-ink" onclick="mfgPriceSheet('${j.id}')">${isAr()?"السعر والتسليم":"Price"}</button>
         ${j.unit_price?`<button class="btn btn-ghost" onclick="mfgPaySheet('${j.id}')">${isAr()?"دفعة":"Payment"}</button>`:""}
         <button class="btn btn-ghost" onclick="factorySheet('${j.id}')">${I.print} ${isAr()?"جدول المصنع":"Factory sheet"}</button>
+        ${j.received_qty? `<span class="chip sage" style="font-size:11px">📦 ${isAr()?"استُلم":"received"}: ${j.received_qty}</span>`
+          : `<button class="btn btn-ok" onclick="mfgReceive('${j.id}')">📦 ${isAr()?"استلام القطع":"Receive pieces"}</button>`}
         ${rowMenu(isAr()?"أمر التصنيع":"Job",[{label:isAr()?"حذف الأمر":"Delete", icon:I.trash, danger:true, fn:async()=>{
           await logIt("del","ext_jobs",j.id,esc(j.kind||"")); await sb.from("ext_jobs").delete().eq("id",j.id);
           DB.jobs=(DB.jobs||[]).filter(z=>z.id!==j.id); cacheDB(); closeSheet(); mfgSheet('${orderId}');}}])}
@@ -995,7 +1045,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.56";
+const APP_VERSION="2026-08-12.57";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4069,6 +4119,7 @@ function showPurchase(orderId){
     ${(()=>{ const ex=posOfOrder(orderId); return ex.length
         ? `<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${isAr()?`مولّد لهذا الأمر: <b>${ex.length}</b> أمر شراء`:`${ex.length} POs generated`}</div>` : ""; })()}
     <button class="btn btn-ink btn-big" onclick="createPOsFromOrder('${orderId}')">${isAr()?"أنشئ أوامر الشراء الفعلية":"Create purchase orders"}</button>
+    <button class="btn btn-ok btn-big" onclick="receiveAllForOrder('${orderId}')">📦 ${isAr()?"استلمت كل الخامات — أدخلها المخزون":"Receive all into stock"}</button>
     <button class="btn btn-line btn-big" onclick="issueForOrder('${orderId}')">${isAr()?"اصرف الخامات من المخزون":"Issue materials"}</button>
     <button class="btn btn-ghost btn-big" onclick="varianceSheet('${orderId}')">${isAr()?"فرق الاستهلاك (مخطط مقابل فعلي)":"Usage variance"}</button>
     <button class="btn btn-ghost btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
@@ -5141,6 +5192,26 @@ async function rmDesignPattern(id,i){
   await sb.from("design_projects").update({patterns:arr}).eq("id",id);
   d.patterns=arr; reopenDesign(id);
 }
+/* الخامات والعينات المخصّصة لهذا التصميم — تظهر بمرحلة التجهيز والعينة */
+function designSamplesRecap(d){
+  const list=(DB.samples||[]).filter(x=>x.design_id===d.id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(d.id)>=0));
+  if(!list.length) return "";
+  const row=x=>{
+    const ph=(x.photos||[])[0];
+    const sup=x.supplier_id? (DB.suppliers||[]).find(s=>s.id===x.supplier_id) : null;
+    const bought=(DB.purchases||[]).some(pp=>pp.sample_id===x.id);
+    return `<div class="lineitem">
+      ${ph?`<img class="thumb" src="${esc(ph)}" onclick="viewImg('${esc(ph)}')">`:""}
+      <div style="flex:1"><b>${esc(x.fabric_type||(x.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))}</b>
+        <div class="muted" style="font-size:12px">${esc((sup&&sup.name)||x.supplier_name||"—")}${x.shop_no?` · ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}
+        ${x.price?` · ${x.price} ${esc(x.currency||"CNY")}/${esc(x.per||"yard")}`:""}</div></div>
+      <span class="chip ${bought?"sage":""}" style="font-size:11px">${bought?(isAr()?"مشتراة":"bought"):(isAr()?"مرشّحة":"candidate")}</span></div>`;
+  };
+  return `<details class="dsec" open style="border-inline-start:3px solid var(--green);padding-inline-start:10px;background:transparent">
+    <summary style="cursor:pointer;font-weight:800;font-size:13px;color:var(--green-dk)">${I.pack} ${isAr()?`الخامات والعينات المخصّصة (${list.length})`:`Materials & samples (${list.length})`}</summary>
+    ${list.map(row).join("")}</details>`;
+}
+
 function designRecap(d){
   const hasIdea=(d.sketches&&d.sketches.length)||(d.mood&&d.mood.length)||(d.notes&&d.notes.length)||(d.patterns&&d.patterns.filter(Boolean).length);
   if(!hasIdea) return "";
@@ -5199,6 +5270,8 @@ function openDesign(id){
     window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
     body=`
       ${designRecap(d)}
+      ${designSamplesRecap(d)}
+      ${checklistBlock(d)}
       <div class="dsec">
         ${imgs(d.sketches)}
         <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
@@ -5225,6 +5298,7 @@ function openDesign(id){
         ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
       ${imgs(d.sketches)}
       ${d.materials?`<div class="note-box">${esc(d.materials)}</div>`:""}
+      ${designSamplesRecap(d)}
       ${designHistory(d)}
       <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','prep')">→ ${isAr()?"تعديل الخامات والقياسات":"Edit prep"}</button>`;
   } else if(st==="notes"){
@@ -5365,6 +5439,23 @@ async function finishApprove(id){
     name, name_en:el("ap_name_en").value||null,
     final_name:name, final_name_en:el("ap_name_en").value||null, size_chart:chart}).eq("id",id);
   { const dd=design_(id); if(dd){ dd.name=name; dd.final_name=name; } }
+  /* خامات التصميم تنتقل للمنتج كخط إرشادي — ما تحتاج تتذكّر شنو خصّصت له */
+  try{
+    const cur=(DB.products||[]).find(x=>x.id===p.id);
+    const hasBom = cur && allBom(cur).length;
+    if(!hasBom){
+      const ids=[...new Set([
+        ...(DB.materials||[]).filter(m=>m.design_id===id).map(m=>m.id),
+        ...(DB.purchases||[]).filter(pp=>pp.design_id===id && pp.material_id).map(pp=>pp.material_id)
+      ])].filter(Boolean);
+      if(ids.length){
+        const partName=((d.components||[])[0]&&(d.components||[])[0].ar) || (isAr()?"عام":"general");
+        const bp={}; bp[partName]=ids.map(mid=>({material_id:mid, qty:0}));
+        await sb.from("products").update({bom_parts:bp}).eq("id",p.id);
+        if(cur) cur.bom_parts=bp;
+      }
+    }
+  }catch(e){}
   if(!existing) await sb.from("photoshoots").insert({product_id:p.id});
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
@@ -6255,7 +6346,8 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
-    "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave"];
+    "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
+    "receiveAllForOrder","mfgReceive"];
   GUARDED.forEach(function(name){
     var orig = window[name];
     if(typeof orig !== "function" || orig.__guarded) return;
