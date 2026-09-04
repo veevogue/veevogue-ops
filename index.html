@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.47:APPV-->
+<!--APPV:2026-08-12.48:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -606,7 +606,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.47";
+const APP_VERSION="2026-08-12.48";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1645,9 +1645,9 @@ async function poFromSample(x){
   }
   const isAcc=x.kind==="accessory";
   const fabName=x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
-  let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (m.supplier||"")===(x.supplier_name||""));
+  let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
   if(!mat){ mat={id:newId(), sku:genSKU("material"), name:fabName, unit:isAcc?"حبة":"متر",
-      supplier:x.supplier_name||null, price:x.price||null, active:true};
+      supplier:x.supplier_name||null, supplier_id:supId||null, price:x.price||null, active:true};
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
            : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>(c.kind==="accessory")===isAcc));
@@ -3331,7 +3331,9 @@ function matMarginPct(m){
   const sup = m&&m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
   const ck = (sup&&sup.channel) || chChannel || "china";
   const c = chan(ck);
-  return ((c.shortage||0)+(c.spare||0))/100;
+  const isMeter=((m&&m.unit)||"")==="متر";
+  /* الأمتار: قصور + سبير. الإكسسوار بالعدد: سبير فقط — القصور نادر */
+  return (isMeter? ((c.shortage||0)+(c.spare||0)) : (c.spare||0))/100;
 }
 function purchaseFor(lines){
   const need={};
@@ -3352,14 +3354,16 @@ function showPurchase(orderId){
   Object.entries(need).forEach(([id,rawQ])=>{
     const m=material(id);
     const isMeter=(m.unit||"")==="متر";
-    const q = isMeter? rawQ*(1+matMarginPct(m)) : rawQ;     /* الزيادة تنطبق على الأمتار */
+    const withMargin=rawQ*(1+matMarginPct(m));
+    const q = isMeter? withMargin : Math.ceil(withMargin);   /* العدد يُقرّب لفوق — ما تشتري نص زرار */
     const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
     const key = sup? sup.id : "_none";
     const cost = m.price? m.price*q : null; if(cost) grand+=cost;
-    (groups[key]=groups[key]||{name: sup? sup.name : (isAr()?"بدون مورّد — حدده لاحقاً":"No supplier yet"), rows:[], sub:0}).rows.push({m,q,cost});
+    (groups[key]=groups[key]||{name: sup? sup.name : (isAr()?"🔍 يحتاج مورّد — قائمة البحث":"🔍 Needs a supplier"), rows:[], sub:0, sourcing:!sup}).rows.push({m,q,cost});
     if(cost) groups[key].sub+=cost;
   });
-  const gEntries=Object.entries(groups);
+  /* قائمة البحث تطلع أول — هذي اللي تدوّر لها بالسوق */
+  const gEntries=Object.entries(groups).sort((a,b)=> (b[1].sourcing?0:1)-(a[1].sourcing?0:1));
   const section=([key,g])=>`<div class="sechead" style="font-size:15px">${I.pack} ${esc(g.name)}${g.sub?` <span class="muted" style="font-weight:600">· ${Math.round(g.sub*100)/100}</span>`:""}</div>
     <table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
     ${g.rows.map(({m,q,cost})=>`<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
@@ -3804,6 +3808,12 @@ function redrawParts(){
         <input id="bq_${k}" inputmode="decimal" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
         <button type="button" class="btn btn-ghost" onclick="addBomP('${esc(c.ar)}')">${I.plus}</button>
       </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <input id="nb_${k}" placeholder="${isAr()?"بند جديد مو مسجّل":"New item"}" style="flex:1">
+        <select id="nu_${k}" style="width:78px"><option value="متر">${isAr()?"متر":"m"}</option><option value="حبة">${isAr()?"حبة":"pc"}</option></select>
+        <input id="nq_${k}" inputmode="decimal" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
+        <button type="button" class="btn btn-ghost" onclick="addNewBomMat('${esc(c.ar)}')">${I.plus}</button>
+      </div>
 
       <div class="grid2 timesrow" style="margin-top:10px">
         <div><label>${isAr()?"وقت القص (د)":"Cut (min)"} ${histAvg(pid_(),"cut",c.ar)}</label>
@@ -3975,14 +3985,70 @@ function rmEmbP(partAr,i){
   setEmbArr(partAr, arr); redrawEmbP(partAr);
 }
 function pid_(){ return editProductId; }
+/* المقاسات المفعّلة حالياً بمحرّر المنتج */
+function bomSizes(){ const e=el("p_sizes"); return e? String(e.value||"").split(",").map(x=>x.trim()).filter(Boolean) : []; }
+
 function redrawBomP(partAr){
-  const box=el("bom_"+pkey(partAr)); if(!box) return;
+  const k=pkey(partAr);
+  const box=el("bom_"+k); if(!box) return;
   const arr=window._bomP[partAr]||[];
+  const sizes=bomSizes();
   box.innerHTML = arr.length? arr.map((b,i)=>{
-    const m=material(b.material_id);
-    return `<div class="lineitem"><div>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""} — <b>${b.qty}</b> ${esc(m.unit||"")}</div>
-      <button type="button" class="btn btn-ghost" style="padding:4px 10px" onclick="rmBomP('${esc(partAr)}',${i})">✕</button></div>`;}).join("")
+    const m=material(b.material_id)||{name:"—"};
+    const ps=!!(b.per_size && Object.keys(b.per_size).length);
+    return `<div class="lineitem"><div>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""} — <b>${b.qty}</b> ${esc(m.unit||"")}
+        ${ps?`<span class="chip" style="margin-inline-start:6px">${isAr()?"مخصّص لكل مقاس":"per size"}</span>`:""}
+        ${!m.supplier_id?`<span class="chip" style="margin-inline-start:6px;background:var(--wine-lt);color:var(--wine-dk)">${isAr()?"يحتاج مورّد":"needs supplier"}</span>`:""}</div>
+      <div style="display:flex;gap:4px">
+        ${sizes.length?`<button type="button" class="btn btn-ghost" style="padding:4px 9px;font-size:12px" onclick="tglBomSizes('${esc(partAr)}',${i})">${isAr()?"مقاسات":"sizes"}</button>`:""}
+        <button type="button" class="btn btn-ghost" style="padding:4px 10px" onclick="rmBomP('${esc(partAr)}',${i})">✕</button></div></div>
+      <div id="ps_${k}_${i}" hidden style="padding:0 8px 10px"></div>`;}).join("")
     : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه خامات لهذي القطعة بعد":"None yet"}</div>`;
+}
+
+/* استهلاك مخصّص لمقاسات محددة — الفاضي يرجع للاستهلاك العام */
+function tglBomSizes(partAr,i){
+  const k=pkey(partAr), box=el(`ps_${k}_${i}`); if(!box) return;
+  if(!box.hidden){ box.hidden=true; return; }
+  const b=(window._bomP[partAr]||[])[i]; if(!b) return;
+  const m=material(b.material_id)||{}, sizes=bomSizes();
+  box.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?`اتركه فاضي = يستخدم العام (${b.qty} ${esc(m.unit||"")})`:`empty = general (${b.qty})`}</div>
+    <div class="grid3">${sizes.map(sz=>`<div><label style="font-size:12px">${esc(sz)}</label>
+      <input inputmode="decimal" value="${(b.per_size&&b.per_size[sz]!=null)?b.per_size[sz]:""}" placeholder="${b.qty}"
+        onchange="setBomSize('${esc(partAr)}',${i},'${esc(sz)}',this.value)"></div>`).join("")}</div>
+    <button type="button" class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px"
+      onclick="clrBomSizes('${esc(partAr)}',${i})">${isAr()?"امسح التخصيص":"Clear"}</button>`;
+  box.hidden=false;
+}
+function setBomSize(partAr,i,size,v){
+  const b=(window._bomP[partAr]||[])[i]; if(!b) return;
+  b.per_size=b.per_size||{};
+  const n=parseFloat(v);
+  if(v===""||isNaN(n)) delete b.per_size[size]; else b.per_size[size]=n;
+  if(!Object.keys(b.per_size).length) delete b.per_size;
+}
+function clrBomSizes(partAr,i){
+  const b=(window._bomP[partAr]||[])[i]; if(!b) return;
+  delete b.per_size; redrawBomP(partAr);
+}
+
+/* بند خام/إكسسوار جديد مو مسجّل — يُنشأ بحالة «يحتاج مورّد» */
+async function addNewBomMat(partAr){
+  const k=pkey(partAr);
+  const nameEl=el("nb_"+k), qEl=el("nq_"+k), uEl=el("nu_"+k);
+  if(!nameEl||!qEl) return;
+  const name=(nameEl.value||"").trim(), unit=uEl?uEl.value:"متر", q=parseFloat(qEl.value);
+  if(!name || !(q>0)) return alert(isAr()?"اكتب اسم البند والكمية":"Name and qty?");
+  const mat={id:newId(), sku:genSKU("material"), name, unit, supplier_id:null, active:true};
+  const {error}=await sb.from("materials").insert(mat);
+  if(error) return alert(error.message);
+  DB.materials.unshift(mat); cacheDB();
+  (window._bomP[partAr]=window._bomP[partAr]||[]).push({material_id:mat.id, qty:q});
+  const sel=el("bp_"+k);
+  if(sel) sel.insertAdjacentHTML("afterbegin",`<option value="${mat.id}">${esc(mat.name)} (${esc(mat.sku)})</option>`);
+  nameEl.value=""; qEl.value="";
+  redrawBomP(partAr);
+  await logIt("add","materials",mat.id, `${name} · ${isAr()?"يحتاج مورّد":"needs supplier"}`);
 }
 function addBomP(partAr){
   const k=pkey(partAr);
@@ -5453,7 +5519,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
-    "photoAudit","syncPhotosNow"];
+    "photoAudit","syncPhotosNow","addNewBomMat"];
   GUARDED.forEach(function(name){
     var orig = window[name];
     if(typeof orig !== "function" || orig.__guarded) return;
