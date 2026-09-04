@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.55:APPV-->
+<!--APPV:2026-08-12.56:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -280,7 +280,7 @@ const T = {
   whoAreYou:"منو أنت؟", noWorkers:"ما في عمال مسجلين", wrongPin:"الرقم غلط", pin:"الرقم السري",
   logout:"خروج", refresh:"تحديث", close:"إغلاق", save:"حفظ", add:"إضافة", edit:"تعديل",
   del:"حذف", cancel:"إلغاء", stop:"إيقاف", open:"فتح",
-  board:"لوحة", china:"المشتريات", finance:"المالية", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
+  board:"لوحة", china:"المشتريات", finance:"المالية", stock:"المخزون", newOrder:"أمر جديد", products:"المنتجات", design:"التصميم", external:"الخارجي",
   shoots:"التصوير", workersTab:"العمال", perf:"الأداء", settings:"الإعدادات", archive:"الأرشيف", quality:"الجودة",
   cut:"قص", emb:"تطريز/طباعة", sew:"خياطة", qc:"جودة", pack:"تجهيز", shipped:"أُرسل", ext:"تنفيذ خارجي", sample:"عينة",
   workingNow:"شغال الحين", noOneWorking:"ما في أحد شغال حالياً", noOrders:"ما في أوامر جارية",
@@ -299,7 +299,7 @@ const T = {
   whoAreYou:"Who are you?", noWorkers:"No workers yet", wrongPin:"Wrong PIN", pin:"PIN",
   logout:"LOG OUT", refresh:"REFRESH", close:"CLOSE", save:"SAVE", add:"ADD", edit:"EDIT",
   del:"DELETE", cancel:"CANCEL", stop:"DISABLE", open:"OPEN",
-  board:"Board", china:"PURCHASING", finance:"FINANCE", newOrder:"New Order", products:"Products", design:"Design", external:"External",
+  board:"Board", china:"PURCHASING", finance:"FINANCE", stock:"STOCK", newOrder:"New Order", products:"Products", design:"Design", external:"External",
   shoots:"Photoshoot", workersTab:"Workers", perf:"Performance", settings:"Settings", archive:"Archive", quality:"Quality",
   cut:"CUT", emb:"EMBROIDERY", sew:"SEW", qc:"QUALITY", pack:"PACK", shipped:"SHIPPED", ext:"EXTERNAL", sample:"SAMPLE",
   workingNow:"Working now", noOneWorking:"Nobody is working", noOrders:"No active orders",
@@ -389,7 +389,7 @@ const PARTS_PRESET = [["توب","TOP"],["بنطرون","PANTS"],["تنورة","S
 const AGES_PRESET = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 
 let sb=null;
-let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[],purchases:[],expenses:[],supplier_payments:[]};
+let DB={workers:[],products:[],designs:[],shoots:[],reasons:[],orders:[],lines:[],parts:[],events:[],jobs:[],settings:{},breaks:[],collections:[],materials:[],trips:[],suppliers:[],samples:[],purchases:[],expenses:[],supplier_payments:[],moves:[]};
 let session=JSON.parse(localStorage.getItem("vv2_session")||"null");
 let mTab=localStorage.getItem("vv2_tab")||"board";
 let editProductId=null, newLines=[], customModels=[];
@@ -401,7 +401,7 @@ let NETOK = (typeof navigator!=="undefined" && navigator.onLine!==false);
 let flushing=false;
 const TBL2DB={workers:"workers",products:"products",design_projects:"designs",photoshoots:"shoots",
   repair_reasons:"reasons",orders:"orders",order_lines:"lines",line_parts:"parts",stage_events:"events",
-  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples",purchases:"purchases",expenses:"expenses",supplier_payments:"supplier_payments"};
+  ext_jobs:"jobs",breaks:"breaks",collections:"collections",materials:"materials",trips:"trips",suppliers:"suppliers",trip_samples:"samples",purchases:"purchases",expenses:"expenses",supplier_payments:"supplier_payments",stock_moves:"moves"};
 
 function qGet(){ try{return JSON.parse(localStorage.getItem(VVQ)||"[]");}catch(e){return [];} }
 function qSet(a){ try{localStorage.setItem(VVQ,JSON.stringify(a));}catch(e){} }
@@ -573,8 +573,9 @@ async function loadAll(){
     sb.from("purchases").select("*").order("created_at",{ascending:false}),
     sb.from("expenses").select("*").order("created_at",{ascending:false}),
     sb.from("supplier_payments").select("*").order("created_at",{ascending:false}),
+    sb.from("stock_moves").select("*").order("at",{ascending:false}),
   ]);
-  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur,exp,sp] = res;
+  const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur,exp,sp,mv] = res;
   /* فشل الاتصال: نحافظ على البيانات الحالية أو نرجع لآخر نسخة محفوظة على الجهاز */
   if(res.some(x=>x && x.error && !x.data)){
     NETOK=false;
@@ -586,7 +587,7 @@ async function loadAll(){
       orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
       settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
       breaks:br.data||[], collections:col.data||[], materials:mat.data||[],
-      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[], expenses:exp.data||[], supplier_payments:sp.data||[]};
+      trips:tr.data||[], suppliers:sup.data||[], samples:smp.data||[], purchases:pur.data||[], expenses:exp.data||[], supplier_payments:sp.data||[], moves:mv.data||[]};
   NETOK=true; cacheDB(); paintNet();
 }
 async function refresh(){await loadAll(); if(enforceAccess())return; render(); paintNet();}
@@ -603,6 +604,223 @@ function enforceAccess(){
     }
   }
   return false;
+}
+
+/* ================= المخزون =================
+   قاعدة ثابتة: الرصيد يُحسب من الحركات ولا يُكتب مباشرة أبداً.
+   أي تصحيح يُسجَّل كحركة جرد باسمك وتاريخه — فتعرف دائماً وين راح الفرق. */
+const STOCK_REASON={opening:"رصيد افتتاحي", receive:"استلام شراء", issue:"صرف للإنتاج",
+  produce:"إنتاج جاهز", adjust:"جرد / تصحيح", ret:"مرتجع", sale:"بيع", scrap:"هدر"};
+
+function moveKey(m){ return m.item_kind==="product"
+  ? `p:${m.product_id}|${m.size||""}|${m.color||""}` : `m:${m.material_id}`; }
+
+/* الرصيد = مجموع الحركات */
+function matBalance(mid){
+  return (DB.moves||[]).filter(x=>x.item_kind!=="product" && x.material_id===mid)
+    .reduce((a,x)=>a+(Number(x.qty)||0),0);
+}
+function prodBalance(pid,size,color){
+  return (DB.moves||[]).filter(x=>x.item_kind==="product" && x.product_id===pid
+      && (size==null||(x.size||"")===(size||"")) && (color==null||(x.color||"")===(color||"")))
+    .reduce((a,x)=>a+(Number(x.qty)||0),0);
+}
+
+/* تحويل أي كمية لوحدة الخام المعتمدة — المخزون كله بالمتر للأقمشة */
+function toStockUnit(qty, fromUnit, matUnit){
+  qty=Number(qty)||0;
+  const f=(fromUnit||"").toLowerCase(), u=matUnit||"متر";
+  if(u==="متر" && (f==="yard"||f==="يارد")) return Math.round(qty*YARD*100)/100;
+  return qty;
+}
+
+async function addMove(row){
+  const m=Object.assign({id:newId(), at:new Date().toISOString(),
+    actor:(session&&session.role==="manager")?"manager":(session&&session.workerId? wname(worker(session.workerId)) : "—")}, row);
+  const {error}=await sb.from("stock_moves").insert(m);
+  if(error && !/queued/i.test(error.message||"")){ alert(error.message); return null; }
+  (DB.moves=DB.moves||[]).unshift(m); cacheDB();
+  return m;
+}
+
+/* ---- استلام أمر شراء: يدخل المخزون بوحدة الخام ---- */
+async function poReceive(poId){
+  const po=(DB.purchases||[]).find(x=>x.id===poId); if(!po) return;
+  if(po.received_at) return alert(isAr()?"هذا الأمر مستلم أصلاً":"Already received");
+  const mat=material(po.material_id);
+  if(!mat || !mat.id) return alert(isAr()?"الأمر مو مربوط بخامة مسجّلة":"No material linked");
+  const shown=toStockUnit(po.buy_qty, po.buy_unit, mat.unit);
+  const v=prompt(isAr()
+    ? `كم استلمت فعلاً؟ (${mat.unit||"متر"})\n\nالمطلوب بالأمر: ${po.buy_qty} ${manUnitAr(po.buy_unit)} ≈ ${shown} ${mat.unit||"متر"}`
+    : `Received qty in ${mat.unit||"متر"}?`, String(shown));
+  if(v===null) return;
+  const qty=parseFloat(v); if(!(qty>0)) return alert(isAr()?"كمية غير صحيحة":"Bad qty");
+  await addMove({item_kind:"material", material_id:mat.id, qty, unit:mat.unit||"متر",
+    reason:"receive", ref_table:"purchases", ref_id:po.id,
+    design_id:po.design_id||null, order_id:po.order_id||null, collection_id:po.collection_id||null,
+    note:`${po.supplier_name||""}`});
+  const patch={received_at:new Date().toISOString(), received_qty:qty, deliver_status:"received"};
+  await sb.from("purchases").update(patch).eq("id",po.id);
+  Object.assign(po,patch); cacheDB();
+  await logIt("recv","purchases",po.id,`${qty} ${mat.unit||""} — ${mat.name||""}`);
+  render();
+}
+function manUnitAr(u){ return u==="yard"?"ياردة":(u==="count"?"حبة":"متر"); }
+
+/* ---- صرف خامات أمر إنتاج: ينقص المخزون بالمخطط ---- */
+async function issueForOrder(orderId){
+  const lines=DB.lines.filter(l=>l.order_id===orderId);
+  const need=purchaseFor(lines);
+  const ids=Object.keys(need); if(!ids.length) return alert(isAr()?"ما فيه خامات مربوطة":"No materials");
+  const already=(DB.moves||[]).some(x=>x.reason==="issue" && x.order_id===orderId);
+  if(already && !confirm(isAr()?"سبق وصرفت خامات هذا الأمر. تبي تصرف مرة ثانية؟":"Already issued. Again?")) return;
+  const short=ids.filter(id=>matBalance(id) < need[id]);
+  if(short.length && !confirm(isAr()
+      ? `${short.length} خامة رصيدها أقل من المطلوب — بيصير رصيدها بالسالب وتعرف إنك تحتاج تشتري. نكمل؟`
+      : `${short.length} short. Continue?`)) return;
+  const o=order(orderId);
+  for(const id of ids){
+    const m=material(id); if(!m || !m.id) continue;
+    await addMove({item_kind:"material", material_id:id, qty:-(Math.round(need[id]*100)/100),
+      unit:m.unit||"متر", reason:"issue", ref_table:"orders", ref_id:orderId, order_id:orderId,
+      collection_id:(DB.lines.filter(l=>l.order_id===orderId).map(l=>productCollection(l.product_id)).find(Boolean))||null,
+      note:isAr()?`أمر #${o.order_no}`:`order #${o.order_no}`});
+  }
+  await logIt("issue","orders",orderId,`${ids.length} ${isAr()?"خامة":"materials"}`);
+  alert(isAr()?`تم صرف ${ids.length} خامة على أمر #${o.order_no}`:`Issued ${ids.length}`);
+  render();
+}
+
+/* ---- إدخال يدوي: رصيد افتتاحي أو جرد ---- */
+function stockEntry(kind, id, size, color){
+  const isProd = kind==="product";
+  const it = isProd? product(id) : material(id);
+  const cur = isProd? prodBalance(id,size,color) : matBalance(id);
+  const unit = isProd? (isAr()?"قطعة":"pc") : (it.unit||"متر");
+  openSheet(`<div class="title">${isAr()?"حركة مخزون":"Stock move"} — ${esc(isProd?pname(it):it.name)}</div>
+    <div class="note-box">${isAr()?"الرصيد الحالي":"Current"}: <b>${Math.round(cur*100)/100}</b> ${esc(unit)}</div>
+    <label>${isAr()?"نوع الحركة":"Type"}</label>
+    <select id="sm_reason">
+      <option value="opening">${STOCK_REASON.opening}</option>
+      <option value="adjust">${STOCK_REASON.adjust}</option>
+      <option value="ret">${STOCK_REASON.ret}</option>
+      <option value="scrap">${STOCK_REASON.scrap}</option>
+    </select>
+    <label id="sm_lbl">${isAr()?"الرصيد الصحيح (الموجود فعلاً)":"Actual on hand"}</label>
+    <input id="sm_qty" inputmode="decimal" placeholder="${esc(unit)}">
+    <label>${isAr()?"ملاحظة":"Note"}</label><input id="sm_note">
+    <div class="muted" style="font-size:12px;margin-top:6px">${isAr()
+      ? "بالرصيد الافتتاحي والجرد: اكتب <b>الموجود فعلاً</b> والنظام يسجّل الفرق. بالمرتجع والهدر: اكتب <b>الكمية</b> فقط."
+      : "Opening/stocktake: enter actual on hand. Return/scrap: enter the amount."}</div>
+    <button class="btn btn-ok btn-big" style="margin-top:10px"
+      onclick="stockEntrySave('${kind}','${id}','${esc(size||"")}','${esc(color||"")}')">${t("save")}</button>
+    ${stockHistory(kind,id,size,color)}`);
+}
+async function stockEntrySave(kind,id,size,color){
+  const reason=el("sm_reason").value, v=parseFloat(el("sm_qty").value);
+  if(isNaN(v)) return alert(isAr()?"اكتب الكمية":"Qty?");
+  const isProd=kind==="product";
+  const it=isProd? product(id) : material(id);
+  const cur=isProd? prodBalance(id,size||null,color||null) : matBalance(id);
+  let qty=v;
+  if(reason==="opening"||reason==="adjust") qty=Math.round((v-cur)*100)/100;   /* الفرق */
+  else if(reason==="scrap") qty=-Math.abs(v);
+  else qty=Math.abs(v);
+  if(!qty) { closeSheet(); return; }
+  await addMove({item_kind:isProd?"product":"material",
+    material_id:isProd?null:id, product_id:isProd?id:null, size:size||null, color:color||null,
+    qty, unit:isProd?"قطعة":(it.unit||"متر"), reason, note:el("sm_note").value||null});
+  await logIt(reason,"stock_moves",id,`${qty>0?"+":""}${qty} — ${isProd?pname(it):it.name}`);
+  closeSheet(); render();
+}
+function stockHistory(kind,id,size,color){
+  const isProd=kind==="product";
+  const list=(DB.moves||[]).filter(x=> isProd
+      ? (x.item_kind==="product" && x.product_id===id && (x.size||"")===(size||"") && (x.color||"")===(color||""))
+      : (x.item_kind!=="product" && x.material_id===id)).slice(0,25);
+  if(!list.length) return "";
+  return `<div class="sechead" style="margin-top:16px">${isAr()?"آخر الحركات":"History"}</div>
+    ${list.map(x=>`<div class="lineitem"><div><b style="color:${x.qty>0?"var(--green)":"var(--wine)"}">${x.qty>0?"+":""}${Math.round(x.qty*100)/100}</b>
+      <span class="muted"> · ${esc(STOCK_REASON[x.reason]||x.reason)}${x.note?` · ${esc(x.note)}`:""}</span></div>
+      <div class="muted" style="font-size:11px">${esc(String(x.at||"").slice(0,10))}</div></div>`).join("")}`;
+}
+
+/* ---- شاشة المخزون ---- */
+let stTab=localStorage.getItem("vv_sttab")||"mat";
+function tabStock(){
+  const sub=(k,l)=>`<button class="btn ${stTab===k?'btn-ink':'btn-ghost'}" style="padding:8px 14px"
+      onclick="stTab='${k}';localStorage.setItem('vv_sttab','${k}');render()">${l}</button>`;
+  const mats=(DB.materials||[]).filter(m=>m.active!==false);
+  const low=mats.filter(m=>matBalance(m.id)<0);
+  const matRow=m=>{ const b=matBalance(m.id);
+    return `<div class="lineitem"><div style="flex:1"><b>${esc(m.name)}</b>${m.color?` · ${esc(m.color)}`:""}
+      <span class="muted"> ${m.sku?esc(m.sku):""}</span>
+      <div class="muted" style="font-size:12px">${esc(m.unit||"")}</div></div>
+      <div style="text-align:end"><b style="color:${b<0?"var(--wine)":(b>0?"var(--green)":"var(--faint)")}">${Math.round(b*100)/100}</b>
+      <div><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px"
+        onclick="stockEntry('material','${m.id}','','')">${isAr()?"حركة":"Move"}</button></div></div></div>`; };
+  /* الجاهز: كل تركيبة منتج+مقاس+لون لها حركات */
+  const combos={};
+  (DB.moves||[]).filter(x=>x.item_kind==="product").forEach(x=>{
+    const k=`${x.product_id}|${x.size||""}|${x.color||""}`;
+    combos[k]=combos[k]||{pid:x.product_id,size:x.size||"",color:x.color||""};
+  });
+  const prodRow=c=>{ const pr=product(c.pid), b=prodBalance(c.pid,c.size,c.color);
+    return `<div class="lineitem"><div style="flex:1"><b>${esc(pname(pr))}</b>
+      <span class="muted"> ${c.size?esc(c.size):""}${c.color?` · ${esc(c.color)}`:""} ${pr.sku?esc(pr.sku):""}</span></div>
+      <div style="text-align:end"><b style="color:${b<0?"var(--wine)":(b>0?"var(--green)":"var(--faint)")}">${Math.round(b*100)/100}</b>
+      <div><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px"
+        onclick="stockEntry('product','${c.pid}','${esc(c.size)}','${esc(c.color)}')">${isAr()?"حركة":"Move"}</button></div></div></div>`; };
+
+  el("tabbody").innerHTML=`
+    <div class="pillrow" style="margin-bottom:12px">
+      ${sub("mat", isAr()?"خامات وإكسسوارات":"Materials")}
+      ${sub("fin", isAr()?"جاهز وستوك":"Finished")}
+      ${sub("mv", isAr()?"كل الحركات":"Moves")}
+    </div>
+    ${low.length?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">⚠️ <b>${low.length}</b> ${isAr()?"خامة رصيدها بالسالب — صرفت أكثر مما استلمت":"materials negative"}</div>`:""}
+    ${stTab==="mat"? (mats.length? mats.map(matRow).join("") : `<div class="empty">—</div>`)
+     : stTab==="fin"? (Object.keys(combos).length? Object.values(combos).map(prodRow).join("")
+        : `<div class="empty">${isAr()?"ما فيه قطع جاهزة بالمخزون. أضف من المنتجات ← حركة.":"None"}</div>`
+        )+`<div class="card" style="margin-top:10px"><div class="title" style="font-size:15px">${isAr()?"أضف قطعة جاهزة للمخزون":"Add finished"}</div>
+          <label>${isAr()?"المنتج":"Product"}</label>
+          <select id="fs_pid">${(DB.products||[]).map(x=>`<option value="${x.id}">${esc(pname(x))}${x.sku?" ("+esc(x.sku)+")":""}</option>`).join("")}</select>
+          <div class="grid2"><div><label>${isAr()?"المقاس":"Size"}</label><input id="fs_size"></div>
+          <div><label>${isAr()?"اللون":"Color"}</label><input id="fs_color"></div></div>
+          <button class="btn btn-ghost btn-big" style="margin-top:8px" onclick="stockEntry('product',el('fs_pid').value,el('fs_size').value,el('fs_color').value)">${isAr()?"سجّل حركة":"Move"}</button></div>`
+     : (DB.moves||[]).slice(0,120).map(x=>{
+        const isProd=x.item_kind==="product";
+        const nm=isProd? pname(product(x.product_id))+(x.size?` · ${esc(x.size)}`:"") : (material(x.material_id).name||"—");
+        return `<div class="lineitem"><div style="flex:1">${esc(nm)}
+          <div class="muted" style="font-size:12px">${esc(STOCK_REASON[x.reason]||x.reason)}${x.note?` · ${esc(x.note)}`:""} · ${esc(String(x.at||"").slice(0,10))}</div></div>
+          <b style="color:${x.qty>0?"var(--green)":"var(--wine)"}">${x.qty>0?"+":""}${Math.round(x.qty*100)/100}</b></div>`;
+       }).join("") || `<div class="empty">—</div>`}`;
+}
+
+function varianceSheet(orderId){
+  const o=order(orderId), rows=usageVariance(orderId);
+  openSheet(`<div class="title">${isAr()?"فرق الاستهلاك":"Usage variance"} — ${t("order")} #${o.order_no}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
+      ? "الفرق الموجب = صرفت أكثر من المخطط (هدر أو مدخلات استهلاك ناقصة). السالب = صرفت أقل."
+      : "Positive = used more than planned."}</div>
+    ${rows.length? `<table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"مخطط":"Planned"}</th><th>${isAr()?"فعلي":"Actual"}</th><th>${isAr()?"الفرق":"Diff"}</th></tr>
+      ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${Math.round(r.planned*100)/100}</td><td>${r.actual}</td>
+        <td style="color:${r.diff>0?"var(--wine)":(r.diff<0?"var(--green)":"inherit")}"><b>${r.diff>0?"+":""}${r.diff}</b>${r.pct!=null?`<div style="font-size:11px">${r.pct>0?"+":""}${r.pct}%</div>`:""}</td></tr>`).join("")}</table>`
+      : `<div class="empty">—</div>`}`);
+}
+
+/* ---- فرق الاستهلاك: المخطط مقابل المصروف فعلاً ---- */
+function usageVariance(orderId){
+  const lines=DB.lines.filter(l=>l.order_id===orderId);
+  const planned=purchaseFor(lines);
+  const issued={};
+  (DB.moves||[]).filter(x=>x.order_id===orderId && x.reason==="issue")
+    .forEach(x=>{ issued[x.material_id]=(issued[x.material_id]||0)+Math.abs(Number(x.qty)||0); });
+  return Object.keys(Object.assign({},planned,issued)).map(id=>{
+    const m=material(id), pl=planned[id]||0, ac=issued[id]||0;
+    return {id, name:m.name||"—", unit:m.unit||"", planned:pl, actual:ac,
+            diff:Math.round((ac-pl)*100)/100, pct: pl? Math.round(((ac-pl)/pl)*1000)/10 : null};
+  });
 }
 
 /* ================= أمر التصنيع الخارجي =================
@@ -777,7 +995,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.55";
+const APP_VERSION="2026-08-12.56";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2636,6 +2854,9 @@ function poCard(x){
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poDeliver('${x.id}')">${isAr()?"تحديث":"Update"}</button>
     </div>
     <div class="pillrow" style="margin-top:6px">
+      ${_stg!=="sample" ? (x.received_at
+        ? `<span class="chip sage" style="font-size:11px">📦 ${isAr()?"دخل المخزون":"in stock"}: ${Math.round((x.received_qty||0)*100)/100}</span>`
+        : `<button class="btn btn-ok" style="padding:3px 10px;font-size:12px" onclick="poReceive('${x.id}')">📦 ${isAr()?"استلام للمخزون":"Receive"}</button>`) : ""}
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="poEditQty('${x.id}')">${isAr()?"تعديل الكمية/السعر":"Edit qty"}</button>
       <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;color:var(--wine)" onclick="poDel('${x.id}')">${I.trash}</button>
     </div>
@@ -3417,7 +3638,7 @@ function enableSwipe(){
   });
 }
 /* ================= شاشة المكتب (مدير / إبداع وجودة) ================= */
-const TABS_MANAGER=["board","newOrder","products","design","external","shoots","quality","perf","china","finance","settings","archive"];
+const TABS_MANAGER=["board","newOrder","products","design","external","stock","shoots","quality","perf","china","finance","settings","archive"];
 const TABS_CREATIVE=["board","design","products","quality"];
 function myTabs(){
   if(session.role==="manager") return TABS_MANAGER;
@@ -3431,7 +3652,7 @@ function renderDesk(){
     <div class="tabs">${tabs.map(k=>`<button class="${mTab===k?'on':''}" onclick="mTab='${k}';localStorage.setItem('vv2_tab','${k}');render()">${t(k)}</button>`).join("")}</div>
     <div id="tabbody"></div>`;
   ({board:tabBoard,newOrder:tabNewOrder,products:tabProducts,design:tabDesign,external:tabExternal,
-    shoots:tabShoots,quality:tabQuality,perf:tabPerf,china:tabChina,finance:tabFinance,settings:tabSettings,archive:tabArchive})[mTab]();
+    stock:tabStock,shoots:tabShoots,quality:tabQuality,perf:tabPerf,china:tabChina,finance:tabFinance,settings:tabSettings,archive:tabArchive})[mTab]();
 }
 
 /* ---- لوحة ---- */
@@ -3835,9 +4056,11 @@ function showPurchase(orderId){
   /* قائمة البحث تطلع أول — هذي اللي تدوّر لها بالسوق */
   const gEntries=Object.entries(groups).sort((a,b)=> (b[1].sourcing?0:1)-(a[1].sourcing?0:1));
   const section=([key,g])=>`<div class="sechead" style="font-size:15px">${I.pack} ${esc(g.name)}${g.sub?` <span class="muted" style="font-weight:600">· ${Math.round(g.sub*100)/100}</span>`:""}</div>
-    <table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
-    ${g.rows.map(({m,q,cost})=>`<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
-      <td><b>${Math.round(q*100)/100}</b> ${esc(m.unit||"")}</td><td>${cost?Math.round(cost*100)/100:"—"}</td></tr>`).join("")}</table>`;
+    <table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"بالمخزون":"On hand"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
+    ${g.rows.map(({m,q,cost})=>{ const bal=m.id?matBalance(m.id):0; const shortQ=Math.round((q-bal)*100)/100;
+      return `<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
+      <td style="color:${bal<q?"var(--wine)":"var(--green)"}">${Math.round(bal*100)/100}${bal<q?`<div style="font-size:11px">${isAr()?"ناقص":"short"} ${shortQ}</div>`:""}</td>
+      <td><b>${Math.round(q*100)/100}</b> ${esc(m.unit||"")}</td><td>${cost?Math.round(cost*100)/100:"—"}</td></tr>`;}).join("")}</table>`;
   openSheet(`<div class="title">${I.pack} ${isAr()?"قائمة الشراء التقديرية":"Purchase list"} — ${t("order")} #${order(orderId).order_no}</div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"الكميات تشمل الزيادة (قصور + سبير) من إعدادات القناة، ومجمّعة حسب المورّد.":"Includes channel margin, grouped by supplier."}</div>
     ${gEntries.length? gEntries.map(section).join("") : `<div class="empty">${isAr()?"ما في خامات مربوطة بمنتجات هذا الأمر":"No materials linked"}</div>`}
@@ -3846,6 +4069,8 @@ function showPurchase(orderId){
     ${(()=>{ const ex=posOfOrder(orderId); return ex.length
         ? `<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${isAr()?`مولّد لهذا الأمر: <b>${ex.length}</b> أمر شراء`:`${ex.length} POs generated`}</div>` : ""; })()}
     <button class="btn btn-ink btn-big" onclick="createPOsFromOrder('${orderId}')">${isAr()?"أنشئ أوامر الشراء الفعلية":"Create purchase orders"}</button>
+    <button class="btn btn-line btn-big" onclick="issueForOrder('${orderId}')">${isAr()?"اصرف الخامات من المخزون":"Issue materials"}</button>
+    <button class="btn btn-ghost btn-big" onclick="varianceSheet('${orderId}')">${isAr()?"فرق الاستهلاك (مخطط مقابل فعلي)":"Usage variance"}</button>
     <button class="btn btn-ghost btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
 }
 async function shipLine(id){await moveLine(id,"shipped");await refresh();}
@@ -6030,7 +6255,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
-    "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave"];
+    "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave"];
   GUARDED.forEach(function(name){
     var orig = window[name];
     if(typeof orig !== "function" || orig.__guarded) return;
