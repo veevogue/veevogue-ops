@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.54:APPV-->
+<!--APPV:2026-08-12.55:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -777,7 +777,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.54";
+const APP_VERSION="2026-08-12.55";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1661,8 +1661,26 @@ function logisticsStatement(tripId){
   return {goods,mfg,ship,base,pct:cfg.commission||0,owed,paid,left:owed-paid};
 }
 
+/* المتبقي يُعرض بعملة التعامل الفعلية إضافة للدينار */
+function altCur(tripId){
+  const pays=(DB.supplier_payments||[]).filter(x=>x.trip_id===tripId && x.currency && x.currency!=="KWD");
+  if(pays.length){
+    const cnt={}; pays.forEach(x=>{ cnt[x.currency]=(cnt[x.currency]||0)+1; });
+    return Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+  }
+  const tr=(DB.trips||[]).find(x=>x.id===tripId)||{};
+  const c=chan(tr.channel||chChannel||"china").currency||"KWD";
+  return c==="KWD"? null : c;
+}
+function inBoth(kwd, cur){
+  if(!cur) return fmtKD(kwd);
+  const v=toCur(kwd,"KWD",cur);
+  return `${fmtKD(kwd)} <span class="muted" style="font-weight:600">· ${fmtN(v)} ${esc(cur)}</span>`;
+}
+
 function logisticsSheet(tripId){
   const tr=(DB.trips||[]).find(x=>x.id===tripId)||{}, L=logisticsStatement(tripId), A=tripAllocation(tripId);
+  const AC=altCur(tripId);
   const row=(a,b,bold)=>`<div class="lineitem"${bold?' style="font-weight:800"':''}><div>${a}</div><div>${fmtKD(b)}</div></div>`;
   openSheet(`<div class="title">${isAr()?"كشف اللوجستيك":"Logistics"} — ${esc(tr.name||"")}</div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"المحلي غير داخل — ما عليه شحن ولا لوجستيك.":"Local excluded."}</div>
@@ -1670,9 +1688,10 @@ function logisticsSheet(tripId){
     ${row(isAr()?"تصنيع خارجي":"Manufacturing", L.mfg)}
     ${row(isAr()?"شحن وتخليص":"Shipping & customs", L.ship)}
     ${row(isAr()?"الأساس":"Base", L.base, true)}
-    <div class="lineitem" style="font-weight:800;background:var(--soft)"><div>${isAr()?"مستحق اللوجستيك":"Owed"} (${L.pct}%)</div><div>${fmtKD(L.owed)}</div></div>
+    <div class="lineitem" style="font-weight:800;background:var(--soft)"><div>${isAr()?"مستحق اللوجستيك":"Owed"} (${L.pct}%)</div><div>${inBoth(L.owed,AC)}</div></div>
     ${row(isAr()?"مدفوع لهم":"Paid", L.paid)}
-    <div class="lineitem" style="font-weight:800"><div>${isAr()?"المتبقي":"Remaining"}</div><div style="color:${L.left>0.001?"var(--wine)":"var(--green)"}">${fmtKD(L.left)}</div></div>
+    <div class="lineitem" style="font-weight:800"><div>${isAr()?"المتبقي":"Remaining"}</div><div style="color:${L.left>0.001?"var(--wine)":"var(--green)"}">${inBoth(L.left,AC)}</div></div>
+    ${AC?`<div class="muted" style="font-size:11px">${isAr()?`الإجماليات بالدينار، والمتبقي معروض كذلك بعملة التعامل (${esc(AC)}).`:`Totals in KWD; remaining also shown in ${esc(AC)}.`}</div>`:""}
     ${A.rows.length?`<div class="sechead" style="margin-top:14px">${isAr()?"توزيع مصاريف الرحلة":"Trip expense split"}</div>
       <div class="muted" style="font-size:12px">${isAr()?"إجمالي المصاريف":"Total"}: ${fmtKD(A.total_expenses)}</div>
       <table style="width:100%;margin-top:6px"><tr><th>${isAr()?"الكولكشن":"Collection"}</th><th>${isAr()?"مشترياته":"Purchases"}</th><th>${isAr()?"نسبته":"Share"}</th><th>${isAr()?"يتحمّل":"Allocated"}</th></tr>
@@ -1905,14 +1924,14 @@ async function poFromSample(x){
   let qty_yd=null, plan_qty=null, buy_unit=null, buy_qty=null, plan_meters=null;
   if(isAcc){ buy_unit="count"; if(ci&&ci.qty){ plan_qty=parseInt(ci.qty)||null; buy_qty=plan_qty; } }
   else {
-    const target=(chChannel==="china")?"yard":"meter";
+    /* الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
     const ciUnit=ci?(ci.unit||"متر"):"متر";
+    const enteredYard=(ciUnit==="يارد"||ciUnit==="yard");
     let qMeters=null,qYards=null;
-    if(ci&&ci.qty){ if(ciUnit==="يارد"||ciUnit==="yard"){ qYards=parseFloat(ci.qty); qMeters=qYards*YARD; } else { qMeters=parseFloat(ci.qty); qYards=qMeters/YARD; } }
-    if(target==="yard"){ buy_unit="yard";
-      if(qMeters!=null && (ciUnit==="متر"||ciUnit==="m")){ buy_qty=Math.ceil(qMeters/YARD); plan_meters=Math.round(qMeters*100)/100; }
-      else if(qYards!=null){ buy_qty=qYards; }
-    } else { buy_unit="meter"; if(qMeters!=null) buy_qty=Math.round(qMeters*100)/100; }
+    if(ci&&ci.qty){ if(enteredYard){ qYards=parseFloat(ci.qty); qMeters=qYards*YARD; } else { qMeters=parseFloat(ci.qty); qYards=qMeters/YARD; } }
+    if(enteredYard){ buy_unit="yard"; buy_qty=qYards; }
+    else { buy_unit="meter"; if(qMeters!=null) buy_qty=Math.round(qMeters*100)/100; }
+    if(qMeters!=null) plan_meters=Math.round(qMeters*100)/100;   /* المكافئ بالمتر — للمخزون */
     qty_yd=(buy_unit==="yard")?buy_qty:(qYards!=null?qYards:null);
   }
   const po={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, design_id:x.design_id||null,
@@ -4751,8 +4770,11 @@ async function newDesign(cid){
 }
 async function renameDesign(id, val){
   const name=(val||"").trim();
-  await sb.from("design_projects").update({name}).eq("id",id);
-  const d=design_(id); if(d) d.name=name;
+  const d=design_(id);
+  /* الاسم واحد: لو التصميم معتمد، الاسم النهائي يتغيّر معه فينزل على المنتج */
+  const patch = (d && d.final_name)? {name, final_name:name} : {name};
+  await sb.from("design_projects").update(patch).eq("id",id);
+  if(d) Object.assign(d, patch);
   await syncDesignToProduct(id);
 }
 
@@ -5113,7 +5135,11 @@ async function finishApprove(id){
     ({data:p,error}=await sb.from("products").insert(fields).select().single());
   }
   if(error) return alert(error.message);
-  await sb.from("design_projects").update({stage:"approved",status:"معتمد",product_id:p.id,final_name:name,final_name_en:el("ap_name_en").value||null,size_chart:chart}).eq("id",id);
+  /* الاسم النهائي يستبدل اسم التصميم — اسم واحد ومصدره التصميم */
+  await sb.from("design_projects").update({stage:"approved",status:"معتمد",product_id:p.id,
+    name, name_en:el("ap_name_en").value||null,
+    final_name:name, final_name_en:el("ap_name_en").value||null, size_chart:chart}).eq("id",id);
+  { const dd=design_(id); if(dd){ dd.name=name; dd.final_name=name; } }
   if(!existing) await sb.from("photoshoots").insert({product_id:p.id});
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
