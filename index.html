@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.50:APPV-->
+<!--APPV:2026-08-12.51:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -606,7 +606,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.50";
+const APP_VERSION="2026-08-12.51";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3417,6 +3417,12 @@ function purchaseFor(lines){
   });
   return need;
 }
+/* الكولكشن الذي يتحمّل تكلفة هذا المنتج = كولكشن تصميمه المعتمد */
+function productCollection(pid){
+  const d=(DB.designs||[]).find(x=>x.product_id===pid);
+  return (d && d.collection_id) || null;
+}
+
 /* أوامر الشراء الفعلية المولّدة من أمر إنتاج */
 function posOfOrder(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===orderId && x.stage==="production"); }
 
@@ -3424,8 +3430,16 @@ function posOfOrder(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===o
 async function createPOsFromOrder(orderId){
   const o=order(orderId); if(!o) return;
   const lines=DB.lines.filter(l=>l.order_id===orderId);
-  const need=purchaseFor(lines);
-  if(!Object.keys(need).length) return alert(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked");
+  if(!purchaseFor(lines) || !Object.keys(purchaseFor(lines)).length)
+    return alert(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked");
+  /* نفصل الاحتياج حسب الكولكشن — كل تكلفة تُنسب لمركزها */
+  const needByCol={};
+  lines.forEach(l=>{
+    const col=productCollection(l.product_id)||"__none";
+    const pr=product(l.product_id);
+    const bag=(needByCol[col]=needByCol[col]||{});
+    allBom(pr).forEach(b=>{ bag[b.material_id]=(bag[b.material_id]||0)+(bomQtyForSize(b,l.size)*(l.qty||1)); });
+  });
 
   const existing=posOfOrder(orderId);
   const locked=existing.filter(x=>x.status!=="planned" || (x.pay_log||[]).length);
@@ -3438,24 +3452,28 @@ async function createPOsFromOrder(orderId){
   }
 
   const tr=activeTrip();
-  const rows=[]; let skipped=0;
-  Object.entries(need).forEach(([mid,rawQ])=>{
-    const m=material(mid); if(!m) return;
-    const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
-    if(!sup){ skipped++; return; }                     /* يحتاج مورّد — يبقى بقائمة البحث */
-    const isMeter=(m.unit||"")==="متر";
-    const withMargin=rawQ*(1+matMarginPct(m));
-    const qty = isMeter? Math.round(withMargin*100)/100 : Math.ceil(withMargin);
-    const ck = sup.channel || chChannel || "china";
-    let buy_unit, buy_qty, plan_meters=null, qty_yd=null, plan_qty=null;
-    if(!isMeter){ buy_unit="count"; buy_qty=qty; plan_qty=qty; }
-    else if(ck==="china"){ buy_unit="yard"; buy_qty=Math.ceil(qty/YARD); plan_meters=qty; qty_yd=buy_qty; }
-    else { buy_unit="meter"; buy_qty=qty; plan_meters=qty; }
-    rows.push({id:newId(), order_id:orderId, trip_id:tr?tr.id:null, channel:ck,
-      supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
-      kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
-      unit_price:m.price||null, currency:chan(ck).currency||"KWD",
-      deliver_status:"planned", pay_log:[], status:"planned", stage:"production"});
+  const rows=[]; let skipped=0, noCol=0;
+  Object.entries(needByCol).forEach(([col,bag])=>{
+    const colId = col==="__none"? null : col;
+    Object.entries(bag).forEach(([mid,rawQ])=>{
+      const m=material(mid); if(!m || !m.id) return;
+      const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
+      if(!sup){ skipped++; return; }                    /* يحتاج مورّد — يبقى بقائمة البحث */
+      if(!colId) noCol++;
+      const isMeter=(m.unit||"")==="متر";
+      const withMargin=rawQ*(1+matMarginPct(m));
+      const qty = isMeter? Math.round(withMargin*100)/100 : Math.ceil(withMargin);
+      const ck = sup.channel || chChannel || "china";
+      let buy_unit, buy_qty, plan_meters=null, qty_yd=null, plan_qty=null;
+      if(!isMeter){ buy_unit="count"; buy_qty=qty; plan_qty=qty; }
+      else if(ck==="china"){ buy_unit="yard"; buy_qty=Math.ceil(qty/YARD); plan_meters=qty; qty_yd=buy_qty; }
+      else { buy_unit="meter"; buy_qty=qty; plan_meters=qty; }
+      rows.push({id:newId(), order_id:orderId, collection_id:colId, trip_id:tr?tr.id:null, channel:ck,
+        supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
+        kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
+        unit_price:m.price||null, currency:chan(ck).currency||"KWD",
+        deliver_status:"planned", pay_log:[], status:"planned", stage:"production"});
+    });
   });
 
   if(!rows.length) return alert(isAr()
@@ -3472,8 +3490,12 @@ async function createPOsFromOrder(orderId){
   cacheDB();
   await logIt("po_gen","orders",orderId, `${rows.length} ${isAr()?"أمر شراء إنتاج":"production POs"}`);
   const sups=[...new Set(rows.map(r=>r.supplier_name))].length;
+  const cols=[...new Set(rows.map(r=>r.collection_id).filter(Boolean))].length;
   alert(isAr()
-    ? `تم إنشاء ${rows.length} أمر شراء على ${sups} مورّد.${skipped?`\n\n🔍 ${skipped} خامة بدون مورّد — باقية بقائمة البحث.`:""}`
+    ? `تم إنشاء ${rows.length} أمر شراء على ${sups} مورّد`
+      + (cols>1? ` — موزّعة على ${cols} كولكشن.` : ".")
+      + (skipped? `\n\n🔍 ${skipped} خامة بدون مورّد — باقية بقائمة البحث.`:"")
+      + (noCol? `\n\n⚠️ ${noCol} بند ما انحدد له كولكشن — تكلفته ما راح تتحمّل على أي كولكشن. تأكد إن التصميم مربوط بكولكشن.`:"")
     : `Created ${rows.length} POs.`);
   closeSheet(); await refresh();
 }
