@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.49:APPV-->
+<!--APPV:2026-08-12.50:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -606,7 +606,7 @@ function enforceAccess(){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.49";
+const APP_VERSION="2026-08-12.50";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1475,11 +1475,7 @@ async function tripActivate(id){
 }
 async function tripDel(id){
   const tr=(DB.trips||[]).find(x=>x.id===id);
-  const nExp=(DB.expenses||[]).filter(e=>e.trip_id===id).length;
-  if(!confirm(isAr()?`حذف «${(tr&&tr.name)||""}»؟${nExp?` — مربوط بها ${nExp} نفقة، تبقى النفقات بدون رحلة`:""}`:"Delete batch?")) return;
-  await sb.from("trips").delete().eq("id",id);
-  DB.trips=(DB.trips||[]).filter(x=>x.id!==id);
-  cacheDB(); render();
+  await delLinked("trips", id, (tr&&tr.name)||"", async()=>{ render(); });
 }
 
 /* -- دفتر العينات -- */
@@ -2062,9 +2058,7 @@ function supDetail(id){
 async function supApprove(id){ await sb.from("suppliers").update({status:"approved"}).eq("id",id); const sup=(DB.suppliers||[]).find(x=>x.id===id); if(sup) sup.status="approved"; cacheDB(); render(); }
 async function supDel(id){
   const sup=(DB.suppliers||[]).find(x=>x.id===id);
-  if(!confirm(isAr()?`حذف المورد «${(sup&&sup.name)||""}»؟`:"Delete supplier?")) return;
-  await sb.from("suppliers").delete().eq("id",id);
-  DB.suppliers=(DB.suppliers||[]).filter(x=>x.id!==id); cacheDB(); render();
+  await delLinked("suppliers", id, (sup&&sup.name)||"", async()=>{ closeSheet(); render(); });
 }
 function supSheet(id){
   const x=id? (DB.suppliers||[]).find(s=>s.id===id)||{} : {};
@@ -2991,6 +2985,84 @@ function confirmDelete(label, fn){
   const b=document.querySelector("#ov .btn-bad");
   if(b) b.onclick=async()=>{ closeSheet(); await fn(); };
 }
+/* ============ حذف مرتبط: يشيل التوابع ويحمي المال بعد قفل الدفاتر ============ */
+function financeLocked(){ return !!((DB.settings||{}).finance_locked); }
+
+function linkedOf(kind, id){
+  const P=DB.purchases||[], S=DB.samples||[], Y=DB.supplier_payments||[], E=DB.expenses||[];
+  const r={purchases:[],samples:[],payments:[],expenses:[],detach:[],products:[]};
+  if(kind==="suppliers"){
+    r.purchases=P.filter(x=>x.supplier_id===id);
+    r.samples=S.filter(x=>x.supplier_id===id);
+    r.payments=Y.filter(x=>x.supplier_id===id||x.supplier_key===id);
+  } else if(kind==="trips"){
+    r.purchases=P.filter(x=>x.trip_id===id);
+    r.samples=S.filter(x=>x.trip_id===id);
+    r.payments=Y.filter(x=>x.trip_id===id);
+    r.expenses=E.filter(x=>x.trip_id===id);
+  } else if(kind==="materials"){
+    r.purchases=P.filter(x=>x.material_id===id);
+    r.products=(DB.products||[]).filter(pr=>allBom(pr).some(b=>b.material_id===id));
+  } else if(kind==="design_projects"){
+    /* العينات ما تنمسح — تنفكّ فقط، لأنها قد تكون مربوطة بتصاميم ثانية */
+    r.purchases=P.filter(x=>x.design_id===id && x.stage!=="production");
+    r.detach=S.filter(x=>x.design_id===id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(id)>=0));
+  }
+  return r;
+}
+
+async function delLinked(kind, id, label, after){
+  const L=linkedOf(kind,id), lock=financeLocked();
+  const bits=[];
+  if(L.purchases.length) bits.push(`${L.purchases.length} ${isAr()?"أمر شراء":"POs"}`);
+  if(L.samples.length)   bits.push(`${L.samples.length} ${isAr()?"عينة":"samples"}`);
+  if(L.products.length)  bits.push(`${isAr()?"بنوده من":"BOM in"} ${L.products.length} ${isAr()?"منتج":"products"}`);
+  if(!lock && L.payments.length) bits.push(`${L.payments.length} ${isAr()?"دفعة":"payments"}`);
+  if(!lock && L.expenses.length) bits.push(`${L.expenses.length} ${isAr()?"نفقة":"expenses"}`);
+  let msg=isAr()?`حذف «${label||""}»؟`:`Delete "${label||""}"?`;
+  if(bits.length) msg += (isAr()?"\n\nيروح معه: ":"\n\nAlso removes: ")+bits.join(" · ");
+  if(L.detach.length) msg += isAr()?`\n\n${L.detach.length} عينة تبقى وتنفكّ عنه.`:`\n\n${L.detach.length} samples kept.`;
+  if(lock && (L.payments.length||L.expenses.length))
+    msg += isAr()?`\n\n🔒 الدفاتر مقفلة — ${L.payments.length} دفعة و${L.expenses.length} نفقة تبقى كما هي.`
+                 :`\n\nFinance locked: ${L.payments.length} payments, ${L.expenses.length} expenses kept.`;
+  if(!confirm(msg)) return;
+
+  const del=async(tbl,rows)=>{ for(const x of rows){ await sb.from(tbl).delete().eq("id",x.id); } };
+  await del("purchases",L.purchases);
+  await del("trip_samples",L.samples);
+  if(!lock){ await del("supplier_payments",L.payments); await del("expenses",L.expenses); }
+
+  for(const x of L.detach){
+    const ids=(Array.isArray(x.design_ids)?x.design_ids:[]).filter(v=>v!==id);
+    await sb.from("trip_samples").update({design_id:null, design_ids:ids}).eq("id",x.id);
+    x.design_id=null; x.design_ids=ids;
+  }
+  for(const pr of L.products){
+    const bp=JSON.parse(JSON.stringify(pr.bom_parts||{}));
+    Object.keys(bp).forEach(k=>{ bp[k]=(bp[k]||[]).filter(b=>b.material_id!==id); });
+    const bom=(pr.bom||[]).filter(b=>b.material_id!==id);
+    await sb.from("products").update({bom_parts:bp, bom}).eq("id",pr.id);
+    pr.bom_parts=bp; pr.bom=bom;
+  }
+
+  await logIt("del",kind,id,label||"");
+  const {error}=await sb.from(kind).delete().eq("id",id);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+
+  const gone=new Set([...L.purchases,...L.samples].map(x=>x.id));
+  DB.purchases=(DB.purchases||[]).filter(x=>!gone.has(x.id));
+  DB.samples=(DB.samples||[]).filter(x=>!gone.has(x.id));
+  if(!lock){
+    const fg=new Set([...L.payments,...L.expenses].map(x=>x.id));
+    DB.supplier_payments=(DB.supplier_payments||[]).filter(x=>!fg.has(x.id));
+    DB.expenses=(DB.expenses||[]).filter(x=>!fg.has(x.id));
+  }
+  const key={suppliers:"suppliers",trips:"trips",materials:"materials",design_projects:"designs"}[kind];
+  if(key && DB[key]) DB[key]=DB[key].filter(x=>x.id!==id);
+  cacheDB();
+  if(after) await after(); else await refresh();
+}
+
 /* حذف عام لأي صف */
 async function delRow(table, id, after){
   const {error}=await sb.from(table).delete().eq("id",id);
@@ -3477,7 +3549,15 @@ function tabSettings(){
     <div class="pillrow" id="ctabPills">${TABS_MANAGER.map(k=>{
       const on=((s.creative_tabs&&s.creative_tabs.length)?s.creative_tabs:TABS_CREATIVE).includes(k);
       return `<span class="pill ${on?'on':''}" data-k="${k}" onclick="this.classList.toggle('on')">${t(k)}</span>`;}).join("")}</div>
-    <label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">`:""}
+    <label>${t("creativePin")}</label><input id="s_cpin" inputmode="numeric" value="${esc(s.creative_pin||"")}">
+    <div class="note-box" style="margin-top:12px;${s.finance_locked?"background:var(--green-lt);color:var(--green-dk)":""}">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="s_finlock" ${s.finance_locked?"checked":""} style="width:18px;height:18px">
+        <b>${isAr()?"قفل الدفاتر المالية":"Lock finance"}</b></label>
+      <div class="muted" style="font-size:12px;margin-top:6px">${isAr()
+        ? "مقفول = المدفوعات والمصاريف ما تنمسح أبداً مع حذف مورّد أو رحلة. شغّله لما تخلص التجربة وتبدأ الأرقام الحقيقية."
+        : "Locked = payments and expenses are never deleted with a supplier or trip."}</div>
+    </div>`:""}
     <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
   </div>
@@ -3521,6 +3601,7 @@ async function saveSettings(){
   const days=[...document.querySelectorAll("#dayPills .pill.on")].map(x=>x.dataset.d);
   const row={work_start:el("s_start").value, work_end:el("s_end").value, work_days:days, break_minutes:+el("s_break").value||0, updated_at:new Date().toISOString()};
   if(el("s_cpin")) row.creative_pin=el("s_cpin").value||"4826";
+  if(el("s_finlock")) row.finance_locked=!!el("s_finlock").checked;
   if(el("ctabPills")) row.creative_tabs=[...document.querySelectorAll("#ctabPills .pill.on")].map(x=>x.dataset.k);
   const {data,error}=await sb.from("settings").upsert({id:1,...row}).select();
   if(error){ if(msg){msg.style.color="var(--wine)"; msg.textContent="✕ "+error.message;} return; }
@@ -4329,7 +4410,7 @@ function renderCollection(cid){
         </div>
         <span onclick="event.stopPropagation()">${rowMenu(esc(d.final_name||d.name||"—"),[
           {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
-          {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delRow("design_projects",d.id)}
+          {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delLinked("design_projects",d.id,d.name)}
         ])}</span>
         <span class="dcard-open">←</span>
       </div>`;
@@ -4698,7 +4779,7 @@ async function finishApprove(id){
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
 }
-async function delDesign(id){if(confirm(isAr()?"حذف التصميم؟":"Delete?")){await logIt("del","design_projects",id,(design_(id)||{}).name||""); await sb.from("design_projects").delete().eq("id",id); closeSheet(); await refresh();}}
+async function delDesign(id){ await delLinked("design_projects", id, (design_(id)||{}).name||"", async()=>{ closeSheet(); await refresh(); }); }
 
 /* ---- الخارجي ---- */
 function tabExternal(){
@@ -5144,7 +5225,7 @@ function renderWorkersBox(){
       return `<div class="lineitem swipe">
       <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}</span>
         <div class="muted" style="font-size:12px">${supTxt?`${I.pack} ${esc(supTxt)}`:`<span style="color:var(--wine)">${isAr()?"بدون مورّد — حدده لاحقاً":"no supplier"}</span>`}</div></div>
-      ${rowMenu(esc(m.name),[{label:isAr()?"ربط/تغيير المورّد":"Set supplier", icon:I.pack, fn:()=>matSupplierSheet(m.id)},{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delRow("materials",m.id,reloadWorkers)}])}</div>`;}).join("")}
+      ${rowMenu(esc(m.name),[{label:isAr()?"ربط/تغيير المورّد":"Set supplier", icon:I.pack, fn:()=>matSupplierSheet(m.id)},{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delLinked("materials",m.id,m.name,reloadWorkers)}])}</div>`;}).join("")}
   </div>
   <div class="card"><div class="title">${I.fix} ${isAr()?"أسباب التصليح":"Repair reasons"}</div>
     ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
@@ -5583,7 +5664,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
-    "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder"];
+    "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked"];
   GUARDED.forEach(function(name){
     var orig = window[name];
     if(typeof orig !== "function" || orig.__guarded) return;
