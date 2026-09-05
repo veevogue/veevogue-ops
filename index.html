@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.58:APPV-->
+<!--APPV:2026-08-12.59:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -499,7 +499,16 @@ async function flushQueue(){
       try{ r = await fetch(it.url,{method:it.method, headers:it.headers, body:it.body}); }
       catch(e){ NETOK=false; paintNet(); return; }
       if(r.status>=500){ paintNet(); return; }   /* خلل مؤقت في السيرفر — نعيد لاحقاً */
-      q.shift(); qSet(q);                         /* 4xx: نسقطها حتى لا تعلق الطابور للأبد */
+      if(r.status>=400){                          /* رفض السيرفر: نحتفظ بها ونُعلم المستخدم بدل الحذف الصامت */
+        let body=""; try{ body=await r.text(); }catch(_){}
+        try{
+          const f=JSON.parse(localStorage.getItem("vv_failed")||"[]");
+          f.unshift({at:new Date().toISOString(), url:String(it.url).split("?")[0], method:it.method, status:r.status, body:String(body).slice(0,300)});
+          localStorage.setItem("vv_failed", JSON.stringify(f.slice(0,40)));
+        }catch(_){}
+        vvErr({message:(isAr()?`السيرفر رفض عملية محفوظة (${r.status}). راجع «عمليات مرفوضة» بالإعدادات.`:`Rejected (${r.status})`)}, "sync");
+      }
+      q.shift(); qSet(q);
     }
     NETOK=true; paintNet();
     if(!document.getElementById("ov")) await refresh();
@@ -605,6 +614,21 @@ function enforceAccess(){
   }
   return false;
 }
+
+/* ================= لا خطأ ينبلع بصمت =================
+   أي عملية تفشل تقول السبب بدل ما تسكت ويحسب المستخدم إنها انحفظت. */
+let _vvErrLast=0;
+function vvErr(e, where){
+  try{
+    const msg=(e && (e.message||e.error_description||e.details)) || String(e||"");
+    if(!msg || /queued/i.test(msg)) return;
+    if(Date.now()-_vvErrLast < 1500) return;      /* ما نكرر نفس التنبيه */
+    _vvErrLast=Date.now();
+    alert((isAr()?"ما تمت العملية":"Action failed")+(where?` (${where})`:"")+":\n\n"+msg);
+  }catch(_){}
+}
+window.addEventListener("error", ev=>{ if(ev && ev.error) vvErr(ev.error, "app"); });
+window.addEventListener("unhandledrejection", ev=>{ if(ev) vvErr(ev.reason, "app"); });
 
 /* ================= المخزون =================
    قاعدة ثابتة: الرصيد يُحسب من الحركات ولا يُكتب مباشرة أبداً.
@@ -1045,7 +1069,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.58";
+const APP_VERSION="2026-08-12.59";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2527,9 +2551,10 @@ async function sampleSave(){
     window._smpEdit=null; closeSheet(); cacheDB(); render(); return;
   }
   const {error}=await sb.from("trip_samples").insert(row);
-  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(error && !/queued/i.test(error.message||"")) return alert((isAr()?"ما انحفظت العينة:\n\n":"Save failed:\n\n")+error.message);
   if(!(DB.samples||[]).some(x=>x.id===row.id)) DB.samples.unshift(row);
   closeSheet(); cacheDB(); render();
+  if(!NETOK) alert(isAr()?"انحفظت على الجهاز — بتنرسل أول ما يرجع الاتصال.":"Saved locally, will sync.");
 }
 function sampleEdit(id){
   const x=(DB.samples||[]).find(s=>s.id===id); if(!x) return;
@@ -3549,6 +3574,7 @@ function confirmDelete(label, fn){
   if(b) b.onclick=async()=>{ closeSheet(); await fn(); };
 }
 /* ============ حذف مرتبط: يشيل التوابع ويحمي المال بعد قفل الدفاتر ============ */
+function vvClearFailed(){ try{ localStorage.removeItem("vv_failed"); }catch(_){} render(); }
 function financeLocked(){ return !!((DB.settings||{}).finance_locked); }
 
 /* صف "منفَّذ" = صار فيه فلوس أو بضاعة فعلية. هذا ما ينمسح أبداً — يصير تاريخ. */
@@ -4170,7 +4196,14 @@ function tabSettings(){
       <div class="muted" style="font-size:12px;margin-top:6px">${isAr()
         ? "مقفول = المدفوعات والمصاريف ما تنمسح أبداً مع حذف مورّد أو رحلة. شغّله لما تخلص التجربة وتبدأ الأرقام الحقيقية."
         : "Locked = payments and expenses are never deleted with a supplier or trip."}</div>
-    </div>`:""}
+    </div>
+    ${(()=>{ let f=[]; try{ f=JSON.parse(localStorage.getItem("vv_failed")||"[]"); }catch(_){}
+      return f.length? `<div class="note-box" style="margin-top:10px;background:var(--wine-lt);color:var(--wine-dk)">
+        <b>⚠️ ${f.length} ${isAr()?"عملية رفضها السيرفر":"rejected ops"}</b>
+        <div style="font-size:11px;margin-top:6px;max-height:160px;overflow:auto">${f.slice(0,10).map(x=>
+          `${esc(String(x.at).slice(0,16).replace("T"," "))} · ${esc(x.method)} ${esc(String(x.url).split("/").pop())} · ${x.status}<br><span style="opacity:.7">${esc(x.body)}</span>`).join("<hr style='border:0;border-top:1px solid #0002;margin:6px 0'>")}</div>
+        <button class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="vvClearFailed()">${isAr()?"مسح السجل":"Clear"}</button>
+      </div>`:""; })()}`:""}
     <button type="button" class="btn btn-ok btn-big" onclick="saveSettings()">${t("save")}</button>
     <div id="setMsg" class="muted" style="text-align:center;margin-top:8px"></div>
   </div>
@@ -6404,7 +6437,8 @@ async function wDone(lineId, partId){
 /* يمنع أي دالة حفظ/إضافة من التنفيذ مرتين وهي لسا شغّالة (نفس الدالة ونفس المدخلات).
    مركزها هنا فقط — أي إصلاح مستقبلي نضيف اسم الدالة للقائمة وينطبق على النظام كله. */
 (function(){
-  window._inflight = window._inflight || new Set();
+  window._inflight = window._inflight || new Map();   /* المفتاح ← وقت البدء */
+  const STUCK_MS = 25000;   /* عملية علقت أكثر من ذلك: نحرّرها بدل ما يموت الزر للأبد */
   const GUARDED = ["saveOrder","poSave","sampleSave","supSave","saveProduct","saveCollection",
     "newDesign","expSave","saveMaterial","saveWorker","scSave","tripSave","fxSaveManual",
     "poFromSample","poPaySupAdd","poEditQtySave","poPayAdd","approveDesignPurchase","finishApprove",
@@ -6422,13 +6456,19 @@ async function wDone(lineId, partId){
       var args = Array.prototype.slice.call(arguments);
       var key = name;
       try{ key = name + "|" + args.map(function(a){ return (a && typeof a==="object")?"[o]":String(a); }).join(","); }catch(e){}
-      if(window._inflight.has(key)) return;              /* نفس العملية شغّالة الحين — تجاهل الضغطة الثانية */
-      window._inflight.add(key);
+      var started = window._inflight.get(key);
+      if(started != null){
+        if(Date.now() - started < STUCK_MS) return;     /* نفس العملية شغّالة — تجاهل الضغطة الثانية */
+        window._inflight.delete(key);                   /* علقت — نحرّرها ونسمح بإعادة المحاولة */
+      }
+      window._inflight.set(key, Date.now());
       var done = function(){ window._inflight.delete(key); };
       var r;
       try{ r = orig.apply(this, args); }
-      catch(e){ done(); throw e; }
-      if(r && typeof r.then === "function"){ return r.then(function(v){ done(); return v; }, function(e){ done(); throw e; }); }
+      catch(e){ done(); vvErr(e, name); throw e; }
+      if(r && typeof r.then === "function"){
+        return r.then(function(v){ done(); return v; }, function(e){ done(); vvErr(e, name); throw e; });
+      }
       done(); return r;
     }
     wrapped.__guarded = true;
