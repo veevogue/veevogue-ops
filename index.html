@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.57:APPV-->
+<!--APPV:2026-08-12.58:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1045,7 +1045,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.57";
+const APP_VERSION="2026-08-12.58";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5280,10 +5280,31 @@ function openDesign(id){
         <div id="dChartGrid"></div>
       </div>
       <div class="dsec">
-        <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
-        <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
-          : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
-        ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
+        <label>${isAr()?"منو ينفّذ العينة؟":"Who makes the sample?"}</label>
+        <div class="pillrow" id="smpModePills" style="margin-bottom:8px">
+          <span class="pill ${d.sample_external?"":"on"}" data-m="in" onclick="smpMode('in')">${isAr()?"داخل المشغل":"In-house"}</span>
+          <span class="pill ${d.sample_external?"on":""}" data-m="out" onclick="smpMode('out')">${isAr()?"مشغل خارجي":"External"}</span>
+        </div>
+        <div id="smpIn" ${d.sample_external?"hidden":""}>
+          <label>${isAr()?"العامل المكلّف بالعينة":"Assign sample to"}</label>
+          <select id="d_worker">${ws.length? ws.map(w=>`<option value="${w.id}" ${d.sample_worker_id===w.id?"selected":""}>${esc(wname(w))}</option>`).join("")
+            : DB.workers.filter(w=>w.active).map(w=>`<option value="${w.id}">${esc(wname(w))}</option>`).join("")}</select>
+          ${!ws.length?`<div class="note-box">${isAr()?"ما في عامل بتخصص «عينات» — حدده من الإعدادات":"No worker with SAMPLES specialty"}</div>`:""}
+        </div>
+        <div id="smpOut" ${d.sample_external?"":"hidden"}>
+          <label>${isAr()?"المشغل الخارجي":"External workshop"}</label>
+          <select id="d_vendor"><option value="">${isAr()?"— اختر من الموردين —":"— pick —"}</option>
+            ${(DB.suppliers||[]).filter(x=>x.kind==="factory"||!x.kind).map(x=>`<option value="${x.id}" ${d.sample_vendor_id===x.id?"selected":""}>${esc(x.name||"")}${x.city?` · ${esc(x.city)}`:""}</option>`).join("")}</select>
+          <label>${isAr()?"أو اكتب اسمه":"Or type a name"}</label>
+          <input id="d_vendor_txt" value="${esc(d.sample_vendor||"")}" placeholder="${isAr()?"اسم المشغل":"Workshop"}">
+          <div class="grid2">
+            <div><label>${isAr()?"أجرة العينة":"Cost"}</label><input id="d_scost" inputmode="decimal" value="${d.sample_cost!=null?d.sample_cost:""}"></div>
+            <div><label>${isAr()?"العملة":"Currency"}</label>
+              <select id="d_scur">${["KWD","CNY","USD"].map(c=>`<option ${(d.sample_currency||"KWD")===c?"selected":""}>${c}</option>`).join("")}</select></div>
+          </div>
+          <label>${isAr()?"موعد التسليم المتوقع":"Expected date"}</label>
+          <input id="d_sdue" type="date" value="${esc(d.sample_due||"")}">
+        </div>
       </div>
       <button class="btn btn-ok btn-big" onclick="sendToSample('${id}')">${isAr()?"إرسال لتنفيذ العينة":"Send to sample"}</button>
       <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','materials')">→ ${isAr()?"رجوع لشراء المواد":"Back to materials"}</button>`;
@@ -5291,9 +5312,15 @@ function openDesign(id){
   } else if(st==="sample"){
     const running=d.sample_started_at&&!d.sample_finished_at;
     const rev=(d.revisions||[]).length;
+    const lateS=d.sample_external && d.sample_due && d.sample_due<today();
     body=`<div class="note-box" ${rev?'style="background:var(--wine-lt);color:var(--wine-dk)"':''}>
       ${rev? `${I.fix} <b>${isAr()?`أُرسلت للتعديل — الجولة ${rev+1}`:`Revision ${rev+1}`}</b><br>`:""}
-      ${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${workedMins(d.sample_started_at)} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}</div>
+      ${d.sample_external
+        ? `${I.ext} <b>${esc(d.sample_vendor||(isAr()?"مشغل خارجي":"external"))}</b> — ${isAr()?"عند المشغل الخارجي":"at external workshop"}
+           ${d.sample_due?`<div class="muted" style="font-size:12px${lateS?";color:var(--wine)":""}">${lateS?"⏰ ":""}${isAr()?"التسليم":"due"}: ${esc(d.sample_due)}</div>`:""}
+           ${d.sample_cost?`<div class="muted" style="font-size:12px">${isAr()?"الأجرة":"cost"}: ${d.sample_cost} ${esc(d.sample_currency||"KWD")}</div>`:""}`
+        : `${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${workedMins(d.sample_started_at)} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}`}</div>
+      ${d.sample_external?`<button class="btn btn-ok btn-big" onclick="sampleReceivedExt('${id}')">${I.done} ${isAr()?"استلمت العينة":"Sample received"}</button>`:""}
       ${rev?`<div class="note-box"><b>${isAr()?"الملاحظات المرسلة له:":"Notes sent:"}</b>
         ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
       ${imgs(d.sketches)}
@@ -5367,13 +5394,53 @@ async function setDStage(id, st){
   await sb.from("design_projects").update({stage:st}).eq("id",id);
   await refresh(); closeSheet(); openDesign(id);
 }
+function smpMode(m){
+  const pills=document.querySelectorAll("#smpModePills .pill");
+  pills.forEach(x=>x.classList.toggle("on", x.dataset.m===m));
+  const i=el("smpIn"), o=el("smpOut");
+  if(i) i.hidden=(m!=="in");
+  if(o) o.hidden=(m!=="out");
+}
 async function sendToSample(id){
   captureDChart();
   const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
   const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
-  const wid=el("d_worker").value; if(!wid) return alert(isAr()?"اختر عامل":"Pick worker");
-  await sb.from("design_projects").update({materials:el("d_mat").value||null, size_chart:chart,
-    sample_worker_id:wid, stage:"sample", sample_started_at:null, sample_finished_at:null}).eq("id",id);
+  const on=document.querySelector("#smpModePills .pill.on");
+  const ext = on? on.dataset.m==="out" : false;
+  const row={materials:el("d_mat").value||null, size_chart:chart,
+    stage:"sample", sample_started_at:null, sample_finished_at:null, sample_external:ext};
+  if(ext){
+    const vid=el("d_vendor")?el("d_vendor").value:"";
+    const vtxt=(el("d_vendor_txt")?el("d_vendor_txt").value:"").trim();
+    const vname=vtxt || (((DB.suppliers||[]).find(x=>x.id===vid)||{}).name||"");
+    if(!vid && !vtxt) return alert(isAr()?"اختر المشغل الخارجي أو اكتب اسمه":"Pick or type the workshop");
+    row.sample_vendor_id=vid||null; row.sample_vendor=vname||null;
+    row.sample_cost=parseFloat(el("d_scost").value)||null;
+    row.sample_currency=el("d_scur")?el("d_scur").value:"KWD";
+    row.sample_due=el("d_sdue").value||null;
+    row.sample_sent_at=new Date().toISOString();
+    row.sample_worker_id=null;
+  } else {
+    const wid=el("d_worker")?el("d_worker").value:"";
+    if(!wid) return alert(isAr()?"اختر عامل":"Pick worker");
+    row.sample_worker_id=wid;
+    row.sample_vendor_id=null; row.sample_vendor=null; row.sample_sent_at=null;
+  }
+  await sb.from("design_projects").update(row).eq("id",id);
+  const d=design_(id); if(d) Object.assign(d,row);
+  await logIt("send","design_projects",id, ext? (isAr()?`عينة لمشغل خارجي: ${row.sample_vendor||""}`:"external sample")
+                                            : (isAr()?"عينة داخلية":"in-house sample"));
+  closeSheet(); await refresh();
+}
+
+/* استلام العينة من المشغل الخارجي */
+async function sampleReceivedExt(id){
+  const d=design_(id); if(!d) return;
+  if(!confirm(isAr()?`استلمت العينة من «${d.sample_vendor||""}»؟`:"Sample received?")) return;
+  const patch={sample_finished_at:new Date().toISOString(), stage:"notes"};
+  await sb.from("design_projects").update(patch).eq("id",id);
+  Object.assign(d,patch);
+  await logIt("recv","design_projects",id, isAr()?`عينة من ${d.sample_vendor||""}`:"external sample received");
   closeSheet(); await refresh();
 }
 async function backToSample(id){
@@ -6344,7 +6411,7 @@ async function wDone(lineId, partId){
     "jobSaveImg","shootDone","addReason","chkAdd","addDesignPattern","addDesignFiles","addDesignNote",
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
-    "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone",
+    "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
