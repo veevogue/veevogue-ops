@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.59:APPV-->
+<!--APPV:2026-08-12.60:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1069,7 +1069,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.59";
+const APP_VERSION="2026-08-12.60";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2401,8 +2401,7 @@ async function smpAddPhotos(files){
     const u=await captureSamplePhoto(f);
     if(u) window._smpPhotos.push(u);
   }
-  const row=el("smpPhotoRow");
-  if(row) row.innerHTML=window._smpPhotos.map(u=>`<img class="thumb" src="${esc(u)}" style="width:52px;height:52px">`).join("");
+  smpRenderPhotos();
 }
 async function smpAddCard(files){
   window._smpCards=window._smpCards||[];
@@ -2412,6 +2411,24 @@ async function smpAddCard(files){
   smpRenderCards();
   if(before===0 && (window._smpCards||[]).length) smpReadCard();   /* قراءة تلقائية أول ما تضيف الكرت — بدون زر */
 }
+/* صور العينة: زر حذف على كل صورة، والمكسورة تتعلّم بوضوح عشان تبدّلها */
+function smpRenderPhotos(){
+  const r=el("smpPhotoRow"); if(!r) return;
+  const a=window._smpPhotos||[];
+  r.innerHTML = a.length? a.map((u,idx)=>`<span style="position:relative;display:inline-block;margin-inline-end:8px;margin-bottom:6px">
+    <img class="thumb" src="${esc(u)}" style="width:52px;height:52px" onclick="viewImg('${esc(u)}')"
+      onerror="this.style.opacity='.3';this.style.border='2px solid var(--wine)';var b=this.nextElementSibling;if(b)b.hidden=false">
+    <span hidden style="position:absolute;bottom:-13px;inset-inline-start:0;font-size:9px;color:var(--wine);white-space:nowrap">${isAr()?"مكسورة":"broken"}</span>
+    <button type="button" onclick="smpRmPhoto(${idx})" title="${isAr()?"حذف":"delete"}"
+      style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("")
+    : `<span class="muted" style="font-size:12px">${isAr()?"ما فيه صور":"no photos"}</span>`;
+}
+function smpRmPhoto(i){
+  const a=window._smpPhotos||[];
+  if(i<0||i>=a.length) return;
+  a.splice(i,1); window._smpPhotos=a; smpRenderPhotos();
+}
+
 function smpRenderCards(){
   const r=el("smpCardRow"); if(!r) return;
   r.innerHTML=(window._smpCards||[]).map((u,idx)=>`<span style="position:relative;display:inline-block;margin-inline-end:6px">
@@ -2573,7 +2590,7 @@ function sampleEdit(id){
   if(el("smp_kind")){ el("smp_kind").value=x.kind||"fabric"; smpKindToggle(); }
   if((x.kind||"fabric")==="accessory"){ setv("smp_aprice",x.price); if(el("smp_acur"))el("smp_acur").value=x.currency||"CNY"; setv("smp_percount",x.per_count); }
   else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); }
-  const pr=el("smpPhotoRow"); if(pr) pr.innerHTML=(window._smpPhotos||[]).map(u=>`<img class="thumb" src="${esc(u)}" style="width:52px;height:52px">`).join("");
+  smpRenderPhotos();
   smpRenderCards();
   smpRenderExtra();
 }
