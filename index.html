@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.64:APPV-->
+<!--APPV:2026-08-12.65:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -415,10 +415,16 @@ function skuNext(prefix, arr, field){
 }
 function activeDesigns(){ return (DB.designs||[]).filter(d=>(d.stage||"idea")!=="approved"); }
 function designOptions(sel){ return `<option value="">${isAr()?"— بدون —":"none"}</option>`+activeDesigns().map(d=>`<option value="${d.id}" ${sel===d.id?"selected":""}>${esc(d.name||"")}${d.sku?` (${esc(d.sku)})`:""}</option>`).join(""); }
-function genSKU(kind){
-  if(kind==="material") return skuNext("M", DB.materials, "sku");
-  if(kind==="design")   return skuNext("V", DB.designs, "sku");
-  if(kind==="sample")   return skuNext("S", DB.samples, "sku");
+/* نوع البند يحدّد بداية الكود: الخام F، والكلف والإكسسوارات E */
+function skuPrefix(k){ return (k==="accessory"||k==="trim") ? "E" : "F"; }
+function kindLabel(k){ return k==="accessory" ? (isAr()?"إكسسوار":"accessory")
+                          : k==="trim"      ? (isAr()?"كلف":"trim")
+                          :                   (isAr()?"خام":"fabric"); }
+function isFabricKind(k){ return (k||"fabric")==="fabric"; }
+function genSKU(kind, itemKind){
+  if(kind==="design") return skuNext("V", DB.designs, "sku");
+  if(kind==="material" || kind==="sample")
+    return skuNext(skuPrefix(itemKind), [...(DB.materials||[]), ...(DB.samples||[])], "sku");
   return "X-"+String(Date.now()).slice(-6);
 }
 
@@ -1070,7 +1076,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.64";
+const APP_VERSION="2026-08-12.65";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2061,7 +2067,7 @@ function sampleCard(x){
   const approved = st==="shortlist";
   return `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:stretch;${st==="rejected"?"opacity:.55":""}">
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
-      <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))}</div>
+      <div style="font-weight:700">${esc(x.fabric_type||kindLabel(x.kind))}</div>
       ${x.sku?`<div class="muted" style="font-family:Arial;font-size:11px;letter-spacing:.5px;margin-top:1px">${esc(x.sku)}</div>`:""}
       <div class="muted" style="font-size:12px;margin-top:1px">${esc(x.supplier_name||(isAr()?"—":"—"))}</div>
       <div style="font-size:13px;margin-top:3px">${x.price!=null?`<b>${x.price} ${esc(x.currency||"CNY")}</b>/${perLbl}`:""}${kd!=null?`<div class="muted" style="font-size:11px">≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</div>`:""}</div>
@@ -2087,8 +2093,8 @@ function chSamples(){
 
   const slotBlock=(d, item)=>{
     const F=window._smpFilter||"all";
-    if(F==="fabric" && item.kind==="accessory") return "";
-    if(F==="accessory" && item.kind!=="accessory") return "";
+    if(F==="fabric" && !isFabricKind(item.kind)) return "";
+    if(F==="accessory" && isFabricKind(item.kind)) return "";
     const list=allS.filter(x=>x.design_id===d.id && x.checklist_item_id===item.id);
     if(F==="nosample" && list.length) return "";
     const shown=showList(list);
@@ -2096,7 +2102,7 @@ function chSamples(){
     const sourced=list.some(x=>x.status==="shortlist");
     return `<div class="note-box" style="background:var(--paper);padding:10px;margin-top:8px">
       <div style="font-weight:700;font-size:13px">${sourced?"★ ":""}${esc(item.name||"")}
-        <span class="muted" style="font-size:11px;font-weight:400">· ${item.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")}${item.qty?` · ${item.qty} ${esc(item.unit||(item.kind==="accessory"?(isAr()?"عدد":"pc"):(isAr()?"م":"m")))}`:""} · ${list.length} ${isAr()?"عينة":"samples"}</span></div>
+        <span class="muted" style="font-size:11px;font-weight:400">· ${kindLabel(item.kind)}${item.qty?` · ${item.qty} ${esc(item.unit||(item.kind==="accessory"?(isAr()?"عدد":"pc"):(isAr()?"م":"m")))}`:""} · ${list.length} ${isAr()?"عينة":"samples"}</span></div>
       ${shown.map(sampleCard).join("")}
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin-top:4px" onclick="sampleSheet('${d.id}','${item.id}','${item.kind||"fabric"}')">＋ ${isAr()?"عينة لهذا البند":"Add sample"}</button>
     </div>`;
@@ -2112,8 +2118,8 @@ function chSamples(){
     const _open=smpIsOpen(did);
     const _F=window._smpFilter||"all";
     let _cnt, _cntLbl=(isAr()?"عينة":"samples");
-    if(_F==="fabric") _cnt=dsamples.filter(x=>x.kind!=="accessory").length;
-    else if(_F==="accessory") _cnt=dsamples.filter(x=>x.kind==="accessory").length;
+    if(_F==="fabric") _cnt=dsamples.filter(x=>isFabricKind(x.kind)).length;
+    else if(_F==="accessory") _cnt=dsamples.filter(x=>!isFabricKind(x.kind)).length;
     else if(_F==="nosample"){ _cnt=items.filter(it=>!allS.some(sm=>smpForDesign(sm,did)&&sm.checklist_item_id===it.id)).length; _cntLbl=(isAr()?"بند بلا عينة":"no-sample"); }
     else _cnt=dsamples.length;
     return `<div class="card" style="padding:12px;padding-inline-start:14px;border-inline-start:4px solid var(--wine)">
@@ -2135,14 +2141,14 @@ function chSamples(){
   };
 
   const _sf=window._smpFilter||"all";
-  const applyF=(list)=>{ if(_sf==="fabric") return list.filter(s=>s.kind!=="accessory");
-    if(_sf==="accessory") return list.filter(s=>s.kind==="accessory");
+  const applyF=(list)=>{ if(_sf==="fabric") return list.filter(s=>isFabricKind(s.kind));
+    if(_sf==="accessory") return list.filter(s=>!isFabricKind(s.kind));
     if(_sf==="nosample") return []; return list; };
   const _fb=(v,lbl)=>`<button class="btn btn-ghost" style="padding:5px 12px;${_sf===v?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._smpFilter='${v}';render()">${lbl}</button>`;
   const filterPill=`<div class="pillrow" style="margin-bottom:10px">
       ${_fb("all", isAr()?"الكل":"All")}
       ${_fb("fabric", isAr()?"خامات":"Fabric")}
-      ${_fb("accessory", isAr()?"كلف":"Trims")}
+      ${_fb("accessory", isAr()?"كلف وإكسسوارات":"Trims & acc.")}
       ${_fb("nosample", isAr()?"بلا عينة":"No sample")}
       <button class="btn btn-ghost" style="padding:5px 12px;${chCompare?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="chCompare=!chCompare;render()">${isAr()?"المعتمدة ★":"Approved ★"}</button>
     </div>`;
@@ -2208,13 +2214,13 @@ async function poFromSample(x){
       await sb.from("suppliers").insert(sup); DB.suppliers.unshift(sup); supId=sup.id; }
   }
   const isAcc=x.kind==="accessory";
-  const fabName=x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
+  const fabName=x.fabric_type||kindLabel(x.kind);
   let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
-  if(!mat){ mat={id:newId(), sku:x.sku||genSKU("material"), name:fabName, unit:isAcc?"حبة":"متر",
+  if(!mat){ mat={id:newId(), sku:x.sku||genSKU("material", x.kind), kind:x.kind||"fabric", name:fabName, unit:isAcc?"حبة":"متر",
       supplier:x.supplier_name||null, supplier_id:supId||null, price:x.price||null, active:true};
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
-           : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>(c.kind==="accessory")===isAcc));
+           : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>isFabricKind(c.kind)===isFabricKind(x.kind)));
   let qty_yd=null, plan_qty=null, buy_unit=null, buy_qty=null, plan_meters=null;
   if(isAcc){ buy_unit="count"; if(ci&&ci.qty){ plan_qty=parseInt(ci.qty)||null; buy_qty=plan_qty; } }
   else {
@@ -2313,7 +2319,7 @@ function sampleSheet(designId, itemId, kind){
     <input id="smp_supname" placeholder="${isAr()?"اسم المحل/المورد":"Supplier name"}">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><label>${isAr()?"رقم المحل":"Shop no."}</label><input id="smp_shop"></div>
-      <div><label>${isAr()?"النوع":"Kind"}</label><select id="smp_kind" onchange="smpKindToggle()"><option value="fabric" ${k==="fabric"?"selected":""}>${isAr()?"خام":"fabric"}</option><option value="accessory" ${k==="accessory"?"selected":""}>${isAr()?"إكسسوار":"accessory"}</option></select></div>
+      <div><label>${isAr()?"النوع":"Kind"}</label><select id="smp_kind" onchange="smpKindToggle()">${["fabric","trim","accessory"].map(kk=>`<option value="${kk}" ${k===kk?"selected":""}>${kindLabel(kk)}</option>`).join("")}</select></div>
     </div>
     <label>${isAr()?"نوع الخام/الإكسسوار":"Item type"}</label>
     <input id="smp_fab" value="${esc(itemName)}">
@@ -2390,10 +2396,10 @@ async function linkExtraDesigns(row){
   const extras=window._smpDesigns||[];
   for(const e of extras){
     const d=design_(e.did); if(!d) continue; ensureChkIds(d);
-    const nm=row.fabric_type||(row.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
+    const nm=row.fabric_type||kindLabel(row.kind);
     const chk=[...(d.checklist||[])];
     if(!chk.some(c=>String(c.name||"").trim()===String(nm).trim() && (c.kind||"fabric")===(row.kind||"fabric"))){
-      chk.push({id:"ci-"+newId().slice(0,8), name:nm, kind:row.kind==="accessory"?"accessory":"fabric", qty:e.qty||null, unit:e.unit||(row.kind==="accessory"?"عدد":"متر")});
+      chk.push({id:"ci-"+newId().slice(0,8), name:nm, kind:row.kind||"fabric", qty:e.qty||null, unit:e.unit||(row.kind==="accessory"?"عدد":"متر")});
       await sb.from("design_projects").update({checklist:chk}).eq("id",d.id); d.checklist=chk;
     }
   }
@@ -2547,7 +2553,7 @@ async function sampleSave(){
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:window._chItem||null,
-    sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample"),
+    sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample", k),
     kind:k,
     note:el("smp_note").value||null,
     status:"candidate"};
@@ -4852,7 +4858,8 @@ async function addNewBomMat(partAr){
   if(!nameEl||!qEl) return;
   const name=(nameEl.value||"").trim(), unit=uEl?uEl.value:"متر", q=parseFloat(qEl.value);
   if(!name || !(q>0)) return alert(isAr()?"اكتب اسم البند والكمية":"Name and qty?");
-  const mat={id:newId(), sku:genSKU("material"), name, unit, supplier_id:null, active:true};
+  const mk=(unit==="حبة"||unit==="عدد")?"accessory":"fabric";
+  const mat={id:newId(), sku:genSKU("material", mk), kind:mk, name, unit, supplier_id:null, active:true};
   const {error}=await sb.from("materials").insert(mat);
   if(error) return alert(error.message);
   DB.materials.unshift(mat); cacheDB();
@@ -5273,7 +5280,7 @@ function checklistBlock(d){
       const rep=smps.find(sm=>sm.status==="shortlist")||smps[0]||null;
       const lit=sourced(x.id);
       const photos=(rep&&rep.photos)||[];
-      const kindLbl=x.kind==="accessory"?(isAr()?"كلف":"trim"):(isAr()?"خام":"fabric");
+      const kindLbl=kindLabel(x.kind);
       return `<div class="card" style="display:flex;gap:10px;align-items:stretch;padding:10px">
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
           <b>${esc(x.name||"")}</b>
@@ -5293,7 +5300,7 @@ function checklistBlock(d){
     <div style="display:grid;grid-template-columns:1.3fr 0.6fr 0.8fr 0.8fr auto;gap:6px;margin-top:8px;align-items:end">
       <div><label>${isAr()?"الاسم":"Name"}</label><input id="chk_name_${d.id}"></div>
       <div><label>${isAr()?"الكمية":"Qty"}</label><input id="chk_qty_${d.id}" inputmode="decimal"></div>
-      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}"><option value="fabric">${isAr()?"خام":"fabric"}</option><option value="accessory">${isAr()?"كلف/إكسسوار":"trim/acc"}</option></select></div>
+      <div><label>${isAr()?"النوع":"Kind"}</label><select id="chk_kind_${d.id}">${["fabric","trim","accessory"].map(kk=>`<option value="${kk}">${kindLabel(kk)}</option>`).join("")}</select></div>
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="chk_unit_${d.id}"><option value="متر">${isAr()?"متر":"m"}</option><option value="يارد">${isAr()?"يارد":"yd"}</option><option value="عدد">${isAr()?"عدد":"pcs"}</option></select></div>
       <button class="btn btn-ink" onclick="chkAdd('${d.id}')">${t("add")}</button>
     </div>
@@ -5346,7 +5353,7 @@ function designSamplesRecap(d){
     const bought=(DB.purchases||[]).some(pp=>pp.sample_id===x.id);
     return `<div class="lineitem">
       ${ph?`<img class="thumb" src="${esc(ph)}" onclick="viewImg('${esc(ph)}')">`:""}
-      <div style="flex:1"><b>${esc(x.fabric_type||(x.kind==="accessory"?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))}</b>
+      <div style="flex:1"><b>${esc(x.fabric_type||kindLabel(x.kind))}</b>
         <div class="muted" style="font-size:12px">${esc((sup&&sup.name)||x.supplier_name||"—")}${x.shop_no?` · ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}
         ${x.price?` · ${x.price} ${esc(x.currency||"CNY")}/${esc(x.per||"yard")}`:""}</div></div>
       <span class="chip ${bought?"sage":""}" style="font-size:11px">${bought?(isAr()?"مشتراة":"bought"):(isAr()?"مرشّحة":"candidate")}</span></div>`;
@@ -5907,9 +5914,9 @@ async function printSampleJob(id){
       return `<tr>
         <td style="width:78px">${ph?`<img crossorigin="anonymous" src="${esc(ph)}" style="width:66px;height:66px;object-fit:cover;border-radius:8px">`:"—"}</td>
         <td style="font-family:Arial;font-weight:700">${esc(x.sku||(mt&&mt.sku)||"—")}</td>
-        <td><b>${esc(x.fabric_type||(x.kind==="accessory"?"إكسسوار":"خام"))}</b>
+        <td><b>${esc(x.fabric_type||kindLabel(x.kind))}</b>
           <div style="color:#666;font-size:12px">${esc((sp&&sp.name)||x.supplier_name||"")}${x.width?` · العرض ${esc(x.width)}`:""}</div></td>
-        <td style="text-align:center">${x.kind==="accessory"?"إكسسوار":"قماش"}</td></tr>`;}).join("")
+        <td style="text-align:center">${kindLabel(x.kind)}</td></tr>`;}).join("")
     : chk.map(c=>`<tr><td>—</td><td>—</td><td><b>${esc(c.name||"")}</b></td>
         <td style="text-align:center">${c.qty?`${esc(String(c.qty))} ${esc(c.unit||"")}`:"—"}</td></tr>`).join("");
 
@@ -6196,6 +6203,7 @@ function renderWorkersBox(){
       <div><label>${isAr()?"اللون":"Color"}</label><input id="m_color"></div>
     </div>
     <div class="grid3">
+      <div><label>${isAr()?"النوع":"Type"}</label><select id="m_kind">${["fabric","trim","accessory"].map(kk=>`<option value="${kk}">${kindLabel(kk)}</option>`).join("")}</select></div>
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="m_unit"><option>متر</option><option>حبة</option><option>كيلو</option><option>لفة</option></select></div>
       <div><label>${isAr()?"المورّد (تقدر تحدده لاحقاً)":"Supplier (later)"}</label><select id="m_supid"><option value="">${isAr()?"— لاحقاً —":"— later —"}</option>${(DB.suppliers||[]).map(s=>`<option value="${s.id}">${esc(s.name||"")}${s.shop_no?` (${esc(s.shop_no)})`:""}</option>`).join("")}</select></div>
       <div><label>${isAr()?"السعر":"Price"}</label><input id="m_price" inputmode="decimal"></div>
@@ -6203,9 +6211,9 @@ function renderWorkersBox(){
     <button class="btn btn-ok btn-big" onclick="saveMaterial()">${t("add")}</button>
     ${(DB.materials||[]).filter(m=>m.active).map(m=>{ const msup=m.supplier_id?(DB.suppliers||[]).find(s=>s.id===m.supplier_id):null; const supTxt=msup?msup.name:(m.supplier||"");
       return `<div class="lineitem swipe">
-      <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${esc(m.unit||"")}${m.price?` · ${m.price}`:""}</span>
+      <div style="flex:1"><b>${esc(m.name)}</b> ${m.color?`· ${esc(m.color)}`:""} <span class="muted">${m.sku?esc(m.sku)+" · ":""}${kindLabel(m.kind)} · ${esc(m.unit||"")}${m.price?` · ${m.price}`:""}</span>
         <div class="muted" style="font-size:12px">${supTxt?`${I.pack} ${esc(supTxt)}`:`<span style="color:var(--wine)">${isAr()?"بدون مورّد — حدده لاحقاً":"no supplier"}</span>`}</div></div>
-      ${rowMenu(esc(m.name),[{label:isAr()?"ربط/تغيير المورّد":"Set supplier", icon:I.pack, fn:()=>matSupplierSheet(m.id)},{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delLinked("materials",m.id,m.name,reloadWorkers)}])}</div>`;}).join("")}
+      ${rowMenu(esc(m.name),[{label:isAr()?"ربط/تغيير المورّد":"Set supplier", icon:I.pack, fn:()=>matSupplierSheet(m.id)},{label:isAr()?"تغيير النوع (خام/كلف)":"Change type", icon:I.edit, fn:()=>matKindSheet(m.id)},{label:isAr()?"حذف الخام":"Delete material", icon:I.trash, danger:true, fn:()=>delLinked("materials",m.id,m.name,reloadWorkers)}])}</div>`;}).join("")}
   </div>
   <div class="card"><div class="title">${I.fix} ${isAr()?"أسباب التصليح":"Repair reasons"}</div>
     ${DB.reasons.map(r=>`<div class="lineitem"><div style="${r.active?'':'text-decoration:line-through;color:#999'}">${esc(r.label)}</div>
@@ -6243,10 +6251,37 @@ async function doWipe(){
 async function saveMaterial(){
   const name=el("m_name").value.trim(); if(!name) return alert(isAr()?"اكتب اسم الخام":"Name?");
   const supId=el("m_supid")?el("m_supid").value||null:null;
-  const {error}=await sb.from("materials").insert({sku:el("m_sku").value||genSKU("material"), name, color:el("m_color").value||null,
+  const mk=el("m_kind")?el("m_kind").value:"fabric";
+  const {error}=await sb.from("materials").insert({sku:el("m_sku").value||genSKU("material", mk), kind:mk, name, color:el("m_color").value||null,
     unit:el("m_unit").value, supplier_id:supId, price:parseFloat(el("m_price").value)||null});
   if(error) return alert(error.message);
   await reloadWorkers();
+}
+/* تغيير نوع الخام — الكود يتجدّد ليطابق النوع، والعينة اللي طلع منها تمشي على نفس الكود */
+function matKindSheet(mid){
+  const m=(DB.materials||[]).find(x=>x.id===mid)||{};
+  openSheet(`<div class="title">${I.pack} ${isAr()?"نوع الخام":"Material type"} — ${esc(m.name||"")}</div>
+    <label>${isAr()?"النوع":"Type"}</label>
+    <select id="mk_kind">${["fabric","trim","accessory"].map(k=>`<option value="${k}" ${(m.kind||"fabric")===k?"selected":""}>${kindLabel(k)}</option>`).join("")}</select>
+    <div class="note-box" style="font-size:12px">${isAr()?"كود الخام يبدأ بحرف F، وكود الكلف والإكسسوارات يبدأ بحرف E. تغيير النوع يجدّد الكود تلقائياً.":"Fabric codes start with F, trims and accessories with E. Changing the type re-issues the code."}</div>
+    <button class="btn btn-ok btn-big" onclick="matKindSave('${mid}')">${isAr()?"حفظ":"Save"}</button>`);
+}
+async function matKindSave(mid){
+  const m=(DB.materials||[]).find(x=>x.id===mid); if(!m) return;
+  const k=el("mk_kind")?el("mk_kind").value:"fabric";
+  const oldSku=m.sku||null;
+  const patch={kind:k};
+  if(!oldSku || String(oldSku).charAt(0)!==skuPrefix(k)) patch.sku=genSKU("material", k);
+  await sb.from("materials").update(patch).eq("id",mid);
+  Object.assign(m, patch);
+  if(patch.sku && oldSku){
+    for(const sm of (DB.samples||[]).filter(z=>z.sku===oldSku)){
+      await sb.from("trip_samples").update({kind:k, sku:patch.sku}).eq("id",sm.id);
+      sm.sku=patch.sku; sm.kind=k;
+    }
+  }
+  closeSheet(); cacheDB(); render();
+  await logIt("edit","materials",mid, `${m.name||""} · ${kindLabel(k)}${patch.sku?` · ${patch.sku}`:""}`);
 }
 /* ربط/تغيير مورّد الخام لاحقاً — يناسب: تاخذ الخام من الكويت وتلقى مورّده بالصين بعدين */
 function matSupplierSheet(mid){
@@ -6645,7 +6680,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
-    "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles",
+    "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
