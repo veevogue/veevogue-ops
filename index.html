@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.66:APPV-->
+<!--APPV:2026-08-12.67:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1123,7 +1123,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.66";
+const APP_VERSION="2026-08-12.67";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2116,6 +2116,9 @@ function sampleCard(x){
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
       <div style="font-weight:700">${esc(x.fabric_type||kindLabel(x.kind))}</div>
       ${x.sku?`<div class="muted" style="font-family:Arial;font-size:11px;letter-spacing:.5px;margin-top:1px">${esc(x.sku)}</div>`:""}
+      ${(()=>{ const _d=x.design_id?design_(x.design_id):null;
+               const _ci=_d&&x.checklist_item_id?((_d.checklist||[]).find(c=>c.id===x.checklist_item_id)):null;
+               return (_ci&&_ci.qty!=null)?`<div style="font-size:11px;color:var(--wine-dk);margin-top:1px">${isAr()?"المطلوب":"needed"}: <b>${esc(String(_ci.qty))} ${esc(_ci.unit||"متر")}</b></div>`:""; })()}
       <div class="muted" style="font-size:12px;margin-top:1px">${esc(x.supplier_name||(isAr()?"—":"—"))}</div>
       <div style="font-size:13px;margin-top:3px">${x.price!=null?`<b>${x.price} ${esc(x.currency||"CNY")}</b>/${perLbl}`:""}${kd!=null?`<div class="muted" style="font-size:11px">≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</div>`:""}</div>
       ${x.note?`<div class="muted" style="font-size:12px;margin-top:3px">📝 ${esc(x.note)}</div>`:""}
@@ -2248,6 +2251,77 @@ function ensureChkIds(d){
   if(ch){ try{ sb.from("design_projects").update({checklist:d.checklist}).eq("id",d.id); }catch(e){} }
   return d;
 }
+/* الكمية المطلوبة في التصميم هي «الخطة». هذي الدالة تحوّلها لأرقام أمر الشراء —
+   يستخدمها إنشاء الأمر وتحديثه، فما يصير اختلاف بين الاثنين.
+   الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
+function planFromChk(ci, isAcc){
+  const o={qty_yd:null, plan_qty:null, buy_unit:null, buy_qty:null, plan_meters:null};
+  if(isAcc){
+    o.buy_unit="count";
+    if(ci && ci.qty){ o.plan_qty=parseInt(ci.qty)||null; o.buy_qty=o.plan_qty; }
+    return o;
+  }
+  const ciUnit=ci?(ci.unit||"متر"):"متر";
+  const enteredYard=(ciUnit==="يارد"||ciUnit==="yard");
+  let qMeters=null,qYards=null;
+  if(ci && ci.qty){ if(enteredYard){ qYards=parseFloat(ci.qty); qMeters=qYards*YARD; } else { qMeters=parseFloat(ci.qty); qYards=qMeters/YARD; } }
+  if(enteredYard){ o.buy_unit="yard"; o.buy_qty=qYards; }
+  else { o.buy_unit="meter"; if(qMeters!=null) o.buy_qty=Math.round(qMeters*100)/100; }
+  if(qMeters!=null) o.plan_meters=Math.round(qMeters*100)/100;
+  o.qty_yd=(o.buy_unit==="yard")? o.buy_qty : (qYards!=null? qYards : null);
+  return o;
+}
+/* بند التشيك ليست اللي طلع منه أمر الشراء */
+function chkOf(p){
+  if(!p || !p.design_id) return null;
+  const d=design_(p.design_id); if(!d) return null;
+  const items=d.checklist||[];
+  const smp=p.sample_id? (DB.samples||[]).find(z=>z.id===p.sample_id) : null;
+  if(smp && smp.checklist_item_id){ const it=items.find(c=>c.id===smp.checklist_item_id); if(it) return it; }
+  return items.find(c=>String(c.name||"").trim()===String(p.fabric_name||"").trim()) || null;
+}
+function poIsAcc(p){ return (p.buy_unit==="count") || ((p.kind||"")==="accessory"); }
+/* فرق بين الخطة في التصميم وكمية أمر الشراء — يظهر تنبيه بالكرت */
+function poPlanGap(p){
+  if(!p || poExecuted(p)) return null;
+  const it=chkOf(p); if(!it || it.qty==null) return null;
+  const pl=planFromChk(it, poIsAcc(p));
+  if(pl.buy_qty==null) return null;
+  const cur=(p.buy_qty!=null)? Number(p.buy_qty) : null;
+  if(cur!=null && p.buy_unit===pl.buy_unit && Math.abs(cur-Number(pl.buy_qty))<0.005) return null;
+  return {want:pl.buy_qty, unit:pl.buy_unit, cur:cur, curUnit:p.buy_unit};
+}
+/* طابق أمر الشراء مع خطة التصميم */
+async function poMatchPlan(id){
+  const p=(DB.purchases||[]).find(z=>z.id===id); if(!p) return;
+  if(poExecuted(p)) return alert(isAr()?"هذا الأمر منفّذ — ما نغيّر كمياته":"Executed — not editable");
+  const it=chkOf(p); if(!it) return;
+  const pl=planFromChk(it, poIsAcc(p));
+  const upd={buy_unit:pl.buy_unit, unit:pl.buy_unit, buy_qty:pl.buy_qty,
+             plan_meters:pl.plan_meters, qty_yd:pl.qty_yd, plan_qty:pl.plan_qty, qty_manual:false};
+  await sb.from("purchases").update(upd).eq("id",id);
+  Object.assign(p,upd); cacheDB(); render();
+}
+/* تعديل الكمية في التصميم ينزل على أوامر الشراء المرتبطة —
+   إلا المنفّذ منها أو اللي عدّلته بيدك، هذي ما تنمسّ. */
+async function syncChkToPO(designId, itemId){
+  const d=design_(designId); const out={done:0, kept:0};
+  if(!d) return out;
+  const it=(d.checklist||[]).find(c=>c.id===itemId); if(!it) return out;
+  const smpIds=(DB.samples||[]).filter(z=>z.checklist_item_id===itemId).map(z=>z.id);
+  const pos=(DB.purchases||[]).filter(z=>String(z.design_id)===String(designId)
+      && (smpIds.indexOf(z.sample_id)>=0 || String(z.fabric_name||"").trim()===String(it.name||"").trim()));
+  for(const z of pos){
+    if(poExecuted(z) || z.qty_manual){ out.kept++; continue; }
+    const pl=planFromChk(it, poIsAcc(z));
+    const upd={buy_unit:pl.buy_unit, unit:pl.buy_unit, buy_qty:pl.buy_qty,
+               plan_meters:pl.plan_meters, qty_yd:pl.qty_yd, plan_qty:pl.plan_qty};
+    await sb.from("purchases").update(upd).eq("id",z.id);
+    Object.assign(z,upd); out.done++;
+  }
+  if(out.done) cacheDB();
+  return out;
+}
 /* يبني أمر شراء من عينة واحدة: يسجّل المورد + يدخل الخام + يطلع الكمية من بند التشيك ليست (19ب) */
 async function poFromSample(x){
   const tr=activeTrip(chChannel);
@@ -2268,19 +2342,7 @@ async function poFromSample(x){
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
            : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>isFabricKind(c.kind)===isFabricKind(x.kind)));
-  let qty_yd=null, plan_qty=null, buy_unit=null, buy_qty=null, plan_meters=null;
-  if(isAcc){ buy_unit="count"; if(ci&&ci.qty){ plan_qty=parseInt(ci.qty)||null; buy_qty=plan_qty; } }
-  else {
-    /* الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
-    const ciUnit=ci?(ci.unit||"متر"):"متر";
-    const enteredYard=(ciUnit==="يارد"||ciUnit==="yard");
-    let qMeters=null,qYards=null;
-    if(ci&&ci.qty){ if(enteredYard){ qYards=parseFloat(ci.qty); qMeters=qYards*YARD; } else { qMeters=parseFloat(ci.qty); qYards=qMeters/YARD; } }
-    if(enteredYard){ buy_unit="yard"; buy_qty=qYards; }
-    else { buy_unit="meter"; if(qMeters!=null) buy_qty=Math.round(qMeters*100)/100; }
-    if(qMeters!=null) plan_meters=Math.round(qMeters*100)/100;   /* المكافئ بالمتر — للمخزون */
-    qty_yd=(buy_unit==="yard")?buy_qty:(qYards!=null?qYards:null);
-  }
+  const {qty_yd, plan_qty, buy_unit, buy_qty, plan_meters} = planFromChk(ci, isAcc);
   const po={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, design_id:x.design_id||null,
     supplier_id:supId||null, supplier_name:x.supplier_name||null, material_id:mat.id, sample_id:x.id,
     fabric_name:fabName, kind:isAcc?"accessory":"fabric", unit:buy_unit,
@@ -2981,7 +3043,7 @@ function poCard(x){
   const lc=landedCost({channel:x.channel, qty_yd:x.qty_yd, buy_qty:x.buy_qty, unit_price:x.unit_price, currency:x.currency, plan_qty:x.plan_qty});
   const q=poQtyUnit(x); const t=poTotals(x);
   const ds=x.deliver_status||"ordered";
-  const dmap={ordered:isAr()?"لم يُرسل":"not sent", sent:isAr()?"أُرسل":"sent", ready:isAr()?"جاهز للاستلام":"ready", received:isAr()?"استُلم":"received"};
+  const dmap={planned:isAr()?"لم يُرسل":"not sent", ordered:isAr()?"لم يُرسل":"not sent", sent:isAr()?"أُرسل":"sent", ready:isAr()?"جاهز للاستلام":"ready", received:isAr()?"استُلم":"received"};
   const des=x.design_id?(design_(x.design_id)||{}):null;
   const forName=des?(des.final_name||des.name):(x.product_id?pname(product(x.product_id)):"");
   const overdue = x.ready_eta && ds!=="received" && x.ready_eta<=today();
@@ -2994,6 +3056,10 @@ function poCard(x){
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
     ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — meters recorded, out of stock"}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
+    ${(()=>{ const g=poPlanGap(x); if(!g) return "";
+      return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px;margin-top:6px">
+        ${isAr()?"الكمية في التصميم":"Design plan"}: <b>${g.want} ${unitAr(g.unit)}</b> · ${isAr()?"وبهذا الأمر":"this order"}: <b>${g.cur==null?(isAr()?"بلا كمية":"—"):`${g.cur} ${unitAr(g.curUnit)}`}</b>
+        <button class="btn btn-ghost" style="padding:2px 9px;font-size:11px;margin-inline-start:8px" onclick="poMatchPlan('${x.id}')">${isAr()?"طابقه مع التصميم":"Match plan"}</button></div>`; })()}
     ${(()=>{ const dt=poDealTotals(x); return `<div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"قطعة":"pc"}`:""}</span>`:""}</div>`; })()}
     <div class="pillrow" style="margin-top:8px;align-items:center">
       <span class="chip ${overdue?'wine':''}" style="font-size:11px">${isAr()?"التسليم":"Deliv"}: ${esc(dmap[ds])}</span>
@@ -3095,6 +3161,7 @@ async function poEditQtySave(id){
   const qty=parseFloat(el("eq_qty").value)||0; const price=parseFloat(el("eq_price").value);
   const upd={unit_price:isNaN(price)?x.unit_price:price};
   if((x.buy_unit||"")==="count"){ upd.buy_qty=qty; upd.plan_qty=qty; } else { upd.buy_qty=qty; upd.qty_yd=qty; }
+  upd.qty_manual=true;   /* عدّلتها بيدك — ما نرجع نطابقها مع الخطة تلقائياً */
   await sb.from("purchases").update(upd).eq("id",id);
   Object.assign(x,upd); cacheDB(); closeSheet(); render();
 }
@@ -3651,9 +3718,15 @@ function vvClearFailed(){ try{ localStorage.removeItem("vv_failed"); }catch(_){}
 function financeLocked(){ return !!((DB.settings||{}).finance_locked); }
 
 /* صف "منفَّذ" = صار فيه فلوس أو بضاعة فعلية. هذا ما ينمسح أبداً — يصير تاريخ. */
+/* «منفّذ» = انصرف عليه فلوس أو انرسل للمورّد أو استُلم.
+   مجرد تسجيل الأمر (planned / ordered = «لم يُرسل») مو تنفيذ — ينعدّل وينمسح عادي. */
 function poExecuted(x){
-  return !!(x && ((x.status && x.status!=="planned") || (x.pay_log||[]).length || x.paid
-            || (x.deliver_status && x.deliver_status!=="planned")));
+  if(!x) return false;
+  if(x.status && x.status!=="planned") return true;
+  if((x.pay_log||[]).length || x.paid) return true;
+  if(x.received_at) return true;
+  const ds=x.deliver_status||"planned";
+  return ds!=="planned" && ds!=="ordered";
 }
 function sampleExecuted(sm){
   return (DB.purchases||[]).some(x=>x.sample_id===sm.id && poExecuted(x));
@@ -4157,7 +4230,7 @@ async function createPOsFromOrder(orderId){
         supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
         kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
         unit_price:m.price||null, currency:chan(ck).currency||"KWD",
-        deliver_status:"planned", pay_log:[], status:"planned", stage:"production"});
+        deliver_status:"ordered", pay_log:[], status:"planned", stage:"production"});
     });
   });
 
@@ -5374,13 +5447,33 @@ async function chkAdd(id){
   await sb.from("design_projects").update({checklist:arr}).eq("id",id);
   d.checklist=arr; reopenDesign(id);
 }
-async function chkEdit(id,i){
+function chkEdit(id,i){
+  const d=design_(id); const it=(d.checklist||[])[i]; if(!it) return;
+  openSheet(`<div class="title">${I.pack} ${isAr()?"تعديل البند":"Edit item"}</div>
+    <label>${isAr()?"الاسم":"Name"}</label><input id="ce_name" value="${esc(it.name||"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div><label>${isAr()?"الكمية":"Qty"}</label><input id="ce_qty" inputmode="decimal" value="${it.qty!=null?esc(String(it.qty)):""}"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="ce_unit">${["متر","يارد","عدد"].map(u=>`<option value="${u}" ${(it.unit||"متر")===u?"selected":""}>${u}</option>`).join("")}</select></div>
+      <div><label>${isAr()?"النوع":"Type"}</label><select id="ce_kind">${["fabric","trim","accessory"].map(k=>`<option value="${k}" ${(it.kind||"fabric")===k?"selected":""}>${kindLabel(k)}</option>`).join("")}</select></div>
+    </div>
+    <div class="note-box" style="font-size:12px">${isAr()?"الكمية هنا هي الخطة. تعديلها ينزل على أمر الشراء المرتبط ما دام ما انصرف عليه شي ولا عدّلت كميته بيدك.":"This qty is the plan; linked planned POs follow it."}</div>
+    <button class="btn btn-ok btn-big" onclick="chkEditSave('${id}',${i})">${isAr()?"حفظ":"Save"}</button>`);
+}
+async function chkEditSave(id,i){
   const d=design_(id); const arr=[...(d.checklist||[])]; const it=arr[i]; if(!it) return;
-  const name=prompt(isAr()?"اسم البند:":"Item name:", it.name||""); if(name===null) return;
-  const qtyS=prompt(isAr()?"الكمية (اتركها فاضية إن ما تبي):":"Qty:", it.qty!=null?String(it.qty):"");
-  arr[i]={...it, name:(name||"").trim()||it.name, qty: qtyS===null||qtyS.trim()===""? it.qty : (parseFloat(toAsciiDigits(qtyS))||null)};
+  const qs=String((el("ce_qty")?el("ce_qty").value:"")||"").trim();
+  arr[i]={...it,
+    name:(el("ce_name").value||"").trim()||it.name,
+    qty: qs===""? null : (parseFloat(toAsciiDigits(qs))||null),
+    unit: el("ce_unit")?el("ce_unit").value:(it.unit||"متر"),
+    kind: el("ce_kind")?el("ce_kind").value:(it.kind||"fabric")};
   await sb.from("design_projects").update({checklist:arr}).eq("id",id);
-  d.checklist=arr; reopenDesign(id);
+  d.checklist=arr;
+  const r=await syncChkToPO(id, arr[i].id);
+  closeSheet(); reopenDesign(id);
+  if(r.kept) alert(isAr()
+    ? `تحدّث ${r.done} أمر شراء.\nو${r.kept} ما لمسناه — منفّذ أو معدّلة كميته بيدك.`
+    : `Updated ${r.done}, kept ${r.kept}.`);
 }
 async function chkDel(id,i){
   const d=design_(id); const arr=[...(d.checklist||[])]; const it=arr[i];
@@ -6738,7 +6831,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
-    "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave",
+    "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
