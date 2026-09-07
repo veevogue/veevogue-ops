@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.68:APPV-->
+<!--APPV:2026-08-12.69:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1123,7 +1123,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.68";
+const APP_VERSION="2026-08-12.69";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3133,6 +3133,65 @@ function supGroup(gidEnc){
   else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
   return {gid, rows, sup, name};
 }
+/* بطاقة «إسقاط رسوم العينات على التصاميم» — تُستخدم في المالية العامة ومالية الرحلة */
+function smpFeeCard(pays, money){
+  const m=smpFeeByDesign(pays);
+  const keys=Object.keys(m).filter(k=>Math.abs(m[k])>0.0005);
+  if(!keys.length) return "";
+  const tot=keys.reduce((a,k)=>a+m[k],0);
+  keys.sort((a,b)=>m[b]-m[a]);
+  return `<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">
+    <div style="font-weight:700;font-size:13px">${isAr()?"إسقاط رسوم العينات على التصاميم":"Sample fees by design"}
+      <span class="muted" style="font-weight:400">· ${money(tot)}</span></div>
+    ${keys.map(k=>{
+      const d=k==="__none"?null:design_(k);
+      const nm=d?(d.final_name||d.name||"—"):(isAr()?"غير محدّد":"unassigned");
+      return `<div class="lineitem" style="padding:4px 0"><div style="min-width:0"><b style="font-size:13px">${esc(nm)}</b>${d&&d.sku?` <span class="muted" style="font-size:11px;font-family:Arial">${esc(d.sku)}</span>`:""}</div>
+        <div style="text-align:left;font-size:13px">${money(m[k])}</div></div>`;
+    }).join("")}
+    <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"اللي دفعته فعلاً للعينات، منزّل على التصميم اللي شريت له. الدفعة غير المربوطة بتصميم تتوزّع على عينات نفس المورّد بحصتها.":"Actual sample spend allocated to designs."}</div>
+  </div>`;
+}
+/* مفتاح تجميع المورّد — نفس المفتاح المستخدم في كروت المشتريات والدفعات */
+function poSupKey(po){ return po.supplier_id || ("name:"+(po.supplier_name||"—")); }
+/* القيمة التقديرية لأمر العينة بالدينار — أساس توزيع الرسوم */
+function poEstKWD(po){
+  const l=landedCost({channel:po.channel, qty_yd:po.qty_yd, buy_qty:po.buy_qty, unit_price:po.unit_price, currency:po.currency, plan_qty:po.plan_qty});
+  return (l && l.total) || 0;
+}
+/* إسقاط رسوم العينات على التصاميم:
+   الدفعة المربوطة بتصميم تنزل عليه كاملة، وغير المربوطة تتوزّع على عينات
+   نفس المورّد بحصة كل عينة من قيمتها التقديرية (وبالتساوي لو ما فيه قيم). */
+function smpFeeSplit(pp){
+  const kwd=toKWDsafe(pp.amount, pp.currency);
+  if(pp.design_id) return [{design_id:pp.design_id, amount:kwd}];
+  const rows=(DB.purchases||[]).filter(po=> poIsSample(po)
+      && poSupKey(po)===pp.supplier_key
+      && (po.channel||"local")===(pp.channel||"local"));
+  if(!rows.length) return [{design_id:null, amount:kwd}];
+  const vals=rows.map(poEstKWD);
+  const tot=vals.reduce((a,v)=>a+v,0);
+  const out=[]; let acc=0;
+  rows.forEach((po,i)=>{
+    const share = tot>0 ? (vals[i]/tot) : (1/rows.length);
+    const amt = (i===rows.length-1) ? (kwd-acc) : Math.round(kwd*share*1000)/1000;
+    acc+=amt; out.push({design_id:po.design_id||null, amount:amt});
+  });
+  return out;
+}
+function smpFeeByDesign(pays){
+  const map={};
+  (pays||[]).forEach(pp=>{
+    if((pp.stage||"production")!=="sample") return;
+    smpFeeSplit(pp).forEach(a=>{ const k=a.design_id||"__none"; map[k]=(map[k]||0)+(Number(a.amount)||0); });
+  });
+  return map;
+}
+/* رسوم العينات المصروفة على تصميم واحد */
+function smpFeeForDesign(designId, pays){
+  const m=smpFeeByDesign(pays||(DB.supplier_payments||[]));
+  return m[designId]||0;
+}
 /* المستحق يُحسب من أوامر الإنتاج فقط. أوامر العينات قيمتها سعر جملة تقديري — مو دَين. */
 function supDueInfo(rows){
   const prod=rows.filter(po=>!poIsSample(po));
@@ -3156,7 +3215,7 @@ function poPaySup(gidEnc){
   window._payReceipt=null;
   const payRow=(pp)=>`<div class="lineitem"><div style="min-width:0">
       <b>${(pp.stage||"production")==="sample"?(isAr()?"عينات":"sample"):(pp.kind==="deposit"?(isAr()?"عربون":"deposit"):(isAr()?"دفعة نهائية":"final"))}: ${pp.amount} ${esc(pp.currency||cur)}</b>
-      <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}</span>
+      <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}${pp.design_id?` · ${esc(((design_(pp.design_id)||{}).final_name)||((design_(pp.design_id)||{}).name)||"")}`:""}</span>
       ${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}
       ${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}
       ${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div>
@@ -3179,6 +3238,16 @@ function poPaySup(gidEnc){
       <option value="final">${isAr()?"دفعة نهائية / تسديد":"Final payment"}</option>
     </select>`
     : `<input type="hidden" id="ps_kind" value="sample">`}
+    ${hasSmp?(()=>{
+      const smpRows=G.rows.filter(poIsSample);
+      const dids=[...new Set(smpRows.map(r=>r.design_id).filter(Boolean))];
+      return `<label>${isAr()?"رسوم العينات تنزل على":"Sample fee goes to"}</label>
+      <select id="ps_design">
+        <option value="">${isAr()?"توزيع تلقائي على كل عينات هذا المورّد":"Split across this supplier's samples"}</option>
+        ${dids.map(id=>{ const d=design_(id)||{}; return `<option value="${id}">${esc(d.final_name||d.name||"تصميم")}</option>`; }).join("")}
+      </select>
+      <div class="muted" style="font-size:11px">${isAr()?"التوزيع التلقائي بحصة كل عينة من قيمتها. حدّد التصميم لو الدفعة تخص عينة وحدة.":"Auto-split by each sample's share."}</div>`;
+    })():""}
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
       <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
@@ -3218,7 +3287,8 @@ async function poPaySupAdd(gidEnc){
     }
   }
   const tr=activeTrip(chChannel);
-  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, stage, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note};
+  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, stage, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note,
+    design_id: (stage==="sample" && el("ps_design") && el("ps_design").value) ? el("ps_design").value : null};
   const {error}=await sb.from("supplier_payments").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
@@ -3359,6 +3429,7 @@ function tabFinance(){
     <div style="font-size:30px;font-weight:800;margin:4px 0">${money(grand)}</div>
     <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}</div>
     <div class="muted" style="margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
+    ${smpFeeCard(DB.supplier_payments||[], money)}
     <div class="muted" style="margin-top:2px">${isAr()?"مدفوع":"paid"}: ${money(mPaid)} · ${mRem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي عليك":"due"}: ${money(mRem)}</b>`:`<b style="color:var(--green)">${isAr()?"لا يوجد متبقٍ":"all paid"}</b>`}</div>
   </div>
 
@@ -3375,6 +3446,9 @@ function tabFinance(){
   ${(function(){
     const byCol={};
     pos.forEach(po=>{ const d=po.design_id?design_(po.design_id):null; const c=d&&d.collection_id; if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0}); byCol[c].pur+=poTotals(po).total; } });
+    (function(){ const fm=smpFeeByDesign(DB.supplier_payments||[]);
+      Object.keys(fm).forEach(did=>{ const d=did==="__none"?null:design_(did); const c=d&&d.collection_id;
+        if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0}); byCol[c].pur+=fm[did]; } }); })();
     exps.forEach(e=>{ const c=e.collection_id; if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0}); byCol[c].exp+=expKWD(e); } });
     const keys=Object.keys(byCol); if(!keys.length) return "";
     return `<div class="card" style="padding:14px">
@@ -3449,6 +3523,10 @@ function chFin(){
     bySup[sk].paid+=kk; if(smp) bySup[sk].total+=kk;
   });
   Object.values(bySup).forEach(v=>{ v.rem=Math.max(0,(v.total||0)-(v.paid||0)); });
+  (function(){ const fm=smpFeeByDesign(pays);
+    Object.keys(fm).forEach(did=>{ const d=did==="__none"?null:design_(did);
+      const dk=(d&&(d.final_name||d.name))||(isAr()?"غير مخصص":"unassigned");
+      (byDesign[dk]=byDesign[dk]||0); byDesign[dk]+=fm[did]; }); })();
   const mTotal=mProd+mSmpPaid, mRem=Math.max(0,mProd-mProdPaid);
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   const grand=mTotal+expTotal;
@@ -3461,7 +3539,9 @@ function chFin(){
     <div class="title" style="font-size:16px">${isAr()?"إجمالي تكلفة الرحلة":"Trip total"}</div>
     <div style="font-size:26px;font-weight:800;margin:4px 0">${money(grand)}</div>
     <div class="muted" style="font-size:13px">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}</div>
+    <div class="muted" style="font-size:13px;margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
     <div class="muted" style="font-size:13px;margin-top:2px">${isAr()?"مدفوع":"paid"}: ${money(mPaid)} · ${mRem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي عليك":"due"}: ${money(mRem)}</b>`:`<b style="color:var(--green)">${isAr()?"لا يوجد متبقٍ":"all paid"}</b>`}</div>
+    ${smpFeeCard(pays, money)}
   </div>
 
   <div class="card" style="padding:14px">
@@ -5624,6 +5704,13 @@ function designSamplesRecap(d){
     ${list.map(row).join("")}</details>`;
 }
 
+/* اللي انصرف على هذا التصميم فعلاً — رسوم العينات المدفوعة، منزّلة عليه */
+function designCostLine(d){
+  const fee=smpFeeForDesign(d.id);
+  if(!(fee>0.0005)) return "";
+  return `<div class="note-box" style="background:#FBF0D8;color:#8a6d1f;font-size:12px;margin-bottom:6px">
+    ${isAr()?"رسوم العينات المصروفة على هذا التصميم":"Sample fees on this design"}: <b>${fmtKD(fee)} ${isAr()?"د.ك":"KWD"}</b></div>`;
+}
 function designRecap(d){
   const hasIdea=(d.sketches&&d.sketches.length)||(d.mood&&d.mood.length)||(d.notes&&d.notes.length)||(d.patterns&&d.patterns.filter(Boolean).length);
   if(!hasIdea) return "";
@@ -5780,6 +5867,7 @@ function openDesign(id){
   window._eaChart=JSON.parse(JSON.stringify(d.size_chart||{}));
   setTimeout(eaRedrawChart,0);
   openSheet(`<div class="title" style="margin-bottom:4px">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}</div>
+    ${designCostLine(d)}
     ${designStepper(d)}
     ${designEditAll(d)}
     ${body}
