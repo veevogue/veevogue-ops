@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.67:APPV-->
+<!--APPV:2026-08-12.68:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1123,7 +1123,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.67";
+const APP_VERSION="2026-08-12.68";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1663,6 +1663,24 @@ function needYards(mpp, qty, channelKey){
   return {base, meters, yards: meters/YARD};
 }
 /* التكلفة النهائية على القطعة حسب القناة */
+/* أمر شراء عينة: السعر المسجّل فيه سعر الجملة للإنتاج، واللي تدفعه فعلياً للعينة
+   أعلى وبكميات صغيرة — فما نحسب له «مستحق» ولا ننبّهك على فرق. */
+function poIsSample(po){ return (po.stage||"sample")==="sample"; }
+/* سعر الخام محفوظ بوحدته (متر/يارد/حبة) — نحوّله لوحدة أمر الشراء */
+function matPriceUnit(m){
+  if(!m) return "meter";
+  if(m.price_unit) return m.price_unit;
+  return ((m.unit||"")==="حبة") ? "count" : "meter";
+}
+function matPriceIn(m, buyUnit){
+  const p=Number(m&&m.price);
+  if(!isFinite(p) || !p) return null;
+  const from=matPriceUnit(m);
+  if(from===buyUnit) return p;
+  if(from==="meter" && buyUnit==="yard")  return Math.round(p*YARD*10000)/10000;
+  if(from==="yard"  && buyUnit==="meter") return Math.round(p/YARD*10000)/10000;
+  return p;   /* حبة ↔ حبة، أو حالة ما نعرفها — نرجع السعر كما هو */
+}
 function landedCost(o){
   const c=chan(o.channel), cur=o.currency||c.currency||"KWD";
   const _q=(o.buy_qty!=null?o.buy_qty:(o.qty_yd||0));
@@ -2251,6 +2269,29 @@ function ensureChkIds(d){
   if(ch){ try{ sb.from("design_projects").update({checklist:d.checklist}).eq("id",d.id); }catch(e){} }
   return d;
 }
+/* سعر العينة هو سعر الجملة اللي بتشتري فيه للإنتاج — نحفظه على الخام بوحدته.
+   الإكسسوار يُسعّر بالحبة (السعر مقسوم على عدد الحبات في السعرة). */
+function samplePrice(x){
+  const pr=Number(x&&x.price);
+  if(!isFinite(pr) || !pr) return {price:null, unit:null};
+  if((x.kind||"")==="accessory"){
+    const per=Number(x.per_count)||1;
+    return {price:Math.round((pr/per)*10000)/10000, unit:"count"};
+  }
+  return {price:pr, unit:(x.per==="yard"||x.per==="يارد")?"yard":"meter"};
+}
+/* تعديل سعر العينة ينزل على الخام المرتبط فيها */
+async function syncSamplePrice(x){
+  if(!x) return false;
+  const mp=samplePrice(x); if(mp.price==null) return false;
+  const mat=(DB.materials||[]).find(m=>m.sku && m.sku===x.sku)
+        || (DB.materials||[]).find(m=>(m.name||"")===(x.fabric_type||"") && m.supplier_id===x.supplier_id);
+  if(!mat) return false;
+  if(mat.price===mp.price && mat.price_unit===mp.unit) return false;
+  await sb.from("materials").update({price:mp.price, price_unit:mp.unit}).eq("id",mat.id);
+  mat.price=mp.price; mat.price_unit=mp.unit; cacheDB();
+  return true;
+}
 /* الكمية المطلوبة في التصميم هي «الخطة». هذي الدالة تحوّلها لأرقام أمر الشراء —
    يستخدمها إنشاء الأمر وتحديثه، فما يصير اختلاف بين الاثنين.
    الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
@@ -2337,9 +2378,14 @@ async function poFromSample(x){
   const isAcc=x.kind==="accessory";
   const fabName=x.fabric_type||kindLabel(x.kind);
   let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
+  const _mp=samplePrice(x);
   if(!mat){ mat={id:newId(), sku:x.sku||genSKU("material", x.kind), kind:x.kind||"fabric", name:fabName, unit:isAcc?"حبة":"متر",
-      supplier:x.supplier_name||null, supplier_id:supId||null, price:x.price||null, active:true};
+      supplier:x.supplier_name||null, supplier_id:supId||null, price:_mp.price, price_unit:_mp.unit, active:true};
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
+  else if(_mp.price!=null && (mat.price!==_mp.price || mat.price_unit!==_mp.unit)){
+    await sb.from("materials").update({price:_mp.price, price_unit:_mp.unit}).eq("id",mat.id);
+    mat.price=_mp.price; mat.price_unit=_mp.unit;
+  }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
            : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>isFabricKind(c.kind)===isFabricKind(x.kind)));
   const {qty_yd, plan_qty, buy_unit, buy_qty, plan_meters} = planFromChk(ci, isAcc);
@@ -2683,6 +2729,7 @@ async function sampleSave(){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
     const i=(DB.samples||[]).findIndex(x=>x.id===window._smpEdit); if(i>=0) DB.samples[i]={...DB.samples[i],...upd};
+    try{ await syncSamplePrice(i>=0?DB.samples[i]:{...row, id:window._smpEdit}); }catch(e){}
     window._smpEdit=null; closeSheet(); cacheDB(); render(); return;
   }
   const {error}=await sb.from("trip_samples").insert(row);
@@ -2975,7 +3022,7 @@ function chPurch(){
     groups[k].rows.push(po); });
   el("chBody").innerHTML = pills + Object.values(groups).map(g=>{
     const sup=g.sup||{}; const nm=(g.sup&&g.sup.name)||g.name||"—";
-    const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const paid=supPaid(g.key,cur).paid; const rem=Math.max(0,dinfo.total-paid);
+    const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const _sp=supPaid(g.key,cur); const paid=_sp.paid; const rem=Math.max(0,dinfo.total-paid);
     const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
     const _po=purIsOpen(g.key);
     return `<div class="card" style="padding:14px 12px;background:var(--soft)">
@@ -2983,13 +3030,15 @@ function chPurch(){
         <span style="font-size:18px;color:var(--wine)">${_po?"▾":"▸"}</span>
         <div style="flex:1;min-width:0;border-inline-start:4px solid var(--wine);padding-inline-start:10px">
           <div style="font-size:18px;font-weight:800;line-height:1.2">${esc(nm)}</div>
-          <div class="muted" style="font-size:12px">${g.rows.length} ${isAr()?"بند":"items"} · ${rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع":"paid"}</b>`}</div>
+          <div class="muted" style="font-size:12px">${g.rows.length} ${isAr()?"بند":"items"} · ${
+            dinfo.nProd? (rem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي إنتاج":"prod. due"} ${fmtN(rem)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"الإنتاج مدفوع":"paid"}</b>`)
+                       : `<b style="color:#8a6d1f">${isAr()?"عينات":"samples"} · ${isAr()?"مدفوع":"paid"} ${fmtN(_sp.samplePaid)} ${esc(cur)}</b>`}</div>
         </div>
       </div>
       ${_po?`
       ${contact?`<div class="muted" style="font-size:12px;margin-top:8px">${contact}</div>`:""}
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;background:var(--paper);border-radius:10px;flex-wrap:wrap">
-        <div style="font-size:12px">${isAr()?"مدفوع":"paid"}: <b>${fmtN(paid)} ${esc(cur)}</b> · ${isAr()?"المستحق":"due"} <b>${fmtN(dinfo.total)} ${esc(cur)}</b></div>
+        <div style="font-size:12px">${dinfo.nProd?`${isAr()?"إنتاج":"prod"}: ${isAr()?"مدفوع":"paid"} <b>${fmtN(paid)} ${esc(cur)}</b> ${isAr()?"من":"of"} <b>${fmtN(dinfo.total)} ${esc(cur)}</b>`:""}${(dinfo.nProd&&dinfo.nSample)?" · ":""}${dinfo.nSample?`${isAr()?"عينات":"samples"}: ${isAr()?"مدفوع":"paid"} <b>${fmtN(_sp.samplePaid)} ${esc(cur)}</b>`:""}</div>
         <div class="pillrow" style="flex-wrap:nowrap"><button class="btn btn-ghost" style="width:auto;padding:5px 10px;font-size:12px" onclick="poSend('${encodeURIComponent(g.key)}')">📤 ${isAr()?"إرسال":"Send"}</button><button class="btn btn-ink" style="width:auto;padding:5px 12px;font-size:12px" onclick="poPaySup('${encodeURIComponent(g.key)}')">${isAr()?"الدفع":"Pay"}</button></div>
       </div>
       ${(()=>{ const mg={}; g.rows.forEach(po=>{ const mk=(po.material_id||po.fabric_name||"—")+"|"+(po.buy_unit||po.unit||""); (mg[mk]=mg[mk]||[]).push(po); }); return Object.values(mg).map(poGroupCard).join(""); })()}`:""}
@@ -3025,8 +3074,9 @@ function poGroupCard(rows){
   return `<div class="card" style="padding:12px">
     <div style="font-weight:700">${esc(x0.fabric_name||(isAr()?"خام":"fabric"))} ${stgChip} <span class="chip" style="font-size:10px">${rows.length} ${isAr()?"تصاميم":"designs"}</span></div>
     ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — out of stock"}</div>`:""}
-    <div style="font-size:13px;margin-top:3px">${isAr()?"الكمية الإجمالية للتصاميم":"total for all"}: <b>${fmtN(totalQty)} ${unitAr(unit)}</b> × ${x0.unit_price||0} ${esc(cur)}</div>
-    <div style="font-size:14px;margin-top:2px"><b>${fmtN(totalDeal)} ${esc(cur)}</b>${totalKWD?` <span class="muted" style="font-size:11px">≈ ${fmtKD(totalKWD)} ${isAr()?"د.ك":"KWD"}</span>`:""}</div>
+    <div style="font-size:13px;margin-top:3px">${isAr()?"الكمية الإجمالية للتصاميم":"total for all"}: <b>${fmtN(totalQty)} ${unitAr(unit)}</b> × ${x0.unit_price||0} ${esc(cur)}${_stg==="sample"?` <span class="muted" style="font-size:11px">(${isAr()?"سعر الجملة":"wholesale"})</span>`:""}</div>
+    <div style="font-size:14px;margin-top:2px"><b>${fmtN(totalDeal)} ${esc(cur)}</b>${totalKWD?` <span class="muted" style="font-size:11px">≈ ${fmtKD(totalKWD)} ${isAr()?"د.ك":"KWD"}</span>`:""}
+      ${_stg==="sample"?`<div class="muted" style="font-size:11px">${isAr()?"قيمة تقديرية بسعر الجملة — مو مبلغ مستحق. اللي تدفعه للعينة تسجّله من «الدفع».":"Estimate at wholesale price — not an amount due."}</div>`:""}</div>
     <div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px">
       ${rows.map(r=>{ const q=poQtyUnit(r); const ds=r.deliver_status||"ordered";
         return `<div class="lineitem" style="font-size:12px;padding:5px 0">
@@ -3054,7 +3104,7 @@ function poCard(x){
   return `<div class="card" style="padding:12px">
     <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} ${_stgChip}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
-    ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — meters recorded, out of stock"}</div>`:""}
+    ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"عينة — السعر المكتوب سعر الجملة للإنتاج، والأمتار خارج الستوك":"sample — price is the wholesale price; meters out of stock"}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
     ${(()=>{ const g=poPlanGap(x); if(!g) return "";
       return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px;margin-top:6px">
@@ -3083,27 +3133,52 @@ function supGroup(gidEnc){
   else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
   return {gid, rows, sup, name};
 }
+/* المستحق يُحسب من أوامر الإنتاج فقط. أوامر العينات قيمتها سعر جملة تقديري — مو دَين. */
 function supDueInfo(rows){
+  const prod=rows.filter(po=>!poIsSample(po));
+  const smp=rows.filter(poIsSample);
   const curs=[...new Set(rows.map(po=>po.currency||"KWD"))]; const cur=curs.length===1?curs[0]:"KWD";
-  let total=0; rows.forEach(po=>{ const d=poDealTotals(po); total += (curs.length===1? d.total : toCur(d.total,po.currency,"KWD")); });
-  return {cur, total};
+  const sum=(list)=>list.reduce((a,po)=>{ const d=poDealTotals(po); return a+(curs.length===1? d.total : toCur(d.total,po.currency,"KWD")); },0);
+  return {cur, total:sum(prod), sampleEst:sum(smp), nProd:prod.length, nSample:smp.length};
 }
 function supPaid(key, cur){
-  const list=(DB.supplier_payments||[]).filter(pp=>pp.supplier_key===key && (pp.channel||"")===chChannel);
-  const paid=list.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0);
-  return {list, paid};
+  const all=(DB.supplier_payments||[]).filter(pp=>pp.supplier_key===key && (pp.channel||"")===chChannel);
+  const isSmp=pp=>(pp.stage||"production")==="sample";
+  const list=all.filter(pp=>!isSmp(pp)), sList=all.filter(isSmp);
+  const add=(l)=>l.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0);
+  return {list, paid:add(list), sList, samplePaid:add(sList), all};
 }
 function poPaySup(gidEnc){
   const G=supGroup(gidEnc); if(!G.rows.length) return;
   const dinfo=supDueInfo(G.rows); const cur=dinfo.cur; const gid=decodeURIComponent(gidEnc);
   const spd=supPaid(gid,cur); const paid=spd.paid; const remaining=Math.max(0,dinfo.total-paid);
+  const hasProd=dinfo.nProd>0, hasSmp=dinfo.nSample>0;
   window._payReceipt=null;
+  const payRow=(pp)=>`<div class="lineitem"><div style="min-width:0">
+      <b>${(pp.stage||"production")==="sample"?(isAr()?"عينات":"sample"):(pp.kind==="deposit"?(isAr()?"عربون":"deposit"):(isAr()?"دفعة نهائية":"final"))}: ${pp.amount} ${esc(pp.currency||cur)}</b>
+      <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}</span>
+      ${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}
+      ${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}
+      ${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div>
+    <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poPaySupDel('${pp.id}','${gidEnc}')">✕</button></div>`;
   openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(G.name||"")}</div>
-    <div class="note-box">${isAr()?"الإجمالي المستحق":"Total due"}: <b>${fmtN(dinfo.total)} ${esc(cur)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtN(paid)} ${esc(cur)} · ${remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(remaining)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
-    ${spd.list.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${spd.list.map(pp=>`<div class="lineitem"><div style="min-width:0"><b>${pp.kind==="deposit"?(isAr()?"عربون":"deposit"):(isAr()?"دفعة نهائية":"final")}: ${pp.amount} ${esc(pp.currency||cur)}</b> <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}</span>${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div><button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poPaySupDel('${pp.id}','${gidEnc}')">✕</button></div>`).join("")}`:""}
+    ${hasProd?`<div class="note-box">${isAr()?"مستحق الإنتاج":"Production due"}: <b>${fmtN(dinfo.total)} ${esc(cur)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtN(paid)} ${esc(cur)} · ${remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(remaining)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>`:""}
+    ${hasSmp?`<div class="note-box" style="background:#FBF0D8;color:#8a6d1f">${isAr()?"العينات":"Samples"}: ${isAr()?"مدفوع":"paid"} <b>${fmtN(spd.samplePaid)} ${esc(cur)}</b>
+      <div style="font-size:11px;margin-top:3px">${isAr()?"العينات ما لها مستحق محسوب — كميات صغيرة بأسعارها الخاصة. اكتب المبلغ اللي دفعته وبس.":"Samples have no computed due."}</div></div>`:""}
+    ${spd.all.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${spd.all.map(payRow).join("")}`:""}
     <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة":"NEW PAYMENT"}</div>
-    <label>${isAr()?"النوع":"Kind"}</label>
-    <select id="ps_kind"><option value="deposit">${isAr()?"عربون":"Deposit"}</option><option value="final">${isAr()?"دفعة نهائية / تسديد":"Final payment"}</option></select>
+    ${(hasProd&&hasSmp)?`<label>${isAr()?"النوع":"Kind"}</label>
+    <select id="ps_kind">
+      <option value="sample">${isAr()?"دفعة عينات":"Sample payment"}</option>
+      <option value="deposit">${isAr()?"عربون إنتاج":"Production deposit"}</option>
+      <option value="final">${isAr()?"دفعة إنتاج نهائية / تسديد":"Production final"}</option>
+    </select>`
+    : hasProd?`<label>${isAr()?"النوع":"Kind"}</label>
+    <select id="ps_kind">
+      <option value="deposit">${isAr()?"عربون":"Deposit"}</option>
+      <option value="final">${isAr()?"دفعة نهائية / تسديد":"Final payment"}</option>
+    </select>`
+    : `<input type="hidden" id="ps_kind" value="sample">`}
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
       <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
@@ -3113,28 +3188,37 @@ function poPaySup(gidEnc){
     <div id="psReceiptRow" class="pillrow" style="min-height:20px"></div>
     <label>${isAr()?"ملاحظة":"Note"}</label><input id="ps_note">
     <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poPaySupAdd('${gidEnc}')">${isAr()?"أضف الدفعة → المالية":"Add payment"}</button>
-    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"عند الدفعة النهائية إذا اختلف المبلغ عن المستحق، ينبّهك بالفرق ويسألك السبب.":"On final payment, any difference from the due is flagged."}</div>`);
+    ${hasProd?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"دفعات الإنتاج: ينبّهك لو الإجمالي تعدّى المستحق، ولو الدفعة النهائية أقل من المستحق.":"Production: flags over/under payment."}</div>`:""}`);
 }
 async function poPayReceiptSup(files){ const f=files&&files[0]; if(!f)return; const u=await captureSamplePhoto(f); if(u){ window._payReceipt=u; const r=el("psReceiptRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:56px;height:56px">`; } }
 async function poPaySupAdd(gidEnc){
   const amt=parseFloat(el("ps_amt").value)||0; if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
-  const kind=el("ps_kind").value, cur0=el("ps_cur").value;
+  const kindRaw=el("ps_kind")?el("ps_kind").value:"sample", cur0=el("ps_cur").value;
+  const stage = kindRaw==="sample" ? "sample" : "production";
+  const kind  = kindRaw==="sample" ? "final" : kindRaw;
   const G=supGroup(gidEnc); const dinfo=supDueInfo(G.rows); const gid=decodeURIComponent(gidEnc);
   const paid=supPaid(gid,dinfo.cur).paid;
   let discrepancy_note=null;
-  const amtInCur=toCur(amt,cur0,dinfo.cur);
-  const diff=(paid+amtInCur)-dinfo.total;
-  if(kind==="final" && Math.abs(diff)>0.01){
-    const more=diff>0;
-    const reason=prompt(isAr()
-      ? `الدفعة تخالف المستحق بمقدار ${fmtN(Math.abs(diff))} ${dinfo.cur} (${more?"زيادة":"نقص"}).
-اكتب السبب (مثل: زيادة إنتاج الخام) أو اضغط إلغاء للمراجعة مع المورد:`
-      : `Payment differs from due by ${fmtN(Math.abs(diff))} ${dinfo.cur} (${more?"over":"under"}). Reason, or Cancel to review:`, "");
-    if(reason===null) return;
-    discrepancy_note=`${more?(isAr()?"زيادة":"over"):(isAr()?"نقص":"under")} ${fmtN(Math.abs(diff))} ${dinfo.cur}${reason?` — ${reason}`:""}`;
+  /* دفعات العينات ما تُقاس على مستحق — كميات صغيرة بأسعارها. لا تنبيه ولا فرق. */
+  if(stage==="production"){
+    const amtInCur=toCur(amt,cur0,dinfo.cur);
+    const diff=(paid+amtInCur)-dinfo.total;
+    const over  = diff>0.01;
+    const under = kind==="final" && diff<-0.01;
+    if(over || under){
+      const reason=prompt(isAr()
+        ? `${over?`إجمالي المدفوع بيصير أكثر من المستحق بـ ${fmtN(diff)} ${dinfo.cur}.`
+                 :`الدفعة النهائية أقل من المستحق بـ ${fmtN(Math.abs(diff))} ${dinfo.cur}.`}
+المستحق: ${fmtN(dinfo.total)} · المدفوع قبلها: ${fmtN(paid)} · هذي الدفعة: ${fmtN(amtInCur)} ${dinfo.cur}
+
+اكتب السبب، أو اضغط إلغاء للمراجعة مع المورد:`
+        : `Payment ${over?"exceeds":"is under"} the due by ${fmtN(Math.abs(diff))} ${dinfo.cur}. Reason, or Cancel:`, "");
+      if(reason===null) return;
+      discrepancy_note=`${over?(isAr()?"زيادة":"over"):(isAr()?"نقص":"under")} ${fmtN(Math.abs(diff))} ${dinfo.cur}${reason?` — ${reason}`:""}`;
+    }
   }
   const tr=activeTrip(chChannel);
-  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note};
+  const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, stage, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note};
   const {error}=await sb.from("supplier_payments").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
@@ -3232,13 +3316,23 @@ function tripName(id){ const t=(DB.trips||[]).find(x=>x.id===id); return t? (t.n
 function tabFinance(){
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
   const pos=(DB.purchases||[]), exps=(DB.expenses||[]);
-  let mTotal=0; const bySup={}, byTrip={};
-  pos.forEach(po=>{ const t=poTotals(po); mTotal+=t.total;
+  /* الإنتاج يُحسب بالمستحق، والعينات باللي دفعته فعلاً (سعرها مو سعر جملة) */
+  let mProd=0; const bySup={}, byTrip={};
+  pos.forEach(po=>{ if(poIsSample(po)) return;
+    const t=poTotals(po); mProd+=t.total;
     const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].total+=t.total;
     const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
-  let mPaid=0;
-  (DB.supplier_payments||[]).forEach(pp=>{ const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk; const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].paid+=kk; });
-  const mRem=Math.max(0,mTotal-mPaid);
+  let mPaid=0, mProdPaid=0, mSmpPaid=0;
+  (DB.supplier_payments||[]).forEach(pp=>{
+    const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
+    const smp=(pp.stage||"production")==="sample";
+    if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
+    const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0});
+    bySup[sk].paid+=kk; if(smp) bySup[sk].total+=kk;
+    const tk=pp.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); if(smp) byTrip[tk].pur+=kk;
+  });
+  const mTotal=mProd+mSmpPaid;
+  const mRem=Math.max(0,mProd-mProdPaid);
   exps.forEach(e=>{ const tk=e.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].exp+=expKWD(e); });
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   const grand=mTotal+expTotal;
@@ -3264,6 +3358,7 @@ function tabFinance(){
     <div class="title">${isAr()?"إجمالي المصروف":"Total spend"}</div>
     <div style="font-size:30px;font-weight:800;margin:4px 0">${money(grand)}</div>
     <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}</div>
+    <div class="muted" style="margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
     <div class="muted" style="margin-top:2px">${isAr()?"مدفوع":"paid"}: ${money(mPaid)} · ${mRem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي عليك":"due"}: ${money(mRem)}</b>`:`<b style="color:var(--green)">${isAr()?"لا يوجد متبقٍ":"all paid"}</b>`}</div>
   </div>
 
@@ -3327,19 +3422,34 @@ function poPaidKWD(po){
 }
 function poTotals(po){
   const lc=landedCost({channel:po.channel, qty_yd:po.qty_yd, buy_qty:po.buy_qty, unit_price:po.unit_price, currency:po.currency, plan_qty:po.plan_qty})||{total:0,rawKWD:0,per:null};
+  if(poIsSample(po)){
+    const p=poPaidKWD(po);                 /* العينة تكلّف اللي دفعته — لا أكثر ولا أقل */
+    return {total:p, raw:p, paid:p, remaining:0, per:lc.per, est:lc.total||0, sample:true};
+  }
   const paidK = po.paid? (lc.total||0) : poPaidKWD(po);
-  return {total:lc.total||0, raw:lc.rawKWD||0, paid:Math.min(paidK,lc.total||0), remaining:Math.max(0,(lc.total||0)-paidK), per:lc.per};
+  return {total:lc.total||0, raw:lc.rawKWD||0, paid:Math.min(paidK,lc.total||0), remaining:Math.max(0,(lc.total||0)-paidK), per:lc.per, est:lc.total||0};
 }
 function chFin(){
   const tr=activeTrip(chChannel);
   const pos=(DB.purchases||[]).filter(po=> tr? po.trip_id===tr.id : (po.channel||"local")===chChannel);
   const exps=(DB.expenses||[]).filter(e=> tr? e.trip_id===tr.id : !e.trip_id);
-  let mTotal=0,mPaid=0,mRem=0; const bySup={}, byDesign={};
-  pos.forEach(po=>{ const t=poTotals(po); mTotal+=t.total; mPaid+=t.paid; mRem+=t.remaining;
-    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0}); bySup[sk].total+=t.total; bySup[sk].paid+=t.paid; bySup[sk].rem+=t.remaining;
+  const pays=(DB.supplier_payments||[]).filter(pp=> tr? pp.trip_id===tr.id : (pp.channel||"local")===chChannel);
+  let mProd=0, mSmpPaid=0; const bySup={}, byDesign={};
+  pos.forEach(po=>{ if(poIsSample(po)) return;
+    const t=poTotals(po); mProd+=t.total;
+    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0}); bySup[sk].total+=t.total;
     let dk = po.design_id? ((DB.designs||[]).find(d=>d.id===po.design_id)||{}).name : (po.product_id? pname(product(po.product_id)) : null);
     dk = dk || (isAr()?"غير مخصص":"unassigned"); (byDesign[dk]=byDesign[dk]||0); byDesign[dk]+=t.raw;
   });
+  let mPaid=0, mProdPaid=0;
+  pays.forEach(pp=>{ const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
+    const smp=(pp.stage||"production")==="sample";
+    if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
+    const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0});
+    bySup[sk].paid+=kk; if(smp) bySup[sk].total+=kk;
+  });
+  Object.values(bySup).forEach(v=>{ v.rem=Math.max(0,(v.total||0)-(v.paid||0)); });
+  const mTotal=mProd+mSmpPaid, mRem=Math.max(0,mProd-mProdPaid);
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   const grand=mTotal+expTotal;
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
@@ -4229,7 +4339,7 @@ async function createPOsFromOrder(orderId){
       rows.push({id:newId(), order_id:orderId, collection_id:colId, trip_id:tr?tr.id:null, channel:ck,
         supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
         kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
-        unit_price:m.price||null, currency:chan(ck).currency||"KWD",
+        unit_price:matPriceIn(m, buy_unit), currency:chan(ck).currency||"KWD",
         deliver_status:"ordered", pay_log:[], status:"planned", stage:"production"});
     });
   });
