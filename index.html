@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.65:APPV-->
+<!--APPV:2026-08-12.66:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -11,10 +11,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="فيفوق">
 <meta name="theme-color" content="#FFFFFF">
-<link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Inter:wght@400;600;700;800&family=Italiana&family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<link rel="manifest" href="manifest.json?v=2026-08-12.66">
+<!-- الخطوط والمكتبات كلها محلية: التطبيق يفتح بدون إنترنت، ويفتح حتى لو كانت مواقع الـ CDN محجوبة -->
+<link href="fonts.css?v=2026-08-12.66" rel="stylesheet">
+<script src="vendor/supabase.js?v=2026-08-12.66"></script>
+<script defer src="vendor/html2canvas.min.js?v=2026-08-12.66"></script>
+<script defer src="vendor/jsQR.js?v=2026-08-12.66"></script>
 <style>
   :root{
     /* محايدات نظام الواجهات */
@@ -501,8 +503,9 @@ async function flushQueue(){
     while(q.length){
       const it=q[0];
       let r;
-      try{ const {data:{session:_as}} = await sb.auth.getSession();
-           if(_as){ delete it.headers["Authorization"]; it.headers["authorization"]="Bearer "+_as.access_token; } }catch(e){}
+      const _fs = await withTO(sb.auth.getSession(), 4000, null);
+      const _as = _fs && _fs.data && _fs.data.session;
+      if(_as){ delete it.headers["Authorization"]; it.headers["authorization"]="Bearer "+_as.access_token; }
       try{ r = await fetch(it.url,{method:it.method, headers:it.headers, body:it.body}); }
       catch(e){ NETOK=false; paintNet(); return; }
       if(r.status>=500){ paintNet(); return; }   /* خلل مؤقت في السيرفر — نعيد لاحقاً */
@@ -538,14 +541,54 @@ function offBar(){
     : (isAr()? `جاري إرسال ${n} عملية محفوظة…` : `Syncing ${n} saved actions…`)}</div>`;
 }
 
+/* أي انتظار على الشبكة له سقف — التطبيق ما يعلّق ولا ينتظر للأبد */
+function withTO(p, ms, fb){
+  return Promise.race([
+    Promise.resolve(p).catch(()=>fb),
+    new Promise(r=>setTimeout(()=>r(fb), ms))
+  ]);
+}
+/* هل هذا الجهاز مسجّل دخول من قبل؟ (توكن سوبابيس محفوظ محلياً) */
+function hasStoredAuth(){
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && /^sb-.*-auth-token$/.test(k) && localStorage.getItem(k)) return true;
+    }
+  }catch(e){}
+  return false;
+}
+/* عامل الخدمة: يخزّن التطبيق على الجهاز عشان يفتح بدون إنترنت وبسرعة */
+function regSW(){
+  if(!("serviceWorker" in navigator)) return;
+  if(location.protocol!=="https:" && location.hostname!=="localhost" && location.hostname!=="127.0.0.1") return;
+  try{ const r=navigator.serviceWorker.register("sw.js?v="+APP_VERSION); if(r&&r.catch) r.catch(()=>{}); }catch(e){}
+}
+/* هل التطبيق مخزّن على الجهاز وجاهز يشتغل بدون إنترنت؟ */
+function offlineReady(){
+  try{ return !!(navigator.serviceWorker && navigator.serviceWorker.controller); }catch(e){ return false; }
+}
+
 /* ================= تشغيل ================= */
 window.addEventListener("DOMContentLoaded", async ()=>{
+  regSW();
+  if(typeof supabase==="undefined" || !supabase.createClient){
+    document.body.innerHTML=`<div style="padding:40px;text-align:center;font-family:Arial,sans-serif">
+      <h2 style="margin-bottom:10px">ما قدرنا نشغّل التطبيق</h2>
+      <p style="color:#666;margin-bottom:18px">ملف أساسي ما وصل. اضغط تحديث وانت على إنترنت مرة وحدة، وبعدها بيشتغل بدون إنترنت.</p>
+      <button onclick="location.reload()" style="padding:12px 26px;font-size:16px;border-radius:12px;border:1px solid #ccc;background:#18181B;color:#fff">تحديث</button></div>`;
+    return;
+  }
+  const HAD_AUTH = hasStoredAuth();      /* نقرأها قبل إنشاء العميل */
   sb = supabase.createClient(SUPA_URL, SUPA_KEY, {global:{fetch:vvFetch}});
   try{ localStorage.removeItem("vv_signed"); }catch(e){}  /* المخزن صار عام — نمسح كاش الروابط الموقّعة القديمة */
   checkDailyLogout();
   applyDir();
-  try{ const {data:{session:_as}} = await sb.auth.getSession(); AUTHED=!!_as; }catch(e){ AUTHED=false; }
-  try{ sb.auth.onAuthStateChange((_e,_s)=>{ AUTHED=!!_s; }); }catch(e){}
+  /* التوكن ينتهي كل ساعة ويحتاج تجديد من السيرفر. بدون إنترنت التجديد يعلّق —
+     فنقطع الانتظار بعد ثانيتين ونكمل، لأن الجهاز أصلاً مسجّل دخول من قبل. */
+  const _sr = await withTO(sb.auth.getSession(), 2500, null);
+  AUTHED = !!(_sr && _sr.data && _sr.data.session) || HAD_AUTH;
+  try{ sb.auth.onAuthStateChange((_e,_s)=>{ if(_s) AUTHED=true; else if(!hasStoredAuth()) AUTHED=false; }); }catch(e){}
   if(!AUTHED){ render(); return; }
   await flushQueue();
   await loadAll();
@@ -567,8 +610,16 @@ function today(){return new Date().toISOString().slice(0,10);}
 function checkDailyLogout(){
   if(session && session.day !== today()){ session=null; localStorage.removeItem("vv2_session"); }
 }
+/* بدون إنترنت: نشتغل على آخر نسخة محفوظة على الجهاز بدل ما نعلّق على الشبكة */
+function fallbackToCache(){
+  NETOK=false;
+  const has = (DB.workers||[]).length || (DB.lines||[]).length || (DB.products||[]).length;
+  if(!has){ const c=localStorage.getItem(VVC); if(c){ try{ DB=JSON.parse(c); }catch(_){} } }
+  paintNet();
+}
 async function loadAll(){
-  const res = await Promise.all([
+  if(!NETOK){ fallbackToCache(); return; }        /* الجهاز يقول ما فيه إنترنت — ما نضيّع وقته */
+  const res = await withTO(Promise.all([
     sb.from("workers").select("*").order("name"),
     sb.from("products").select("*").order("created_at",{ascending:false}),
     sb.from("design_projects").select("*").order("created_at",{ascending:false}),
@@ -590,15 +641,11 @@ async function loadAll(){
     sb.from("expenses").select("*").order("created_at",{ascending:false}),
     sb.from("supplier_payments").select("*").order("created_at",{ascending:false}),
     sb.from("stock_moves").select("*").order("at",{ascending:false}),
-  ]);
+  ]), 15000, null);                                /* شبكة موصولة بس ما توصل: نقطع الانتظار ونشتغل بالمحفوظ */
+  if(!res){ fallbackToCache(); return; }
   const [w,p,d,s,r,o,l,pa,e,j,st,br,col,mat,tr,sup,smp,pur,exp,sp,mv] = res;
   /* فشل الاتصال: نحافظ على البيانات الحالية أو نرجع لآخر نسخة محفوظة على الجهاز */
-  if(res.some(x=>x && x.error && !x.data)){
-    NETOK=false;
-    const has = (DB.workers||[]).length || (DB.lines||[]).length || (DB.products||[]).length;
-    if(!has){ const c=localStorage.getItem(VVC); if(c){ try{ DB=JSON.parse(c); }catch(_){} } }
-    paintNet(); return;
-  }
+  if(res.some(x=>x && x.error && !x.data)){ fallbackToCache(); return; }
   DB={workers:w.data||[],products:p.data||[],designs:d.data||[],shoots:s.data||[],reasons:r.data||[],
       orders:o.data||[],lines:l.data||[],parts:pa.data||[],events:e.data||[],jobs:j.data||[],
       settings:st.data||{break_minutes:30,work_start:"09:00",work_end:"18:00",work_days:["sat","sun","mon","tue","wed","thu"],creative_pin:"4826"},
@@ -1076,7 +1123,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.65";
+const APP_VERSION="2026-08-12.66";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4197,7 +4244,18 @@ function tabArchive(){
 /* ---- الإعدادات ---- */
 function tabSettings(){
   const s=DB.settings||{};
+  const _rdy=offlineReady();
   el("tabbody").innerHTML=`<div class="card">
+    <div class="title">${I.pack} ${isAr()?"الشغل بدون إنترنت":"Offline"}</div>
+    <div class="note-box" style="${_rdy?"background:var(--green-lt);color:var(--green-dk)":"background:var(--wine-lt);color:var(--wine-dk)"}">
+      ${_rdy ? (isAr()?"✓ التطبيق محفوظ على هذا الجهاز — يفتح ويشتغل بدون إنترنت، وكل اللي تدخله ينحفظ وينرسل تلقائياً أول ما يرجع الاتصال."
+                     :"Saved on this device — works offline.")
+             : (isAr()?"⚠ التطبيق ما انحفظ على هذا الجهاز بعد. خله مفتوح على الإنترنت شوي، وبعدها سكّر وافتحه مرة ثانية."
+                     :"Not cached yet — stay online a moment, then reopen.")}
+      <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"النسخة":"Version"} ${esc(APP_VERSION)}</div>
+    </div>
+  </div>
+  <div class="card">
     <div class="title">${I.clock} ${t("workHours")}</div>
     <div class="grid2">
       <div><label>${t("from")}</label><input type="time" id="s_start" value="${esc(s.work_start||"09:00")}"></div>
