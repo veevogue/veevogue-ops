@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.61:APPV-->
+<!--APPV:2026-08-12.62:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1069,7 +1069,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.61";
+const APP_VERSION="2026-08-12.62";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5372,7 +5372,8 @@ function openDesign(id){
            ${d.sample_due?`<div class="muted" style="font-size:12px${lateS?";color:var(--wine)":""}">${lateS?"⏰ ":""}${isAr()?"التسليم":"due"}: ${esc(d.sample_due)}</div>`:""}
            ${d.sample_cost?`<div class="muted" style="font-size:12px">${isAr()?"الأجرة":"cost"}: ${d.sample_cost} ${esc(d.sample_currency||"KWD")}</div>`:""}`
         : `${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${workedMins(d.sample_started_at)} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}`}</div>
-      ${d.sample_external?`<button class="btn btn-ok btn-big" onclick="sampleReceivedExt('${id}')">${I.done} ${isAr()?"استلمت العينة":"Sample received"}</button>`:""}
+      ${d.sample_external?`<button class="btn btn-ink btn-big" onclick="printSampleJob('${id}')">${I.print} ${isAr()?"أمر التنفيذ — اطبعه للمشغل":"Sample order"}</button>
+      <button class="btn btn-ok btn-big" style="margin-top:6px" onclick="sampleReceivedExt('${id}')">${I.done} ${isAr()?"استلمت العينة":"Sample received"}</button>`:""}
       ${rev?`<div class="note-box"><b>${isAr()?"الملاحظات المرسلة له:":"Notes sent:"}</b>
         ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
       ${imgs(d.sketches)}
@@ -5787,6 +5788,64 @@ async function printJob(jobId){
   ${arts}${charts}</div>`;
   jobShow(await signHtml(content));
 }
+/* أمر تنفيذ العينة للمشغل الخارجي — ورقة كاملة يستلمها المشغل */
+async function printSampleJob(id){
+  const d=design_(id); if(!d) return;
+  const sup=(DB.suppliers||[]).find(x=>x.id===d.sample_vendor_id);
+  const vendor=d.sample_vendor||(sup&&sup.name)||"—";
+  const chart=d.size_chart||{}; const sizes=Object.keys(chart);
+  const smp=(DB.samples||[]).filter(x=>x.design_id===id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(id)>=0));
+  const chk=(d.checklist||[]);
+  const imgs=[...(d.sketches||[]), ...(d.mood||[])].slice(0,4);
+
+  const matRows = smp.length? smp.map(x=>{
+      const sp=(DB.suppliers||[]).find(z=>z.id===x.supplier_id);
+      const ph=(x.photos||[])[0];
+      return `<tr>
+        <td style="width:78px">${ph?`<img crossorigin="anonymous" src="${esc(ph)}" style="width:66px;height:66px;object-fit:cover;border-radius:8px">`:"—"}</td>
+        <td><b>${esc(x.fabric_type||(x.kind==="accessory"?"إكسسوار":"خام"))}</b>
+          <div style="color:#666;font-size:12px">${esc((sp&&sp.name)||x.supplier_name||"")}${x.width?` · العرض ${esc(x.width)}`:""}</div></td>
+        <td style="text-align:center">${x.kind==="accessory"?"إكسسوار":"قماش"}</td></tr>`;}).join("")
+    : chk.map(c=>`<tr><td>—</td><td><b>${esc(c.name||"")}</b></td>
+        <td style="text-align:center">${c.qty?`${esc(String(c.qty))} ${esc(c.unit||"")}`:"—"}</td></tr>`).join("");
+
+  const content=`<div id="joSheet" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,Arial,sans-serif">
+  <style>#joSheet table{width:100%;border-collapse:collapse;margin-top:12px}#joSheet td,#joSheet th{border:1px solid #E6E1D8;padding:8px;text-align:right}#joSheet .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px}#joSheet .lg{font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px}#joSheet h3{margin:16px 0 4px;font-size:15px}</style>
+  <div class="hd"><div class="lg">VEEVOGUE</div><div style="text-align:left">SAMPLE ORDER<br><b>أمر تنفيذ عينة</b></div></div>
+
+  <p>المشغل: <b>${esc(vendor)}</b> · التاريخ: ${esc(String(d.sample_sent_at||"").slice(0,10)||today())}
+    ${d.sample_due?` · <b>التسليم: ${esc(d.sample_due)}</b>`:""}
+    ${d.sample_cost?` · الأجرة المتفق عليها: <b>${d.sample_cost} ${esc(d.sample_currency||"KWD")}</b>`:""}</p>
+
+  <table><tr><th>التصميم</th><th>الكود</th><th>المطلوب</th></tr>
+    <tr><td><b style="font-size:16px">${esc(d.final_name||d.name||"")}</b></td>
+        <td style="font-family:Arial"><b>${esc(d.sku||"—")}</b></td>
+        <td><b>عينة واحدة</b></td></tr></table>
+
+  ${imgs.length?`<h3>الرسم والمرجع</h3><div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${imgs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:150px;height:190px;object-fit:cover;border:1px solid #E6E1D8;border-radius:8px">`).join("")}</div>`:""}
+
+  ${sizes.length?`<h3>القياسات (سم)</h3>
+    <table><tr><th>القياس</th>${sizes.map(x=>`<th>${esc(x)}</th>`).join("")}</tr>
+    ${MEAS.filter(m=>sizes.some(x=>(chart[x]||{})[m[0]])).map(m=>
+      `<tr><td>${m[1]}</td>${sizes.map(x=>`<td>${esc(String((chart[x]||{})[m[0]]||"—"))}</td>`).join("")}</tr>`).join("")}</table>`:""}
+
+  ${(matRows)?`<h3>الخامات والإكسسوارات</h3>
+    <table><tr><th>الصورة</th><th>البند</th><th>ملاحظة</th></tr>${matRows}</table>`:""}
+
+  ${d.materials?`<h3>ملاحظات الخامات</h3><div style="border:1px solid #E6E1D8;border-radius:8px;padding:10px">${esc(d.materials)}</div>`:""}
+
+  ${(d.patterns||[]).filter(Boolean).length?`<h3>الباترون</h3><div>${(d.patterns||[]).filter(Boolean).map(x=>esc(x.name||"")).join(" · ")}</div>`:""}
+
+  ${(d.notes||[]).length?`<h3>ملاحظات التصميم</h3>${(d.notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t||"")}</div>`).join("")}`:""}
+
+  <div style="margin-top:22px;display:flex;justify-content:space-between;gap:20px">
+    <div style="flex:1;border-top:1px solid #1C1B1A;padding-top:6px">استلمها: ______________</div>
+    <div style="flex:1;border-top:1px solid #1C1B1A;padding-top:6px">التاريخ: ______________</div>
+  </div></div>`;
+  jobShow(await signHtml(content));
+}
+
 /* شاشة الجوب أوردر داخل التطبيق — فيها رجوع + حفظ صورة + طباعة */
 function jobShow(html){
   closeJob();
