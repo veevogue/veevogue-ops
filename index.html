@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.69:APPV-->
+<!--APPV:2026-08-12.70:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1123,7 +1123,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.69";
+const APP_VERSION="2026-08-12.70";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3163,6 +3163,8 @@ function poEstKWD(po){
    الدفعة المربوطة بتصميم تنزل عليه كاملة، وغير المربوطة تتوزّع على عينات
    نفس المورّد بحصة كل عينة من قيمتها التقديرية (وبالتساوي لو ما فيه قيم). */
 function smpFeeSplit(pp){
+  const al=Array.isArray(pp.alloc)?pp.alloc:[];
+  if(al.length) return al.map(a=>({design_id:a.design_id||null, amount:toKWDsafe(a.amount, pp.currency)}));
   const kwd=toKWDsafe(pp.amount, pp.currency);
   if(pp.design_id) return [{design_id:pp.design_id, amount:kwd}];
   const rows=(DB.purchases||[]).filter(po=> poIsSample(po)
@@ -3216,6 +3218,11 @@ function poPaySup(gidEnc){
   const payRow=(pp)=>`<div class="lineitem"><div style="min-width:0">
       <b>${(pp.stage||"production")==="sample"?(isAr()?"عينات":"sample"):(pp.kind==="deposit"?(isAr()?"عربون":"deposit"):(isAr()?"دفعة نهائية":"final"))}: ${pp.amount} ${esc(pp.currency||cur)}</b>
       <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}${pp.design_id?` · ${esc(((design_(pp.design_id)||{}).final_name)||((design_(pp.design_id)||{}).name)||"")}`:""}</span>
+      ${(Array.isArray(pp.alloc)&&pp.alloc.length)?`<div class="muted" style="font-size:11px;margin-top:2px">${pp.alloc.map(a=>{
+        const po=a.po_id?(DB.purchases||[]).find(z=>z.id===a.po_id):null;
+        const d=a.design_id?(design_(a.design_id)||{}):null;
+        const nm=(po&&po.fabric_name)||(d&&(d.final_name||d.name))||(isAr()?"رسوم عامة":"other");
+        return `${esc(nm)} ${fmtN(a.amount)}`; }).join(" · ")}</div>`:""}
       ${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}
       ${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}
       ${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div>
@@ -3223,11 +3230,11 @@ function poPaySup(gidEnc){
   openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(G.name||"")}</div>
     ${hasProd?`<div class="note-box">${isAr()?"مستحق الإنتاج":"Production due"}: <b>${fmtN(dinfo.total)} ${esc(cur)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtN(paid)} ${esc(cur)} · ${remaining>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${fmtN(remaining)} ${esc(cur)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>`:""}
     ${hasSmp?`<div class="note-box" style="background:#FBF0D8;color:#8a6d1f">${isAr()?"العينات":"Samples"}: ${isAr()?"مدفوع":"paid"} <b>${fmtN(spd.samplePaid)} ${esc(cur)}</b>
-      <div style="font-size:11px;margin-top:3px">${isAr()?"العينات ما لها مستحق محسوب — كميات صغيرة بأسعارها الخاصة. اكتب المبلغ اللي دفعته وبس.":"Samples have no computed due."}</div></div>`:""}
+      <div style="font-size:11px;margin-top:3px">${isAr()?"العينات ما لها مستحق محسوب — كميات صغيرة بأسعارها الخاصة. حط جدام كل خامة كم دفعت لها، والنظام يجمعها وينزّلها على تصاميمها.":"No computed due — enter what you paid per item."}</div></div>`:""}
     ${spd.all.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${spd.all.map(payRow).join("")}`:""}
     <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة":"NEW PAYMENT"}</div>
     ${(hasProd&&hasSmp)?`<label>${isAr()?"النوع":"Kind"}</label>
-    <select id="ps_kind">
+    <select id="ps_kind" onchange="psKindToggle()">
       <option value="sample">${isAr()?"دفعة عينات":"Sample payment"}</option>
       <option value="deposit">${isAr()?"عربون إنتاج":"Production deposit"}</option>
       <option value="final">${isAr()?"دفعة إنتاج نهائية / تسديد":"Production final"}</option>
@@ -3240,32 +3247,78 @@ function poPaySup(gidEnc){
     : `<input type="hidden" id="ps_kind" value="sample">`}
     ${hasSmp?(()=>{
       const smpRows=G.rows.filter(poIsSample);
-      const dids=[...new Set(smpRows.map(r=>r.design_id).filter(Boolean))];
-      return `<label>${isAr()?"رسوم العينات تنزل على":"Sample fee goes to"}</label>
-      <select id="ps_design">
-        <option value="">${isAr()?"توزيع تلقائي على كل عينات هذا المورّد":"Split across this supplier's samples"}</option>
-        ${dids.map(id=>{ const d=design_(id)||{}; return `<option value="${id}">${esc(d.final_name||d.name||"تصميم")}</option>`; }).join("")}
-      </select>
-      <div class="muted" style="font-size:11px">${isAr()?"التوزيع التلقائي بحصة كل عينة من قيمتها. حدّد التصميم لو الدفعة تخص عينة وحدة.":"Auto-split by each sample's share."}</div>`;
+      const line=(r)=>{ const d=r.design_id?(design_(r.design_id)||{}):null; const q=poQtyUnit(r);
+        return `<div class="lineitem" style="padding:6px 0;align-items:center">
+          <div style="flex:1;min-width:0">
+            <b style="font-size:13px">${esc(r.fabric_name||"—")}</b>
+            <div class="muted" style="font-size:11px">${d?esc(d.final_name||d.name||""):(isAr()?"بدون تصميم":"no design")}${q.qty?` · ${fmtN(q.qty)} ${unitAr(q.unit)}`:""}</div>
+          </div>
+          <input id="psa_${r.id}" inputmode="decimal" placeholder="0" oninput="psSum()" style="width:96px;text-align:center">
+        </div>`; };
+      return `<div id="psSmpBox">
+        <div class="sechead" style="font-size:11px;margin-top:6px">${isAr()?"كم دفعت لكل خامة؟":"Paid per item"}</div>
+        ${smpRows.map(line).join("")}
+        <div class="lineitem" style="padding:6px 0;align-items:center">
+          <div style="flex:1;min-width:0"><b style="font-size:13px">${isAr()?"رسوم عامة / بند مو مسجّل":"Other / unlisted"}</b>
+            <div class="muted" style="font-size:11px">${isAr()?"ما ينزل على تصميم":"not tied to a design"}</div></div>
+          <input id="psa_other" inputmode="decimal" placeholder="0" oninput="psSum()" style="width:96px;text-align:center">
+        </div>
+        <div class="note-box" style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <span>${isAr()?"الإجمالي":"Total"}</span><b id="psTotal" style="font-size:16px">0</b>
+        </div>
+      </div>`;
     })():""}
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+    <div id="psAmtBox" style="display:grid;grid-template-columns:2fr 1fr;gap:10px${hasSmp&&!hasProd?";display:none":""}">
       <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
     </div>
+    ${(hasSmp&&!hasProd)?`<label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur2" onchange="el('ps_cur').value=this.value;psSum()">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select>`:""}
     <label>${isAr()?"نسخة إثبات الدفع (صورة)":"Receipt photo"}</label>
     <input type="file" accept="image/*" id="ps_file" onchange="poPayReceiptSup(this.files)">
     <div id="psReceiptRow" class="pillrow" style="min-height:20px"></div>
     <label>${isAr()?"ملاحظة":"Note"}</label><input id="ps_note">
     <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poPaySupAdd('${gidEnc}')">${isAr()?"أضف الدفعة → المالية":"Add payment"}</button>
     ${hasProd?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"دفعات الإنتاج: ينبّهك لو الإجمالي تعدّى المستحق، ولو الدفعة النهائية أقل من المستحق.":"Production: flags over/under payment."}</div>`:""}`);
+  setTimeout(()=>{ try{ psKindToggle(); }catch(e){} },0);
+}
+/* مجموع ما دُفع لكل بند — يتحدّث مع كل رقم تكتبه */
+function psSum(){
+  let t=0;
+  document.querySelectorAll('[id^="psa_"]').forEach(i=>{ t += parseFloat(toAsciiDigits(i.value))||0; });
+  t=Math.round(t*1000)/1000;
+  const b=el("psTotal"); if(b) b.textContent=fmtN(t);
+  const a=el("ps_amt"); if(a) a.value=t?String(t):"";
+  return t;
+}
+/* دفعة عينات = بنود مفصّلة · دفعة إنتاج = مبلغ واحد */
+function psKindToggle(){
+  const k=el("ps_kind")?el("ps_kind").value:"sample";
+  const box=el("psSmpBox"), amt=el("psAmtBox");
+  if(box) box.style.display = k==="sample" ? "block" : "none";
+  if(amt) amt.style.display = k==="sample" ? "none" : "grid";
+  if(k==="sample") psSum();
 }
 async function poPayReceiptSup(files){ const f=files&&files[0]; if(!f)return; const u=await captureSamplePhoto(f); if(u){ window._payReceipt=u; const r=el("psReceiptRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:56px;height:56px">`; } }
 async function poPaySupAdd(gidEnc){
-  const amt=parseFloat(el("ps_amt").value)||0; if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
   const kindRaw=el("ps_kind")?el("ps_kind").value:"sample", cur0=el("ps_cur").value;
   const stage = kindRaw==="sample" ? "sample" : "production";
   const kind  = kindRaw==="sample" ? "final" : kindRaw;
   const G=supGroup(gidEnc); const dinfo=supDueInfo(G.rows); const gid=decodeURIComponent(gidEnc);
+  /* العينات: نقرأ اللي دفعته لكل خامة، والمجموع هو الدفعة */
+  let alloc=[], amt=0;
+  if(stage==="sample"){
+    G.rows.filter(poIsSample).forEach(r=>{
+      const i=el("psa_"+r.id); const v=i? (parseFloat(toAsciiDigits(i.value))||0) : 0;
+      if(v>0) alloc.push({po_id:r.id, design_id:r.design_id||null, amount:v});
+    });
+    const oth=el("psa_other"); const ov=oth? (parseFloat(toAsciiDigits(oth.value))||0) : 0;
+    if(ov>0) alloc.push({po_id:null, design_id:null, amount:ov});
+    amt=Math.round(alloc.reduce((a,x)=>a+x.amount,0)*1000)/1000;
+    if(!amt) return alert(isAr()?"اكتب كم دفعت لكل خامة":"Enter what you paid per item");
+  } else {
+    amt=parseFloat(toAsciiDigits(el("ps_amt").value))||0;
+    if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
+  }
   const paid=supPaid(gid,dinfo.cur).paid;
   let discrepancy_note=null;
   /* دفعات العينات ما تُقاس على مستحق — كميات صغيرة بأسعارها. لا تنبيه ولا فرق. */
@@ -3288,7 +3341,7 @@ async function poPaySupAdd(gidEnc){
   }
   const tr=activeTrip(chChannel);
   const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, stage, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note,
-    design_id: (stage==="sample" && el("ps_design") && el("ps_design").value) ? el("ps_design").value : null};
+    alloc, design_id:null};
   const {error}=await sb.from("supplier_payments").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
