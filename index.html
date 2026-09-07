@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.63:APPV-->
+<!--APPV:2026-08-12.64:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -418,6 +418,7 @@ function designOptions(sel){ return `<option value="">${isAr()?"— بدون —
 function genSKU(kind){
   if(kind==="material") return skuNext("M", DB.materials, "sku");
   if(kind==="design")   return skuNext("V", DB.designs, "sku");
+  if(kind==="sample")   return skuNext("S", DB.samples, "sku");
   return "X-"+String(Date.now()).slice(-6);
 }
 
@@ -1069,7 +1070,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.63";
+const APP_VERSION="2026-08-12.64";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2061,6 +2062,7 @@ function sampleCard(x){
   return `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:stretch;${st==="rejected"?"opacity:.55":""}">
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
       <div style="font-weight:700">${esc(x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric")))}</div>
+      ${x.sku?`<div class="muted" style="font-family:Arial;font-size:11px;letter-spacing:.5px;margin-top:1px">${esc(x.sku)}</div>`:""}
       <div class="muted" style="font-size:12px;margin-top:1px">${esc(x.supplier_name||(isAr()?"—":"—"))}</div>
       <div style="font-size:13px;margin-top:3px">${x.price!=null?`<b>${x.price} ${esc(x.currency||"CNY")}</b>/${perLbl}`:""}${kd!=null?`<div class="muted" style="font-size:11px">≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</div>`:""}</div>
       ${x.note?`<div class="muted" style="font-size:12px;margin-top:3px">📝 ${esc(x.note)}</div>`:""}
@@ -2208,7 +2210,7 @@ async function poFromSample(x){
   const isAcc=x.kind==="accessory";
   const fabName=x.fabric_type||(isAcc?(isAr()?"إكسسوار":"accessory"):(isAr()?"خام":"fabric"));
   let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
-  if(!mat){ mat={id:newId(), sku:genSKU("material"), name:fabName, unit:isAcc?"حبة":"متر",
+  if(!mat){ mat={id:newId(), sku:x.sku||genSKU("material"), name:fabName, unit:isAcc?"حبة":"متر",
       supplier:x.supplier_name||null, supplier_id:supId||null, price:x.price||null, active:true};
     await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
@@ -2545,6 +2547,7 @@ async function sampleSave(){
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:window._chItem||null,
+    sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample"),
     kind:k,
     note:el("smp_note").value||null,
     status:"candidate"};
@@ -5119,7 +5122,7 @@ async function syncDesignToProduct(id){
   if(d.sku && d.sku!==pr.sku) patch.sku=d.sku;
   if(d.size_chart && Object.keys(d.size_chart).length
      && JSON.stringify(d.size_chart)!==JSON.stringify(pr.size_chart||{})) patch.size_chart=d.size_chart;
-  const imgs=[...(d.sketches||[]),...(d.mood||[])].slice(0,6);
+  const imgs=[...(d.sketches||[]),...(d.refs||[]),...(d.mood||[])].slice(0,6);
   if(imgs.length && JSON.stringify(imgs)!==JSON.stringify(pr.images||[])) patch.images=imgs;
   if(d.patterns && JSON.stringify(d.patterns)!==JSON.stringify(pr.patterns||[])) patch.patterns=d.patterns;
   if(!Object.keys(patch).length) return;
@@ -5150,6 +5153,14 @@ function designEditAll(d){
     <label style="margin-top:10px">${isAr()?"المود بورد":"Mood board"}</label>
     ${imgGrid(d.mood, id, "mood", "moodgrid")}
     <input type="file" id="ea_mood" accept="image/*" multiple onchange="eaAddFiles('${id}','mood')">
+
+    <label style="margin-top:10px">${isAr()?"أمثلة توضيحية":"References"}</label>
+    ${imgGrid(d.refs, id, "refs")}
+    <input type="file" id="ea_refs" accept="image/*" multiple onchange="eaAddFiles('${id}','refs')">
+
+    <label style="margin-top:10px">${isAr()?"الباترونات":"Patterns"}</label>
+    <div>${(d.patterns||[]).filter(Boolean).map((x,i)=>`<span class="chip">${I.file} ${esc(x.name)} <b style="cursor:pointer;color:var(--wine)" onclick="rmDesignPattern('${id}',${i})">✕</b></span>`).join("")||`<span class="muted" style="font-size:12px">${isAr()?"ما فيه باترون":"none"}</span>`}</div>
+    <input type="file" id="d_pat" multiple onchange="addDesignPattern('${id}')">
 
     <label style="margin-top:10px">${isAr()?"ملاحظات الخامات":"Material notes"}</label>
     <textarea id="ea_mat">${esc(d.materials||"")}</textarea>
@@ -5196,7 +5207,7 @@ async function eaSaveMat(id){
 }
 async function eaAddFiles(id, field){
   const d=design_(id); const arr=[...(d[field]||[])];
-  const inp=el(field==="mood"?"ea_mood":"ea_sk"); if(!inp) return;
+  const inp=el(field==="mood"?"ea_mood":(field==="refs"?"ea_refs":"ea_sk")); if(!inp) return;
   for(const f of inp.files){ const u=await uploadFile(f,"designs"); if(u) arr.push(u); }
   await sb.from("design_projects").update({[field]:arr}).eq("id",id);
   if(d) d[field]=arr;
@@ -5353,6 +5364,7 @@ function designRecap(d){
     <summary style="cursor:pointer;font-weight:800;font-size:13px;color:var(--wine-dk)">${I.design} ${isAr()?"الفكرة — السكيتش والمود بورد":"Idea — sketches & mood"}</summary>
     ${row(isAr()?"السكيتشات":"Sketches", d.sketches)}
     ${row(isAr()?"المود بورد":"Mood board", d.mood, "moodimg")}
+    ${row(isAr()?"أمثلة توضيحية":"References", d.refs)}
     ${(d.notes&&d.notes.length)?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"ملاحظات":"Notes"}</div>${d.notes.map((n,i)=>`<div class="muted" style="font-size:12px">${i+1}. ${esc(n.t)}</div>`).join("")}`:""}
     ${(d.patterns&&d.patterns.filter(Boolean).length)?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"الباترون":"Pattern"}: ${d.patterns.filter(Boolean).map(x=>esc(x.name)).join(" · ")}</div>`:""}
   </details>`;
@@ -5373,9 +5385,14 @@ function openDesign(id){
         <input type="file" id="d_mood" accept="image/*" multiple onchange="addDesignFiles('${id}','mood')">
       </div>
       <div class="dsec">
-        <div class="sechead">${I.edit} ${isAr()?"السكيتشات والأمثلة":"SKETCHES & EXAMPLES"}</div>
+        <div class="sechead">${I.edit} ${isAr()?"السكيتشات":"SKETCHES"}</div>
         ${imgGrid(d.sketches,id,'sketches')}
         <input type="file" id="d_sketches" accept="image/*" multiple onchange="addDesignFiles('${id}','sketches')">
+      </div>
+      <div class="dsec">
+        <div class="sechead">${I.cam} ${isAr()?"أمثلة توضيحية":"REFERENCES"}</div>
+        ${imgGrid(d.refs,id,'refs')}
+        <input type="file" id="d_refs" accept="image/*" multiple onchange="addDesignFiles('${id}','refs')">
       </div>
       <div class="dsec">
         <div class="sechead">${I.file} ${isAr()?"ملاحظات داخلية":"NOTES"}</div>
@@ -5510,7 +5527,8 @@ function redrawDChart(){
 }
 async function addDesignFiles(id, field){
   const d=design_(id); const arr=[...(d[field]||[])];
-  for(const f of el(field==="mood"?"d_mood":"d_sketches").files){const u=await uploadFile(f,"designs"); if(u) arr.push(u);}
+  const inp=el(field==="mood"?"d_mood":(field==="refs"?"d_refs":"d_sketches"));
+  for(const f of (inp?inp.files:[])){const u=await uploadFile(f,"designs"); if(u) arr.push(u);}
   await sb.from("design_projects").update({[field]:arr}).eq("id",id);
   await refresh(); closeSheet(); openDesign(id);
 }
@@ -5880,17 +5898,19 @@ async function printSampleJob(id){
   const chart=d.size_chart||{}; const sizes=Object.keys(chart);
   const smp=(DB.samples||[]).filter(x=>x.design_id===id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(id)>=0));
   const chk=(d.checklist||[]);
-  const imgs=[...(d.sketches||[]), ...(d.mood||[])].slice(0,4);
+  const imgs=[...(d.sketches||[]), ...(d.refs||[])].slice(0,6);   /* المود بورد مرجع داخلي — ما يروح للمشغل */
 
   const matRows = smp.length? smp.map(x=>{
       const sp=(DB.suppliers||[]).find(z=>z.id===x.supplier_id);
       const ph=(x.photos||[])[0];
+      const mt=(DB.materials||[]).find(z=>z.sku && z.sku===x.sku);
       return `<tr>
         <td style="width:78px">${ph?`<img crossorigin="anonymous" src="${esc(ph)}" style="width:66px;height:66px;object-fit:cover;border-radius:8px">`:"—"}</td>
+        <td style="font-family:Arial;font-weight:700">${esc(x.sku||(mt&&mt.sku)||"—")}</td>
         <td><b>${esc(x.fabric_type||(x.kind==="accessory"?"إكسسوار":"خام"))}</b>
           <div style="color:#666;font-size:12px">${esc((sp&&sp.name)||x.supplier_name||"")}${x.width?` · العرض ${esc(x.width)}`:""}</div></td>
         <td style="text-align:center">${x.kind==="accessory"?"إكسسوار":"قماش"}</td></tr>`;}).join("")
-    : chk.map(c=>`<tr><td>—</td><td><b>${esc(c.name||"")}</b></td>
+    : chk.map(c=>`<tr><td>—</td><td>—</td><td><b>${esc(c.name||"")}</b></td>
         <td style="text-align:center">${c.qty?`${esc(String(c.qty))} ${esc(c.unit||"")}`:"—"}</td></tr>`).join("");
 
   const content=`<div id="joSheet" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,Arial,sans-serif">
@@ -5906,7 +5926,7 @@ async function printSampleJob(id){
         <td style="font-family:Arial"><b>${esc(d.sku||"—")}</b></td>
         <td><b>عينة واحدة</b></td></tr></table>
 
-  ${imgs.length?`<h3>الرسم والمرجع</h3><div style="display:flex;gap:8px;flex-wrap:wrap">
+  ${imgs.length?`<h3>السكيتشات والأمثلة التوضيحية</h3><div style="display:flex;gap:8px;flex-wrap:wrap">
     ${imgs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:150px;height:190px;object-fit:cover;border:1px solid #E6E1D8;border-radius:8px">`).join("")}</div>`:""}
 
   ${sizes.length?`<h3>القياسات (سم)</h3>
@@ -5915,11 +5935,16 @@ async function printSampleJob(id){
       `<tr><td>${m[1]}</td>${sizes.map(x=>`<td>${esc(String((chart[x]||{})[m[0]]||"—"))}</td>`).join("")}</tr>`).join("")}</table>`:""}
 
   ${(matRows)?`<h3>الخامات والإكسسوارات</h3>
-    <table><tr><th>الصورة</th><th>البند</th><th>ملاحظة</th></tr>${matRows}</table>`:""}
+    <table><tr><th>الصورة</th><th>الكود</th><th>البند</th><th>النوع</th></tr>${matRows}</table>`:""}
 
   ${d.materials?`<h3>ملاحظات الخامات</h3><div style="border:1px solid #E6E1D8;border-radius:8px;padding:10px">${esc(d.materials)}</div>`:""}
 
-  ${(d.patterns||[]).filter(Boolean).length?`<h3>الباترون</h3><div>${(d.patterns||[]).filter(Boolean).map(x=>esc(x.name||"")).join(" · ")}</div>`:""}
+  ${(d.patterns||[]).filter(Boolean).length?`<h3>الباترونات</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+      ${(d.patterns||[]).filter(Boolean).map(x=> /\.(png|jpe?g|webp|gif)(\?|$)/i.test(String(x.url||""))
+        ? `<div style="text-align:center"><img crossorigin="anonymous" src="${esc(x.url)}" style="width:140px;border:1px solid #E6E1D8;border-radius:8px"><div style="font-size:11px;color:#666">${esc(x.name||"")}</div></div>`
+        : `<span style="border:1px solid #E6E1D8;border-radius:8px;padding:6px 10px">${esc(x.name||"")}</span>`).join("")}
+    </div>`:""}
 
   ${(d.notes||[]).length?`<h3>ملاحظات التصميم</h3>${(d.notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t||"")}</div>`).join("")}`:""}
 
@@ -6620,7 +6645,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
-    "eaSaveChart","eaSaveMat","eaAddFiles",
+    "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
