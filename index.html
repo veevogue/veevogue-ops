@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.60:APPV-->
+<!--APPV:2026-08-12.61:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1069,7 +1069,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.60";
+const APP_VERSION="2026-08-12.61";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4426,25 +4426,27 @@ async function saveOrder(){
   let o, error;
   if(window._editOrderId){ o={id:window._editOrderId}; if(rimg)ordFields.repair_image=rimg;
     ({error}=await sb.from("orders").update(ordFields).eq("id",o.id)); }
-  else { ordFields.repair_image=rimg; ({data:o,error}=await sb.from("orders").insert(ordFields).select().single()); }
-  if(error) return alert(error.message);
+  else { ordFields.repair_image=rimg; const oid=newId(); o={id:oid};
+    ({error}=await sb.from("orders").insert({id:oid, ...ordFields})); }
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(!o || !o.id) return alert(isAr()?"ما قدرنا ننشئ الأمر — أعد المحاولة":"Could not create order");
   let rows=[];
   if(ty==="قياسات خاصة"){
     rows=customModels.filter(m=>m.product_id).map(m=>{
       const cs={sleeve:m.sleeve,bottom:m.bottom,notes:m.notes,age:m.age};
       allMeas().forEach(x=>{if(m[x[0]]) cs[x[0]]=m[x[0]];});
-      return {order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:m.age||(isAr()?"خاص":"CUSTOM"),
+      return {id:newId(), order_id:o.id,product_id:m.product_id,qty:m.qty||1,color:m.color||null,size:m.age||(isAr()?"خاص":"CUSTOM"),
         custom_specs:cs, external_make:!!window._oext, stage:startStageFor(m.product_id,ty,window._oext)};
     });
   }else{
-    rows=newLines.filter(l=>l.product_id).map(l=>({order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,
+    rows=newLines.filter(l=>l.product_id).map(l=>({id:newId(), order_id:o.id,product_id:l.product_id,size:l.size||null,color:l.color||null,qty:l.qty||1,
       external_make:!!window._oext, stage:startStageFor(l.product_id,ty,window._oext)}));
   }
   if(!rows.length){ if(!window._editOrderId) await sb.from("orders").delete().eq("id",o.id); return alert(isAr()?"أضف قطعة واحدة على الأقل":"Add at least one item");}
   if(window._editOrderId){ const oldIds=DB.lines.filter(l=>l.order_id===o.id).map(l=>l.id);
     if(oldIds.length){ await sb.from("line_parts").delete().in("line_id",oldIds); await sb.from("order_lines").delete().eq("order_id",o.id); } }
-  const {data:ins}=await sb.from("order_lines").insert(rows).select();
-  for(const l of (ins||[])){
+  await sb.from("order_lines").insert(rows);
+  for(const l of rows){
     if(l.stage==="sew") await genParts(l.id,l,ty,"sew");
     if(l.stage==="cut") await genParts(l.id,l,ty,"cut");
   }
@@ -5548,9 +5550,15 @@ async function finishApprove(id){
     ({error}=await sb.from("products").update(fields).eq("id",d.product_id));
     p={id:d.product_id};
   } else {
-    ({data:p,error}=await sb.from("products").insert(fields).select().single());
+    /* نولّد الرقم بأنفسنا: لو انحفظت العملية بالطابور دون إنترنت، الرد يرجع بلا بيانات
+       وكان الكود ينهار هنا فيبقى التصميم غير معتمد بينما المنتج يُنشأ لاحقاً. */
+    const nid=newId();
+    ({error}=await sb.from("products").insert({id:nid, ...fields}));
+    p={id:nid};
+    if(!error && !(DB.products||[]).some(x=>x.id===nid)) (DB.products=DB.products||[]).unshift({id:nid, ...fields});
   }
-  if(error) return alert(error.message);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(!p || !p.id) return alert(isAr()?"ما قدرنا ننشئ المنتج — أعد المحاولة":"Could not create product");
   /* الاسم النهائي يستبدل اسم التصميم — اسم واحد ومصدره التصميم */
   await sb.from("design_projects").update({stage:"approved",status:"معتمد",product_id:p.id,
     name, name_en:el("ap_name_en").value||null,
@@ -5634,7 +5642,9 @@ async function makeJob(mode){
     const first=DB.parts.find(x=>x.id===pids[0]);
     const kind=(first&&first.emb_kind)||"تطريز";
     const isFix=pids.every(id=>{const x=DB.parts.find(y=>y.id===id); return x&&x.is_fix;});
-    const {data:j,error}=await sb.from("ext_jobs").insert({kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix}).select().single();
+    const jid=newId();
+    const {error}=await sb.from("ext_jobs").insert({id:jid,kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix});
+    const j={id:jid,kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
     if(error) return alert(error.message);
     for(const id of pids) await sb.from("line_parts").update({status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
@@ -5644,7 +5654,9 @@ async function makeJob(mode){
     if(!ids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
     /* ١ — جوب أوردر الملابس (أو إرجاع تصليح لو القطع راجعة من الجودة) */
     const isFix=ids.every(id=>{const l=DB.lines.find(x=>x.id===id); return l&&l.fix_reason;});
-    const {data:j,error}=await sb.from("ext_jobs").insert({kind:"تنفيذ خارجي",vendor,line_ids:ids,part_ids:[],is_fix:isFix}).select().single();
+    const jid=newId();
+    const {error}=await sb.from("ext_jobs").insert({id:jid,kind:"تنفيذ خارجي",vendor,line_ids:ids,part_ids:[],is_fix:isFix});
+    const j={id:jid,kind:"تنفيذ خارجي",vendor,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
     if(error) return alert(error.message);
     for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${isFix?(isAr()?"إرجاع تصليح":"fix return"):(isAr()?"تنفيذ خارجي":"external")} · ${ids.length}`);
@@ -5656,18 +5668,20 @@ async function makeJob(mode){
       Object.keys(p.emb_parts||{}).forEach(partAr=>{
         const c=(p.components||[]).find(x=>x.ar===partAr)||{ar:partAr,en:partAr};
         embOf(p,partAr).forEach(e=>{
-          rows.push({line_id:id, part_ar:partAr, part_en:c.en||partAr, stage:"emb", status:"sent",
+          rows.push({id:newId(), line_id:id, part_ar:partAr, part_en:c.en||partAr, stage:"emb", status:"sent",
             emb_kind:e.kind, emb_when:e.when||"after_sew", emb_note:e.note||null, emb_artwork:e.artwork||null});
         });
       });
     }
     let j2=null;
     if(rows.length){
-      const {data:ins}=await sb.from("line_parts").insert(rows).select();
-      const pids=(ins||[]).map(x=>x.id);
+      await sb.from("line_parts").insert(rows);
+      const pids=rows.map(x=>x.id);
       const kind=rows[0].emb_kind||"تطريز";
       const v2=(el("x_vendor2")&&el("x_vendor2").value)||vendor;
-      const r2=await sb.from("ext_jobs").insert({kind,vendor:v2,part_ids:pids,line_ids:[]}).select().single();
+      const j2id=newId();
+      const r2={data:{id:j2id,kind,vendor:v2,part_ids:pids,line_ids:[],status:"sent",sent_at:today()},
+                error:(await sb.from("ext_jobs").insert({id:j2id,kind,vendor:v2,part_ids:pids,line_ids:[]})).error};
       j2=r2.data;
       if(j2) await logIt("ext_send","ext_jobs",j2.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
     }
