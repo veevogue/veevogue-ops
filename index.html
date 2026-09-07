@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.62:APPV-->
+<!--APPV:2026-08-12.63:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -417,7 +417,7 @@ function activeDesigns(){ return (DB.designs||[]).filter(d=>(d.stage||"idea")!==
 function designOptions(sel){ return `<option value="">${isAr()?"— بدون —":"none"}</option>`+activeDesigns().map(d=>`<option value="${d.id}" ${sel===d.id?"selected":""}>${esc(d.name||"")}${d.sku?` (${esc(d.sku)})`:""}</option>`).join(""); }
 function genSKU(kind){
   if(kind==="material") return skuNext("M", DB.materials, "sku");
-  if(kind==="design")   return skuNext("D", DB.designs, "sku");
+  if(kind==="design")   return skuNext("V", DB.designs, "sku");
   return "X-"+String(Date.now()).slice(-6);
 }
 
@@ -1069,7 +1069,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.62";
+const APP_VERSION="2026-08-12.63";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5119,11 +5119,89 @@ async function syncDesignToProduct(id){
   if(d.sku && d.sku!==pr.sku) patch.sku=d.sku;
   if(d.size_chart && Object.keys(d.size_chart).length
      && JSON.stringify(d.size_chart)!==JSON.stringify(pr.size_chart||{})) patch.size_chart=d.size_chart;
+  const imgs=[...(d.sketches||[]),...(d.mood||[])].slice(0,6);
+  if(imgs.length && JSON.stringify(imgs)!==JSON.stringify(pr.images||[])) patch.images=imgs;
+  if(d.patterns && JSON.stringify(d.patterns)!==JSON.stringify(pr.patterns||[])) patch.patterns=d.patterns;
   if(!Object.keys(patch).length) return;
   const {error}=await sb.from("products").update(patch).eq("id",pr.id);
   if(error && !/queued/i.test(error.message||"")) return;
   Object.assign(pr, patch); cacheDB();
   await logIt("sync","products",pr.id, isAr()?"تحديث تلقائي من التصميم":"synced from design");
+}
+
+/* ---- لوحة تعديل شاملة: متاحة بكل المراحل، وأي تعديل ينزل على المنتج وأوامره ---- */
+function designEditAll(d){
+  const id=d.id, st=d.stage||"idea";
+  const showChk = (st!=="materials" && st!=="prep");
+  const sizes=Object.keys(d.size_chart||{});
+  return `<details class="dsec" style="border-inline-start:3px solid var(--ink);padding-inline-start:10px;background:transparent">
+    <summary style="cursor:pointer;font-weight:800;font-size:13px">${I.edit} ${isAr()?"تعديل التصميم — متاح بأي مرحلة":"Edit design"}</summary>
+    <div class="muted" style="font-size:12px;margin:6px 0">${isAr()
+      ? "أي تعديل هنا ينزل تلقائياً على المنتج وأوامر الإنتاج والتصنيع الخارجي."
+      : "Changes propagate to the product and its orders."}</div>
+
+    <label>${isAr()?"اسم التصميم":"Name"}</label>
+    <input id="ea_name" value="${esc(d.final_name||d.name||"")}" onchange="renameDesign('${id}',this.value)">
+
+    <label style="margin-top:10px">${isAr()?"السكيتشات":"Sketches"}</label>
+    ${imgGrid(d.sketches, id, "sketches")}
+    <input type="file" id="ea_sk" accept="image/*" multiple onchange="eaAddFiles('${id}','sketches')">
+
+    <label style="margin-top:10px">${isAr()?"المود بورد":"Mood board"}</label>
+    ${imgGrid(d.mood, id, "mood", "moodgrid")}
+    <input type="file" id="ea_mood" accept="image/*" multiple onchange="eaAddFiles('${id}','mood')">
+
+    <label style="margin-top:10px">${isAr()?"ملاحظات الخامات":"Material notes"}</label>
+    <textarea id="ea_mat">${esc(d.materials||"")}</textarea>
+    <button type="button" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:13px" onclick="eaSaveMat('${id}')">${t("save")}</button>
+
+    <label style="margin-top:12px">${isAr()?"المقاسات (افصل بفاصلة)":"Sizes"}</label>
+    <input id="ea_sizes" dir="ltr" value="${esc(sizes.join(","))}" onchange="eaRedrawChart()">
+    <div id="eaChart"></div>
+    <button type="button" class="btn btn-ok" style="width:auto;padding:6px 14px;font-size:13px;margin-top:8px" onclick="eaSaveChart('${id}')">${isAr()?"حفظ القياسات":"Save sizes"}</button>
+
+    ${showChk? `<div style="margin-top:12px">${checklistBlock(d)}</div>` : ""}
+  </details>`;
+}
+function eaRedrawChart(){
+  const box=el("eaChart"); if(!box) return;
+  const sizes=(el("ea_sizes").value||"").split(",").map(x=>x.trim()).filter(Boolean);
+  window._eaChart=window._eaChart||{};
+  sizes.forEach(s=>{ window._eaChart[s]=window._eaChart[s]||{}; });
+  box.innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+    ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>
+      `<td><input id="eac_${esc(s)}_${m[0]}" style="min-width:56px;padding:6px" value="${esc((window._eaChart[s]||{})[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>` : "";
+}
+function eaCaptureChart(){
+  const sizes=(el("ea_sizes")?el("ea_sizes").value:"").split(",").map(x=>x.trim()).filter(Boolean);
+  const out={};
+  sizes.forEach(s=>{ out[s]={}; MEAS.forEach(m=>{ const i=el(`eac_${s}_${m[0]}`); if(i && i.value) out[s][m[0]]=i.value; }); });
+  return out;
+}
+async function eaSaveChart(id){
+  const chart=eaCaptureChart();
+  await sb.from("design_projects").update({size_chart:chart}).eq("id",id);
+  const d=design_(id); if(d) d.size_chart=chart;
+  window._eaChart=JSON.parse(JSON.stringify(chart));
+  await syncDesignToProduct(id);
+  await logIt("edit","design_projects",id, isAr()?"تعديل القياسات":"sizes edited");
+  alert(isAr()?"انحفظت القياسات ونزلت على المنتج":"Saved");
+}
+async function eaSaveMat(id){
+  const v=el("ea_mat").value||null;
+  await sb.from("design_projects").update({materials:v}).eq("id",id);
+  const d=design_(id); if(d) d.materials=v;
+  await logIt("edit","design_projects",id, isAr()?"تعديل ملاحظات الخامات":"materials note");
+  alert(isAr()?"انحفظت":"Saved");
+}
+async function eaAddFiles(id, field){
+  const d=design_(id); const arr=[...(d[field]||[])];
+  const inp=el(field==="mood"?"ea_mood":"ea_sk"); if(!inp) return;
+  for(const f of inp.files){ const u=await uploadFile(f,"designs"); if(u) arr.push(u); }
+  await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  if(d) d[field]=arr;
+  await syncDesignToProduct(id);
+  await refresh(); closeSheet(); openDesign(id);
 }
 
 /* ---- ورقة التصميم حسب المرحلة ---- */
@@ -5162,8 +5240,11 @@ function viewSamplePhotos(id){ const s=(DB.samples||[]).find(x=>x.id===id); if(s
 function viewSampleCard(id){ const s=(DB.samples||[]).find(x=>x.id===id); if(!s) return;
   const cs=(s.card_photos&&s.card_photos.length)? s.card_photos : (s.card_photo?[s.card_photo]:[]); viewGallery(cs,0); }
 async function rmDesignFile(id, field, idx){
+  /* الحذف ينزل على المنتج كذلك */
   const d=design_(id); const arr=[...(d[field]||[])]; arr.splice(idx,1);
   await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  if(d) d[field]=arr;
+  await syncDesignToProduct(id);
   await refresh(); reopenDesign(id);
 }
 function reopenDesign(id){ closeSheet(); openDesign(id); }
@@ -5411,8 +5492,11 @@ function openDesign(id){
       ${d.product_id?`<button class="btn btn-ink btn-big" onclick="closeSheet();mTab='products';render();showProductForm('${d.product_id}')">${isAr()?"افتح بطاقة المنتج":"Open product"} ←</button>`:""}
       <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','notes')">↩ ${isAr()?"رجوع خطوة (فتح التصميم للتعديل)":"Back a step"}</button>`;
   }
+  window._eaChart=JSON.parse(JSON.stringify(d.size_chart||{}));
+  setTimeout(eaRedrawChart,0);
   openSheet(`<div class="title" style="margin-bottom:4px">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}</div>
     ${designStepper(d)}
+    ${designEditAll(d)}
     ${body}
     ${session.role==="manager"?`<button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
 }
@@ -6536,6 +6620,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
+    "eaSaveChart","eaSaveMat","eaAddFiles",
     "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
