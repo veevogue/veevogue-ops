@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.74:APPV-->
+<!--APPV:2026-08-12.75:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -371,6 +371,34 @@ const STAGE_KEY = {cut:"cut", emb:"emb", sew:"sew", qc:"qc", pack:"pack", shippe
 const SPEC_LIST = ["cut","sew","sample","pack"];
 const SPEC_LABEL = {cut:["قص","CUT"], sew:["خياطة","SEW"], sample:["عينات","SAMPLES"], pack:["تجهيز","PACK"]};
 const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
+/* ===== وحدة جداول القياسات =====
+   الأصل إنش — المشاغل المحلية بالكويت تمشي عليه. المصنع الصيني ياخذ سنتيمتر،
+   والتحويل يقرّب لأعلى نصف سنتيمتر عشان ما تطلع كسور ما تنفع بالتنفيذ. */
+function chartUnitOf(o){ return ((o&&o.chart_unit)==="cm") ? "cm" : "inch"; }
+function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"in"); }
+function inchToCmUp(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.ceil(x*2.54*2)/2; }
+function cmToInch(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.round((x/2.54)*100)/100; }
+function convMeas(v, from, to){
+  if(v===null || v===undefined || String(v).trim()==="") return "";
+  if(from===to) return String(v);
+  const r = (from==="inch"&&to==="cm") ? inchToCmUp(v)
+          : (from==="cm"&&to==="inch") ? cmToInch(v) : null;
+  return r==null ? String(v) : String(r);
+}
+function chartConv(chart, from, to){
+  if(from===to) return chart||{};
+  const out={};
+  Object.keys(chart||{}).forEach(sz=>{ out[sz]={};
+    Object.keys(chart[sz]||{}).forEach(k=>{ out[sz][k]=convMeas(chart[sz][k], from, to); }); });
+  return out;
+}
+/* وحدة الجهة المنفّذة: الصين سنتيمتر، الكويت إنش */
+function execUnit(channel){ return (channel||"local")==="china" ? "cm" : "inch"; }
+/* جدول جاهز للطباعة لجهة معيّنة */
+function chartFor(owner, channel){
+  const from=chartUnitOf(owner), to=execUnit(channel);
+  return {chart:chartConv(owner&&owner.size_chart||{}, from, to), unit:to, from};
+}
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الحوض","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
 const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
 /* قياسات إضافية للقياسات الخاصة */
@@ -1156,7 +1184,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.74";
+const APP_VERSION="2026-08-12.75";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5102,6 +5130,7 @@ function showProductForm(pid){
   editProductId=pid;
   const p=pid?product(pid):{images:[],patterns:[],components:[],embroidery:"none",size_chart:{}};
   window._chart=JSON.parse(JSON.stringify(p.size_chart||{}));
+  window._pUnit=chartUnitOf(p);
   const compsTxt=(p.components||[]).map(c=>`${c.ar} / ${c.en||""}`).join("\n");
   openSheet(`
     <div class="title">${pid?t("edit"):t("add")}</div>
@@ -5150,6 +5179,14 @@ function showProductForm(pid){
       <button class="btn btn-ghost" onclick="addCustomAge()">${I.plus}</button>
     </div>
     <input type="hidden" id="p_sizes" value="${esc(Object.keys(p.size_chart||{}).join(","))}">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <label style="margin:0">${isAr()?"وحدة الجدول":"Chart unit"}</label>
+      <select id="p_unit" style="width:auto" onchange="pUnitSwitch()">
+        <option value="inch" ${chartUnitOf(p)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+        <option value="cm" ${chartUnitOf(p)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option>
+      </select>
+      <span class="muted" style="font-size:11px">${isAr()?"أوامر المصنع الصيني تطلع سم تلقائياً":"China orders print cm"}</span>
+    </div>
     <label>${isAr()?"صفوف القياس المطلوبة — اختر اللي يبني الجدول":"Measurement rows"}</label>
     <div class="pillrow" id="rowPills">${allMeas().map(m=>{
       const on=(p.meas_rows&&p.meas_rows.length? p.meas_rows : defaultRows(p.garment_type||"full")).includes(m[0]);
@@ -5259,6 +5296,7 @@ function redrawParts(){
 /* ===== جدول القياسات للنشر — نفس هوية أداة فيفوق، مربع 1080×1080 ===== */
 function scData(pid){
   const p=product(pid);
+  window._scUnit=chartUnitOf(p);
   const ages=Object.keys(p.size_chart||{});
   const rows=(p.meas_rows&&p.meas_rows.length? p.meas_rows : defaultRows("full"))
     .map(k=>measByKey(k)).filter(Boolean);
@@ -5296,7 +5334,8 @@ function scStage(pid, o){
   </div>`;
 }
 function scOpts(){
-  return {eyebrow:"SIZE GUIDE", sub:"size chart", ageLabel:"AGE",
+  return {eyebrow:"SIZE GUIDE", ageLabel:"AGE",
+          sub:"size chart · "+((window._scUnit||"inch")==="cm"?"cm":"inch"),
           title:(el("sc_title")?.value)||"",
           badge:(el("sc_badge")?.value)||"MEASUREMENTS IN CM"};
 }
@@ -5520,11 +5559,21 @@ function captureChart(){
   const rows=activeRows();
   Object.keys(window._chart||{}).forEach(s=>{rows.forEach(k=>{const inp=el(`sc_${s}_${k}`); if(inp) window._chart[s][k]=inp.value;});});
 }
+function pUnitSwitch(){
+  const to=el("p_unit")?el("p_unit").value:"inch";
+  const from=window._pUnit||"inch";
+  if(to===from) return;
+  captureChart();
+  window._chart=chartConv(window._chart||{}, from, to);
+  window._pUnit=to;
+  redrawChart();
+  toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
+}
 function redrawChart(){
   const box=el("chartGrid"); if(!box) return;
   const sizes=chartSizes(); const rows=activeRows();
   sizes.forEach(s=>{window._chart[s]=window._chart[s]||{};});
-  box.innerHTML = (sizes.length&&rows.length)? `<div style="overflow-x:auto"><table><tr><th>${isAr()?"القياس":"Measure"}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+  box.innerHTML = (sizes.length&&rows.length)? `<div style="overflow-x:auto"><table><tr><th>${isAr()?"القياس":"Measure"} (${unitLbl(window._pUnit||"inch")})</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${rows.map(k=>{const m=measByKey(k); if(!m) return "";
       return `<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="sc_${s}_${k}" style="min-width:58px;padding:6px" value="${esc(window._chart[s]?.[k]||"")}"></td>`).join("")}</tr>`;}).join("")}</table></div>`:"";
 }
@@ -5556,7 +5605,7 @@ async function saveProduct(){
     sku:el("p_sku").value||null, materials:el("p_materials").value||null,
     est_parts:estSew, est_cut_parts:estCut, bom_parts:bomP, emb_parts:embP,
     meas_rows:activeRows(),
-    external_make:isExt, size_chart:chart, notes:el("p_notes").value||null};
+    external_make:isExt, size_chart:chart, chart_unit:(window._pUnit||"inch"), notes:el("p_notes").value||null};
   if(editProductId) await sb.from("products").update(row).eq("id",editProductId);
   else await sb.from("products").insert(row);
   closeSheet(); await refresh();
@@ -5734,6 +5783,7 @@ async function syncDesignToProduct(id){
   if(d.sku && d.sku!==pr.sku) patch.sku=d.sku;
   if(d.size_chart && Object.keys(d.size_chart).length
      && JSON.stringify(d.size_chart)!==JSON.stringify(pr.size_chart||{})) patch.size_chart=d.size_chart;
+  if(chartUnitOf(d)!==chartUnitOf(pr)) patch.chart_unit=chartUnitOf(d);
   const imgs=[...(d.sketches||[]),...(d.refs||[]),...(d.mood||[])].slice(0,6);
   if(imgs.length && JSON.stringify(imgs)!==JSON.stringify(pr.images||[])) patch.images=imgs;
   if(d.patterns && JSON.stringify(d.patterns)!==JSON.stringify(pr.patterns||[])) patch.patterns=d.patterns;
@@ -5778,8 +5828,16 @@ function designEditAll(d){
     <textarea id="ea_mat">${esc(d.materials||"")}</textarea>
     <button type="button" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:13px" onclick="eaSaveMat('${id}')">${t("save")}</button>
 
-    <label style="margin-top:12px">${isAr()?"المقاسات (افصل بفاصلة)":"Sizes"}</label>
-    <input id="ea_sizes" dir="ltr" value="${esc(sizes.join(","))}" onchange="eaRedrawChart()">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:12px">
+      <div><label>${isAr()?"المقاسات (افصل بفاصلة)":"Sizes"}</label>
+        <input id="ea_sizes" dir="ltr" value="${esc(sizes.join(","))}" onchange="eaRedrawChart()"></div>
+      <div><label>${isAr()?"وحدة القياس":"Unit"}</label>
+        <select id="ea_unit" onchange="eaUnitSwitch()">
+          <option value="inch" ${chartUnitOf(d)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+          <option value="cm" ${chartUnitOf(d)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option>
+        </select></div>
+    </div>
+    <div class="muted" style="font-size:11px">${isAr()?"أمر التنفيذ للمصنع الصيني يطلع بالسنتيمتر تلقائياً (مقرّب لأعلى نصف سم)، والمشاغل المحلية بالإنش.":"China job orders print in cm; local in inch."}</div>
     <div id="eaChart"></div>
     <button type="button" class="btn btn-ok" style="width:auto;padding:6px 14px;font-size:13px;margin-top:8px" onclick="eaSaveChart('${id}')">${isAr()?"حفظ القياسات":"Save sizes"}</button>
 
@@ -5791,9 +5849,20 @@ function eaRedrawChart(){
   const sizes=(el("ea_sizes").value||"").split(",").map(x=>x.trim()).filter(Boolean);
   window._eaChart=window._eaChart||{};
   sizes.forEach(s=>{ window._eaChart[s]=window._eaChart[s]||{}; });
-  box.innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+  const _u=window._eaUnit||"inch";
+  box.innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>${unitLbl(_u)}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>
       `<td><input id="eac_${esc(s)}_${m[0]}" style="min-width:56px;padding:6px" value="${esc((window._eaChart[s]||{})[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>` : "";
+}
+/* تبديل الوحدة يحوّل الأرقام المكتوبة — ما تعيد إدخالها */
+function eaUnitSwitch(){
+  const to=el("ea_unit")?el("ea_unit").value:"inch";
+  const from=window._eaUnit||"inch";
+  if(to===from) return;
+  window._eaChart=chartConv(eaCaptureChart(), from, to);
+  window._eaUnit=to;
+  eaRedrawChart();
+  toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
 }
 function eaCaptureChart(){
   const sizes=(el("ea_sizes")?el("ea_sizes").value:"").split(",").map(x=>x.trim()).filter(Boolean);
@@ -5803,8 +5872,9 @@ function eaCaptureChart(){
 }
 async function eaSaveChart(id){
   const chart=eaCaptureChart();
-  await sb.from("design_projects").update({size_chart:chart}).eq("id",id);
-  const d=design_(id); if(d) d.size_chart=chart;
+  const unit=window._eaUnit||"inch";
+  await sb.from("design_projects").update({size_chart:chart, chart_unit:unit}).eq("id",id);
+  const d=design_(id); if(d){ d.size_chart=chart; d.chart_unit=unit; }
   window._eaChart=JSON.parse(JSON.stringify(chart));
   await syncDesignToProduct(id);
   await logIt("edit","design_projects",id, isAr()?"تعديل القياسات":"sizes edited");
@@ -6057,6 +6127,7 @@ function openDesign(id){
   } else if(st==="prep"){
     const ws=DB.workers.filter(w=>w.active&&(w.specialties||[]).includes("sample"));
     window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
+    window._dUnit=chartUnitOf(d);
     body=`
       ${designRecap(d)}
       ${designSamplesRecap(d)}
@@ -6066,6 +6137,14 @@ function openDesign(id){
         <label>${isAr()?"الخامات المطلوبة":"Materials"}</label><textarea id="d_mat">${esc(d.materials||"")}</textarea>
         <label>${isAr()?"قياسات العينة (موديل واحد)":"Sample measurements"}</label>
         <input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{})[0]||(isAr()?"العينة":"SAMPLE"))}" onchange="captureDChart();redrawDChart()">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <label style="margin:0">${isAr()?"الوحدة":"Unit"}</label>
+          <select id="d_unit" style="width:auto" onchange="dUnitSwitch()">
+            <option value="inch" ${chartUnitOf(d)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+            <option value="cm" ${chartUnitOf(d)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option>
+          </select>
+          <span class="muted" style="font-size:11px">${isAr()?"المصنع الصيني ياخذها سم تلقائياً":"China prints cm"}</span>
+        </div>
         <div id="dChartGrid"></div>
       </div>
       <div class="dsec">
@@ -6149,6 +6228,7 @@ function openDesign(id){
       <button class="btn btn-ghost btn-big" onclick="setDStage('${id}','notes')">↩ ${isAr()?"رجوع خطوة (فتح التصميم للتعديل)":"Back a step"}</button>`;
   }
   window._eaChart=JSON.parse(JSON.stringify(d.size_chart||{}));
+  window._eaUnit=chartUnitOf(d);
   setTimeout(eaRedrawChart,0);
   openSheet(`<div class="title" style="margin-bottom:4px">${esc(d.final_name||d.name||(isAr()?"تصميم جديد":"New design"))}${d.sku?` <span class="muted" style="font-size:12px">${esc(d.sku)}</span>`:""}</div>
     ${designCostLine(d)}
@@ -6158,11 +6238,21 @@ function openDesign(id){
     ${session.role==="manager"?`<button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="delDesign('${id}')">${I.trash} ${t("del")}</button>`:""}`);
 }
 function captureDChart(){Object.keys(window._dchart||{}).forEach(s=>{MEAS.forEach(m=>{const i=el(`dc_${s}_${m[0]}`); if(i) window._dchart[s][m[0]]=i.value;});});}
+function dUnitSwitch(){
+  const to=el("d_unit")?el("d_unit").value:"inch";
+  const from=window._dUnit||"inch";
+  if(to===from) return;
+  captureDChart();
+  window._dchart=chartConv(window._dchart||{}, from, to);
+  window._dUnit=to;
+  redrawDChart();
+  toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
+}
 function redrawDChart(){
   const box=el("dChartGrid"); if(!box) return;
   const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
   sizes.forEach(s=>{window._dchart[s]=window._dchart[s]||{};});
-  box.innerHTML= sizes.length? `<div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
+  box.innerHTML= sizes.length? `<div style="overflow-x:auto"><table><tr><th>${unitLbl(window._dUnit||"inch")}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="dc_${s}_${m[0]}" style="min-width:56px;padding:6px" value="${esc(window._dchart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
 }
 async function addDesignFiles(id, field){
@@ -6202,7 +6292,7 @@ async function sendToSample(id){
   const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
   const on=document.querySelector("#smpModePills .pill.on");
   const ext = on? on.dataset.m==="out" : false;
-  const row={materials:el("d_mat").value||null, size_chart:chart,
+  const row={materials:el("d_mat").value||null, size_chart:chart, chart_unit:(window._dUnit||"inch"),
     stage:"sample", sample_started_at:null, sample_finished_at:null, sample_external:ext};
   if(ext){
     const vid=el("d_vendor")?el("d_vendor").value:"";
@@ -6266,10 +6356,16 @@ function designHistory(d){
 function approveSample(id){
   const d=design_(id);
   window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
+  window._dUnit=chartUnitOf(d);
   openSheet(`<div class="title">${isAr()?"اعتماد العينة":"Approve sample"}</div>
     <label>${isAr()?"الاسم النهائي (عربي)":"Final name (AR)"}</label><input id="ap_name" value="${esc(d.final_name||d.name||"")}">
     <label>${isAr()?"الاسم النهائي (إنجليزي)":"Final name (EN)"}</label><input id="ap_name_en" dir="ltr" value="${esc(d.final_name_en||"")}">
-    <label>${isAr()?"الأعمار":"Ages"}</label><input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"الأعمار":"Ages"}</label><input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="d_unit" onchange="dUnitSwitch()">
+        <option value="inch" ${chartUnitOf(d)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+        <option value="cm" ${chartUnitOf(d)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option></select></div>
+    </div>
     <div id="dChartGrid"></div>
     <button class="btn btn-ok btn-big" onclick="finishApprove('${id}')">${I.done} ${isAr()?"اعتماد وتحويل لمنتج":"Approve → product"}</button>`);
   setTimeout(redrawDChart,0);
@@ -6281,11 +6377,13 @@ async function finishApprove(id){
   const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
   if(!sizes.length) return alert(isAr()?"حدد الأعمار وجدول القياسات":"Add sizes");
   const chart={}; sizes.forEach(s=>chart[s]=window._dchart[s]||{});
+  const _cu=window._dUnit||chartUnitOf(d);
+  try{ await sb.from("design_projects").update({size_chart:chart, chart_unit:_cu}).eq("id",id); d.size_chart=chart; d.chart_unit=_cu; }catch(e){}
   const est = (d.sample_started_at&&d.sample_finished_at)? mins(d.sample_started_at,d.sample_finished_at) : null;
   const fields={ name, name_en:el("ap_name_en").value||null,
     sku:d.sku||genSKU("design"),                       /* الكود ينتقل من التصميم — نمشي على نفس الكود */
     images:[...(d.sketches||[]),...(d.mood||[])].slice(0,6),
-    size_chart:chart, notes:(d.notes||[]).map(n=>n.t).join(" | ")||null,
+    size_chart:chart, chart_unit:(window._dUnit||chartUnitOf(d)), notes:(d.notes||[]).map(n=>n.t).join(" | ")||null,
     est_sew_min:est };
   let p, error;
   const existing = d.product_id && (DB.products||[]).some(x=>x.id===d.product_id);
@@ -6515,9 +6613,12 @@ async function printJob(jobId){
       `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — ${esc(x.part_ar||"")}:</b>
         ${x.emb_note?`<div>${esc(x.emb_note)}</div>`:""}
         ${x.emb_artwork?`<img crossorigin="anonymous" src="${esc(x.emb_artwork)}" style="max-width:300px;border:1px solid #ddd;border-radius:8px;margin-top:6px">`:""}</div>`).join("");
-  const charts=isExt? [...new Set(lines.map(l=>l.product_id))].map(pid=>{const p=product(pid);const chart=p.size_chart||{};const sizes=Object.keys(chart);
+  const _jsup=(DB.suppliers||[]).find(x=>x.id===j.supplier_id)||null;
+  const _jch=(_jsup&&_jsup.channel)||"local";           /* الصين سم · الكويت إنش */
+  const charts=isExt? [...new Set(lines.map(l=>l.product_id))].map(pid=>{const p=product(pid);
+    const _cf=chartFor(p,_jch); const chart=_cf.chart; const sizes=Object.keys(chart);
     if(!sizes.length) return "";
-    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (سم):</b>
+    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (${unitLbl(_cf.unit)}):</b>
     <table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
     ${(p.patterns||[]).length?`<div>الباترونات: ${(p.patterns||[]).map(x=>`<a href="${esc(x.url)}">${esc(x.name)}</a>`).join(" · ")}</div>`:""}</div>`;}).join("") : "";
@@ -6535,7 +6636,9 @@ async function printSampleJob(id){
   const d=design_(id); if(!d) return;
   const sup=(DB.suppliers||[]).find(x=>x.id===d.sample_vendor_id);
   const vendor=d.sample_vendor||(sup&&sup.name)||"—";
-  const chart=d.size_chart||{}; const sizes=Object.keys(chart);
+  /* المصنع الصيني ياخذ سنتيمتر، والمشاغل المحلية إنش */
+  const _cf=chartFor(d, (sup&&sup.channel)||"local");
+  const chart=_cf.chart; const sizes=Object.keys(chart);
   const smp=(DB.samples||[]).filter(x=>x.design_id===id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(id)>=0));
   const chk=(d.checklist||[]);
   const imgs=[...(d.sketches||[]), ...(d.refs||[])].slice(0,6);   /* المود بورد مرجع داخلي — ما يروح للمشغل */
@@ -6569,7 +6672,7 @@ async function printSampleJob(id){
   ${imgs.length?`<h3>السكيتشات والأمثلة التوضيحية</h3><div style="display:flex;gap:8px;flex-wrap:wrap">
     ${imgs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:150px;height:190px;object-fit:cover;border:1px solid #E6E1D8;border-radius:8px">`).join("")}</div>`:""}
 
-  ${sizes.length?`<h3>القياسات (سم)</h3>
+  ${sizes.length?`<h3>القياسات (${unitLbl(_cf.unit)})${_cf.from!==_cf.unit?` <span style="font-size:11px;font-weight:400;color:#666">— محوّلة من ${unitLbl(_cf.from)}</span>`:""}</h3>
     <table><tr><th>القياس</th>${sizes.map(x=>`<th>${esc(x)}</th>`).join("")}</tr>
     ${MEAS.filter(m=>sizes.some(x=>(chart[x]||{})[m[0]])).map(m=>
       `<tr><td>${m[1]}</td>${sizes.map(x=>`<td>${esc(String((chart[x]||{})[m[0]]||"—"))}</td>`).join("")}</tr>`).join("")}</table>`:""}
@@ -7121,7 +7224,7 @@ function sampleTasks(w){
       </div>
       ${imgs.length>1?`<div class="imgrow">${imgs.slice(1,5).map(u=>`<img class="thumb" src="${esc(u)}" onclick="viewImg('${esc(u)}')">`).join("")}</div>`:""}
       ${d.materials?`<div class="note-box"><b>${isAr()?"الخامات":"MATERIALS"}:</b> ${esc(d.materials)}</div>`:""}
-      ${sizes.length?`<div class="note-box"><b>${t("sizeChart")}</b>
+      ${sizes.length?`<div class="note-box"><b>${t("sizeChart")}</b> <span class="muted">(${unitLbl(chartUnitOf(d))})</span>
         <div style="overflow-x:auto"><table><tr><th>—</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
         ${MEAS.filter(mm=>sizes.some(s=>chart[s]?.[mm[0]])).map(mm=>`<tr><td>${isAr()?mm[1]:mm[2]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[mm[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table></div></div>`:""}
       ${(d.sample_notes||[]).length?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">
