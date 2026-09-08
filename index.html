@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.70:APPV-->
+<!--APPV:2026-08-12.71:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -167,6 +167,9 @@
   .keypad{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:280px;margin:8px auto;}
   .keypad button{font-size:22px;padding:16px;}
   @media(max-width:520px){.grid3{grid-template-columns:1fr 1fr;}}
+  .vvtoast{position:fixed;inset-inline:0;bottom:22px;margin:0 auto;width:max-content;max-width:88vw;
+    background:#1C1B1A;color:#fff;padding:11px 20px;border-radius:26px;font-size:14px;font-weight:700;
+    z-index:400;opacity:0;transition:opacity .28s ease;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.22);text-align:center}
   .netchip{display:none;align-items:center;gap:6px;font-size:12px;font-weight:800;border-radius:20px;padding:5px 11px;letter-spacing:.2px;}
   .netchip.off{background:#F3E3E6;color:#8C2F3E;border:1px solid #E8D4D8;}
   .netchip.pend{background:#FBF0DC;color:#8A6420;border:1px solid #F0E0BE;}
@@ -671,6 +674,17 @@ function enforceAccess(){
 
 /* ================= لا خطأ ينبلع بصمت =================
    أي عملية تفشل تقول السبب بدل ما تسكت ويحسب المستخدم إنها انحفظت. */
+/* رسالة مؤقتة تختفي لحالها — بدل الشرائط اللي تبقى معلّقة على الشاشة */
+function toast(msg, ms){
+  try{
+    let t=document.getElementById("vvToast");
+    if(!t){ t=document.createElement("div"); t.id="vvToast"; t.className="vvtoast"; document.body.appendChild(t); }
+    t.textContent=String(msg||"");
+    t.style.opacity="1";
+    clearTimeout(window._toastT);
+    window._toastT=setTimeout(()=>{ try{ t.style.opacity="0"; }catch(e){} }, ms||2800);
+  }catch(e){}
+}
 let _vvErrLast=0;
 function vvErr(e, where){
   try{
@@ -1123,7 +1137,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.70";
+const APP_VERSION="2026-08-12.71";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1761,7 +1775,6 @@ async function displayUrl(u){
 const LOSTK="vv_lostphotos";
 function lostGet(){ try{ return JSON.parse(localStorage.getItem(LOSTK)||"[]"); }catch(e){ return []; } }
 function lostAdd(path){ try{ const a=lostGet(); if(a.indexOf(path)<0){ a.push(path); localStorage.setItem(LOSTK,JSON.stringify(a)); } }catch(e){} }
-function lostClear(){ try{ localStorage.removeItem(LOSTK); }catch(e){} render(); }
 
 /* -- نطلب من المتصفح يحمي تخزين الصور من المسح التلقائي -- */
 async function persistStorage(){
@@ -1815,36 +1828,101 @@ let _pendCount=0;
 async function refreshPendCount(){ try{ await pendInit(); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; } return _pendCount; }
 async function syncPhotosNow(){
   await refreshPendCount();
-  if(!_pendCount){ alert(isAr()?"ما فيه صور معلّقة على هذا الجهاز":"No pending photos on this device"); return; }
+  if(!_pendCount){ toast(isAr()?"ما فيه صور معلّقة على هذا الجهاز":"No pending photos"); return; }
   const n=_pendCount;
-  if(!NETOK){ alert(isAr()?"ما فيه إنترنت — تأكد من الاتصال وحاول":"No internet"); return; }
+  if(!NETOK){ toast(isAr()?"ما فيه إنترنت — حاول لما يرجع الاتصال":"No internet"); return; }
+  toast(isAr()?`جاري رفع ${n} صورة…`:`Uploading ${n}…`, 9000);
   const r=await uploadPendingPhotos();
   await refreshPendCount();
   const done=n-_pendCount;
-  const extra=(r&&r.lost)?(isAr()?`\n\n⚠️ ${r.lost} صورة ضاعت من الجهاز قبل ما تُرفع — تحتاج إعادة تصوير.`:`\n\n${r.lost} lost.`):"";
-  alert((isAr()?`تم رفع ${done} صورة${_pendCount?` — باقي ${_pendCount}`:" ✓"}`:`Uploaded ${done}`)+extra);
+  const extra=(r&&r.lost)?(isAr()?` · ${r.lost} ضاعت من الجهاز`:` · ${r.lost} lost`):"";
+  toast((isAr()?`انرفعت ${done} صورة${_pendCount?` — باقي ${_pendCount}`:" ✓"}`:`Uploaded ${done}`)+extra);
   await refresh();
 }
 /* -- كل روابط الصور المسجّلة بالنظام -- */
-function allPhotoUrls(){
-  const out=[];
-  const push=v=>{ if(typeof v==="string" && v.indexOf("/object/")>0) out.push(v); };
-  const arr=v=>{ (Array.isArray(v)?v:[]).forEach(x=>{ if(typeof x==="string") push(x); else if(x&&typeof x==="object") push(x.url||x.src||""); }); };
-  (DB.samples||[]).forEach(s=>{ arr(s.photos); arr(s.card_photos); push(s.card_photo); });
-  (DB.suppliers||[]).forEach(s=>{ arr(s.card_photos); push(s.wechat_qr); });
-  (DB.designs||[]).forEach(d=>{ arr(d.images); arr(d.mood); arr(d.sketches); arr(d.patterns); });
-  (DB.products||[]).forEach(p=>{ arr(p.images); arr(p.patterns); push(p.artwork_url); push(p.chart_image); });
-  (DB.supplier_payments||[]).forEach(p=>push(p.receipt));
-  (DB.orders||[]).forEach(o=>push(o.repair_image));
-  (DB.lines||[]).forEach(l=>push(l.fix_image));
-  (DB.parts||[]).forEach(p=>push(p.emb_artwork));
-  return [...new Set(out)];
+/* فهرس كل صورة في النظام ومكانها — عشان تقرير الفحص يقول لك الصورة مالت وين */
+function photoIndex(){
+  const urls=[], owners={};
+  const note=(u,where,name)=>{
+    if(typeof u!=="string" || u.indexOf("/object/")<0) return;
+    urls.push(u);
+    const path=filePath(u); if(!path) return;
+    (owners[path]=owners[path]||[]).push({where, name:name||"—"});
+  };
+  const arr=(v,where,name)=>{ (Array.isArray(v)?v:[]).forEach(x=>{
+    if(typeof x==="string") note(x,where,name);
+    else if(x&&typeof x==="object") note(x.url||x.src||"",where,name); }); };
+  (DB.samples||[]).forEach(s=>{ const nm=`${s.fabric_type||kindLabel(s.kind)}${s.sku?` (${s.sku})`:""}`;
+    arr(s.photos, isAr()?"عينة":"sample", nm);
+    arr(s.card_photos, isAr()?"كرت مورّد العينة":"sample card", nm);
+    note(s.card_photo, isAr()?"كرت مورّد العينة":"sample card", nm); });
+  (DB.suppliers||[]).forEach(s=>{ arr(s.card_photos, isAr()?"كرت مورّد":"supplier card", s.name);
+    note(s.wechat_qr, isAr()?"كود مورّد":"supplier QR", s.name); });
+  (DB.designs||[]).forEach(d=>{ const nm=d.final_name||d.name||"—";
+    arr(d.images, isAr()?"تصميم":"design", nm);
+    arr(d.mood, isAr()?"مود بورد":"mood board", nm);
+    arr(d.sketches, isAr()?"سكيتش":"sketch", nm);
+    arr(d.refs, isAr()?"مثال توضيحي":"reference", nm);
+    arr(d.patterns, isAr()?"باترون تصميم":"design pattern", nm); });
+  (DB.products||[]).forEach(p=>{ const nm=pname(p);
+    arr(p.images, isAr()?"منتج":"product", nm);
+    arr(p.patterns, isAr()?"باترون منتج":"product pattern", nm);
+    note(p.artwork_url, isAr()?"تطريز منتج":"artwork", nm);
+    note(p.chart_image, isAr()?"جدول قياس":"size chart", nm); });
+  (DB.supplier_payments||[]).forEach(p=>note(p.receipt, isAr()?"إثبات دفع":"receipt", p.supplier_name));
+  (DB.orders||[]).forEach(o=>note(o.repair_image, isAr()?"تصليح أمر":"repair", o.code||o.id));
+  (DB.lines||[]).forEach(l=>note(l.fix_image, isAr()?"تصليح بند":"line fix", l.id));
+  (DB.parts||[]).forEach(p=>note(p.emb_artwork, isAr()?"تطريز قطعة":"part artwork", p.id));
+  return {urls:[...new Set(urls)], owners};
+}
+function allPhotoUrls(){ return photoIndex().urls; }
+/* يمسح روابط الصور المفقودة من السجلات — الملف راح، الرابط ما ينفع */
+async function photoPurge(paths){
+  const set=new Set(paths||[]);
+  const hit=u=>{ const p=filePath(u); return !!(p && set.has(p)); };
+  const keep=(a)=>(Array.isArray(a)?a:[]).filter(x=> typeof x==="string" ? !hit(x) : !(x && hit(x.url||x.src||"")) );
+  const dirty=(a)=>(Array.isArray(a)?a:[]).some(x=> typeof x==="string" ? hit(x) : (x && hit(x.url||x.src||"")) );
+  let cleaned=0;
+  const save=async(table,row,patch)=>{ Object.assign(row,patch); await sb.from(table).update(patch).eq("id",row.id); cleaned++; };
+  for(const x of (DB.samples||[])){
+    const patch={};
+    if(dirty(x.photos)) patch.photos=keep(x.photos);
+    if(dirty(x.card_photos)) patch.card_photos=keep(x.card_photos);
+    if(x.card_photo && hit(x.card_photo)) patch.card_photo=(patch.card_photos||x.card_photos||[])[0]||null;
+    if(Object.keys(patch).length) await save("trip_samples",x,patch);
+  }
+  for(const x of (DB.suppliers||[])){
+    const patch={};
+    if(dirty(x.card_photos)) patch.card_photos=keep(x.card_photos);
+    if(x.wechat_qr && hit(x.wechat_qr)) patch.wechat_qr=null;
+    if(Object.keys(patch).length) await save("suppliers",x,patch);
+  }
+  for(const x of (DB.designs||[])){
+    const patch={};
+    ["images","mood","sketches","refs","patterns"].forEach(f=>{ if(dirty(x[f])) patch[f]=keep(x[f]); });
+    if(Object.keys(patch).length) await save("design_projects",x,patch);
+  }
+  for(const x of (DB.products||[])){
+    const patch={};
+    ["images","patterns"].forEach(f=>{ if(dirty(x[f])) patch[f]=keep(x[f]); });
+    if(x.artwork_url && hit(x.artwork_url)) patch.artwork_url=null;
+    if(x.chart_image && hit(x.chart_image)) patch.chart_image=null;
+    if(Object.keys(patch).length) await save("products",x,patch);
+  }
+  for(const x of (DB.supplier_payments||[])) if(x.receipt && hit(x.receipt)) await save("supplier_payments",x,{receipt:null});
+  for(const x of (DB.orders||[]))  if(x.repair_image && hit(x.repair_image)) await save("orders",x,{repair_image:null});
+  for(const x of (DB.lines||[]))   if(x.fix_image && hit(x.fix_image))       await save("order_lines",x,{fix_image:null});
+  for(const x of (DB.parts||[]))   if(x.emb_artwork && hit(x.emb_artwork))   await save("line_parts",x,{emb_artwork:null});
+  try{ localStorage.removeItem(LOSTK); }catch(e){}
+  cacheDB();
+  return cleaned;
 }
 
 /* -- فحص شامل: كل صورة مسجّلة — موجودة فعلاً على السيرفر؟ -- */
 async function photoAudit(){
   if(!NETOK || !AUTHED || !sb){ alert(isAr()?"يحتاج إنترنت واتصال":"Needs connection"); return; }
-  const paths=[...new Set(allPhotoUrls().map(filePath).filter(Boolean))];
+  const IDX=photoIndex();
+  const paths=[...new Set(IDX.urls.map(filePath).filter(Boolean))];
   if(!paths.length){ alert(isAr()?"ما فيه صور مسجّلة":"No photos"); return; }
   const prefixes=[...new Set(paths.map(p=>p.indexOf("/")>0? p.slice(0,p.indexOf("/")) : ""))];
   const have=new Set();
@@ -1863,21 +1941,46 @@ async function photoAudit(){
   const gone=paths.filter(p=>!have.has(p) && !_pendSet.has(p));
   const pend=paths.filter(p=>!have.has(p) && _pendSet.has(p));
   const okn=paths.length-gone.length-pend.length;
-  alert(isAr()
-    ? `فحص الصور\n\nالمسجّل بالنظام: ${paths.length}\nموجود على السيرفر: ${okn}\nمعلّق على الجهاز: ${pend.length}\nمفقود: ${gone.length}`
-      + (pend.length? `\n\nاضغط «ارفعها الآن» قبل ما تسافر.`:"")
-      + (gone.length? `\n\n⚠️ ${gone.length} صورة تحتاج إعادة تصوير.` : (pend.length?"":`\n\nكل شي سليم ✓`))
-    : `Total ${paths.length} · server ${okn} · pending ${pend.length} · missing ${gone.length}`);
+  window._goneP=gone;
+  const label=(p)=>{
+    const o=(IDX.owners[p]||[]);
+    if(!o.length) return isAr()?"غير معروف":"unknown";
+    return [...new Set(o.map(x=>`${x.where}: ${x.name}`))].join(" · ");
+  };
+  const box=(items,color)=>items.map(p=>`<div class="lineitem" style="padding:5px 0">
+      <div style="min-width:0"><b style="font-size:13px;color:${color}">${esc(label(p))}</b>
+        <div class="muted" style="font-size:10px;font-family:Arial;direction:ltr;text-align:left">${esc(p)}</div></div>
+    </div>`).join("");
+  openSheet(`<div class="title">${isAr()?"فحص الصور":"Photo check"}</div>
+    <div class="note-box" style="${gone.length?"background:var(--wine-lt);color:var(--wine-dk)":"background:var(--green-lt);color:var(--green-dk)"}">
+      ${isAr()?"المسجّل":"total"}: <b>${paths.length}</b> · ${isAr()?"على السيرفر":"on server"}: <b>${okn}</b>
+      · ${isAr()?"معلّقة":"pending"}: <b>${pend.length}</b> · ${isAr()?"مفقودة":"missing"}: <b>${gone.length}</b>
+      ${(!gone.length&&!pend.length)?`<div style="margin-top:4px">✓ ${isAr()?"كل الصور سليمة":"all good"}</div>`:""}
+    </div>
+    ${pend.length?`<div class="sechead" style="font-size:11px">${isAr()?"معلّقة على الجهاز — تحتاج رفع":"PENDING UPLOAD"}</div>
+      ${box(pend,"#8a6d1f")}
+      <button class="btn btn-ink btn-big" onclick="closeSheet();syncPhotosNow()">${isAr()?"ارفعها الآن":"Upload now"}</button>`:""}
+    ${gone.length?`<div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"مفقودة — الملف ما هو على السيرفر":"MISSING ON SERVER"}</div>
+      ${box(gone,"var(--wine-dk)")}
+      <div class="muted" style="font-size:12px;margin-top:6px">${isAr()?"هذي روابط لصور ما وصلت السيرفر. امسح الروابط عشان تختفي المربعات المكسورة، وأعد تصوير اللي تحتاجه.":"These links point to files that never reached the server."}</div>
+      <button class="btn btn-line btn-big" style="margin-top:6px" onclick="photoPurgeGone()">${I.trash} ${isAr()?`امسح الـ ${gone.length} رابط المكسور`:`Delete ${gone.length} broken links`}</button>`:""}
+    <button class="btn btn-ghost btn-big" style="margin-top:8px" onclick="closeSheet()">${isAr()?"تمام":"Done"}</button>`);
+}
+/* يمسح روابط الصور المفقودة اللي طلعت بآخر فحص */
+async function photoPurgeGone(){
+  const gone=window._goneP||[];
+  if(!gone.length) return closeSheet();
+  if(!confirm(isAr()?`نمسح ${gone.length} رابط صورة مفقودة من السجلات؟ الصور نفسها راحت أصلاً.`:`Remove ${gone.length} broken links?`)) return;
+  const n=await photoPurge(gone);
+  window._goneP=[];
+  closeSheet(); render();
+  toast(isAr()?`انمسحت ${gone.length} رابط من ${n} سجل`:`Removed ${gone.length} links`);
 }
 
+/* زر واحد بس — ما نعلّق شرائط تنبيه فوق الشاشة. العدد المعلّق يبين على الزر نفسه. */
 function photoGuardBar(){
-  const lost=lostGet().length;
-  let h=photoSyncBanner();
-  if(lost) h+=`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-    <div>⚠️ <b>${lost}</b> ${isAr()?"صورة ضاعت من الجهاز قبل ما تُرفع — تحتاج إعادة تصوير":"photos lost before upload"}</div>
-    <button class="btn btn-ghost" style="width:auto;padding:5px 14px;font-size:13px" onclick="lostClear()">${isAr()?"فهمت":"OK"}</button></div>`;
-  h+=`<div style="margin:0 0 10px"><button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">${isAr()?"🔍 فحص الصور قبل السفر":"🔍 Verify photos"}</button></div>`;
-  return h;
+  const pend=_pendCount||0;
+  return `<div style="margin:0 0 10px"><button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}${pend?` · <b style="color:var(--wine)">${pend} ${isAr()?"معلّقة":"pending"}</b>`:""}</button></div>`;
 }
 
 function photoSyncBanner(){
@@ -7083,7 +7186,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
-    "photoAudit","syncPhotosNow","addNewBomMat","createPOsFromOrder","delLinked",
+    "photoAudit","syncPhotosNow","photoPurgeGone","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
   GUARDED.forEach(function(name){
