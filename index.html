@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.79:APPV-->
+<!--APPV:2026-08-12.80:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1202,7 +1202,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.79";
+const APP_VERSION="2026-08-12.80";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6541,9 +6541,13 @@ async function finishApprove(id){
   if(!p || !p.id) return alert(isAr()?"ما قدرنا ننشئ المنتج — أعد المحاولة":"Could not create product");
   /* الاسم النهائي يستبدل اسم التصميم — اسم واحد ومصدره التصميم */
   const dpatch={stage:"approved", status:"معتمد", product_id:p.id,
-    name, name_en:el("ap_name_en").value||null,
-    final_name:name, final_name_en:el("ap_name_en").value||null, size_chart:chart};
-  await sb.from("design_projects").update(dpatch).eq("id",id);
+    name, final_name:name, final_name_en:el("ap_name_en").value||null, size_chart:chart};
+  const dres=await sb.from("design_projects").update(dpatch).eq("id",id);
+  if(dres && dres.error && !/queued/i.test(dres.error.message||"")){
+    /* ما نسكت: المنتج انولد والتصميم ما تحدّث — لازم تعرف */
+    alert((isAr()?"انولد المنتج بس ما قدرنا نعتمد التصميم:\n\n":"Product created but design not approved:\n\n")+dres.error.message);
+    return;
+  }
   { const dd=design_(id); if(dd) Object.assign(dd, dpatch); }   /* الشاشة تعكس الاعتماد فوراً بلا انتظار التحديث */
   cacheDB();
   /* خامات التصميم تنتقل للمنتج بكمياتها من التشيك ليست — كمية العينة الواحدة هي استهلاك القطعة */
@@ -6556,12 +6560,14 @@ async function finishApprove(id){
       if(lines.length){
         const partName=((d.components||[])[0]&&(d.components||[])[0].ar) || (isAr()?"عام":"general");
         const bp={}; bp[partName]=lines;
-        await sb.from("products").update({bom_parts:bp}).eq("id",p.id);
+        const bres=await sb.from("products").update({bom_parts:bp}).eq("id",p.id);
+        if(bres && bres.error && !/queued/i.test(bres.error.message||"")) throw bres.error;
         if(cur) cur.bom_parts=bp;
+        else { const c2=(DB.products||[]).find(x=>x.id===p.id); if(c2) c2.bom_parts=bp; }
       }
     }
-  }catch(e){}
-  if(!existing) await sb.from("photoshoots").insert({product_id:p.id});
+  }catch(e){ vvErr(e, isAr()?"نقل خامات التصميم":"BOM"); }
+  if(!existing) { try{ await sb.from("photoshoots").insert({product_id:p.id}); }catch(e){} }
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
 }
