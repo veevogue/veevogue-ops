@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.81:APPV-->
+<!--APPV:2026-08-12.82:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1202,7 +1202,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.81";
+const APP_VERSION="2026-08-12.82";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4739,8 +4739,13 @@ function posOfOrder(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===o
 async function createPOsFromOrder(orderId){
   const o=order(orderId); if(!o) return;
   const lines=DB.lines.filter(l=>l.order_id===orderId);
-  if(!purchaseFor(lines) || !Object.keys(purchaseFor(lines)).length)
+  const _need=purchaseFor(lines)||{};
+  if(!Object.keys(_need).length)
     return alert(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked");
+  if(!Object.values(_need).some(v=>Number(v)>0))
+    return alert(isAr()
+      ? "الخامات مربوطة بس استهلاكها صفر.\n\nافتح بطاقة المنتج واكتب كم يستهلك كل خام للقطعة الوحدة — للأعمار كلها أو لكل عمر على حدة."
+      : "Materials linked but consumption is zero — set it on the product card first.");
   /* نفصل الاحتياج حسب الكولكشن — كل تكلفة تُنسب لمركزها */
   const needByCol={};
   lines.forEach(l=>{
@@ -5271,16 +5276,12 @@ function showProductForm(pid){
   window._estSew =JSON.parse(JSON.stringify(p.est_parts||{}));
   window._estCut =JSON.parse(JSON.stringify(p.est_cut_parts||{}));
   window._bomP   =JSON.parse(JSON.stringify(p.bom_parts||{}));
-  /* منتج جاي من تصميم وما عنده خامات محفوظة: نعبّيها من تشيك ليست تصميمه
-     عشان تخصّصها على القطع بدل ما تعيد إدخالها */
-  if(p.id && !rawBom(p).length){
-    const _d=designOfProduct(p);
-    const _lines=_d? bomFromDesign(_d) : [];
-    if(_lines.length){
-      const _part=(((p.components||[])[0]||{}).ar) || (isAr()?"عام":"general");
-      window._bomP[_part]=JSON.parse(JSON.stringify(_lines));
-    }
-  }
+  /* خامات التصميم = البذرة اللي تتعبّى تحت كل قطعة تضيفها */
+  { const _d=designOfProduct(p);
+    const _seed=_d? bomFromDesign(_d) : [];
+    const _have=new Set(rawBom(p).map(b=>b.material_id));
+    _seed.forEach(b=>_have.add(b.material_id));
+    window._bomSeed=[...(_have)].map(mid=>({material_id:mid, qty:0})); }
   window._embP   =JSON.parse(JSON.stringify(p.emb_parts||{}));
   window._artNew ={};
   migrateLegacy(p);
@@ -5370,8 +5371,23 @@ function redrawParts(){
   const box=el("partCards"); if(!box) return;
   capturePartCards();
   const parts=currentParts();
-  if(!parts.length){ box.innerHTML=`<div class="muted">${isAr()?"اختر القطع أولاً":"Pick parts first"}</div>`; return; }
+  if(!parts.length){
+    const sd=(window._bomSeed||[]);
+    box.innerHTML=`<div class="note-box" style="background:#FBF0D8;color:#8a6d1f">
+      <b>${isAr()?"اختر قطع التصميم فوق أول":"Pick the design parts above first"}</b>
+      <div style="font-size:12px;margin-top:4px">${isAr()
+        ?"كل قطعة تضيفها بتجيها لستة خامات هذا التصميم، وتشيل منها اللي ما يدخل فيها وتكتب استهلاك كل خام."
+        :"Each part you add gets this design's material list."}</div>
+      ${sd.length?`<div style="font-size:12px;margin-top:6px">${isAr()?"خامات هذا التصميم":"Materials"} (${sd.length}): ${sd.map(b=>esc(material(b.material_id).name)).join(" · ")}</div>`:""}
+    </div>`;
+    return; }
   const mats=matPool();
+  /* أي قطعة جديدة تجي معها كل خامات التصميم — تشيل منها اللي ما تستخدمه بهالقطعة */
+  const seed=(window._bomSeed||[]);
+  parts.forEach(c=>{
+    if(window._bomP[c.ar]===undefined)
+      window._bomP[c.ar]=seed.map(b=>({material_id:b.material_id, qty:0}));
+  });
   const html=parts.map(c=>{
     const k=pkey(c.ar), e=window._embP[c.ar]||{};
     return `<div class="partcard">
@@ -5573,15 +5589,25 @@ function redrawBomP(partAr){
   const sizes=bomSizes();
   box.innerHTML = arr.length? arr.map((b,i)=>{
     const m=material(b.material_id)||{name:"—"};
-    const ps=!!(b.per_size && Object.keys(b.per_size).length);
-    return `<div class="lineitem"><div>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""} — <b>${b.qty}</b> ${esc(m.unit||"")}
-        ${ps?`<span class="chip" style="margin-inline-start:6px">${isAr()?"مخصّص لكل مقاس":"per size"}</span>`:""}
-        ${!m.supplier_id?`<span class="chip" style="margin-inline-start:6px;background:var(--wine-lt);color:var(--wine-dk)">${isAr()?"يحتاج مورّد":"needs supplier"}</span>`:""}</div>
-      <div style="display:flex;gap:4px">
-        ${sizes.length?`<button type="button" class="btn btn-ghost" style="padding:4px 9px;font-size:12px" onclick="tglBomSizes('${esc(partAr)}',${i})">${isAr()?"مقاسات":"sizes"}</button>`:""}
-        <button type="button" class="btn btn-ghost" style="padding:4px 10px" onclick="rmBomP('${esc(partAr)}',${i})">✕</button></div></div>
+    const nps=(b.per_size && Object.keys(b.per_size).length)||0;
+    return `<div class="lineitem" style="align-items:center">
+      <div style="flex:1;min-width:0">
+        <b style="font-size:13px">${esc(m.name)}</b>${m.color?` · ${esc(m.color)}`:""}
+        ${m.sku?` <span class="muted" style="font-family:Arial;font-size:10px">${esc(m.sku)}</span>`:""}
+        ${nps?`<span class="chip" style="margin-inline-start:6px;font-size:10px">${isAr()?`${nps} عمر مخصّص`:`${nps} sized`}</span>`:""}
+        ${!m.supplier_id?`<span class="chip" style="margin-inline-start:6px;background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"يحتاج مورّد":"needs supplier"}</span>`:""}
+      </div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input inputmode="decimal" value="${b.qty!=null&&b.qty!==0?esc(String(b.qty)):""}" placeholder="0"
+          title="${isAr()?"الاستهلاك لكل قطعة — لكل الأعمار":"Per piece — all ages"}"
+          style="width:66px;text-align:center;padding:6px"
+          onchange="setBomQty('${esc(partAr)}',${i},this.value)">
+        <span class="muted" style="font-size:11px;min-width:26px">${esc(m.unit||"")}</span>
+        ${sizes.length?`<button type="button" class="btn btn-ghost" style="padding:4px 9px;font-size:11px" onclick="tglBomSizes('${esc(partAr)}',${i})">${isAr()?"لكل عمر":"per age"}</button>`:""}
+        <button type="button" class="btn btn-ghost" style="padding:4px 9px;color:var(--wine)" onclick="rmBomP('${esc(partAr)}',${i})">✕</button>
+      </div></div>
       <div id="ps_${k}_${i}" hidden style="padding:0 8px 10px"></div>`;}).join("")
-    : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه خامات لهذي القطعة بعد":"None yet"}</div>`;
+    : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه خامات لهذي القطعة — أضفها من تحت":"None yet"}</div>`;
 }
 
 /* استهلاك مخصّص لمقاسات محددة — الفاضي يرجع للاستهلاك العام */
@@ -5597,6 +5623,13 @@ function tglBomSizes(partAr,i){
     <button type="button" class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px"
       onclick="clrBomSizes('${esc(partAr)}',${i})">${isAr()?"امسح التخصيص":"Clear"}</button>`;
   box.hidden=false;
+}
+/* الاستهلاك العام لهذي الخامة في هذي القطعة — يسري على كل الأعمار إلا اللي خصّصته */
+function setBomQty(partAr,i,v){
+  const b=(window._bomP[partAr]||[])[i]; if(!b) return;
+  const n=parseFloat(toAsciiDigits(v));
+  b.qty=isFinite(n)? n : 0;
+  redrawBomP(partAr);
 }
 function setBomSize(partAr,i,size,v){
   const b=(window._bomP[partAr]||[])[i]; if(!b) return;
@@ -5631,9 +5664,11 @@ async function addNewBomMat(partAr){
 }
 function addBomP(partAr){
   const k=pkey(partAr);
-  const id=el("bp_"+k).value, q=parseFloat(el("bq_"+k).value);
-  if(!id||!q) return alert(isAr()?"اختر الخام واكتب الكمية":"Pick material and qty");
-  (window._bomP[partAr]=window._bomP[partAr]||[]).push({material_id:id, qty:q});
+  const id=el("bp_"+k).value, q=parseFloat(toAsciiDigits(el("bq_"+k).value));
+  if(!id) return alert(isAr()?"اختر الخام":"Pick a material");
+  const arr=(window._bomP[partAr]=window._bomP[partAr]||[]);
+  if(arr.some(b=>b.material_id===id)) return alert(isAr()?"هذا الخام موجود بهذي القطعة":"Already in this part");
+  arr.push({material_id:id, qty:isFinite(q)?q:0});   /* الاستهلاك تقدر تكتبه الحين أو بعدين */
   el("bq_"+k).value=""; redrawBomP(partAr);
 }
 function rmBomP(partAr,i){ (window._bomP[partAr]||[]).splice(i,1); redrawBomP(partAr); }
@@ -6496,15 +6531,13 @@ function bomFromDesign(d){
   const smps=(DB.samples||[]).filter(x=>x.status==="shortlist"
     && (x.design_id===d.id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(d.id)>=0)));
   const out=[], seen=new Set();
+  /* كمية العينة ما تنتقل — استهلاك التنفيذ تحدّده على المنتج لكل قطعة ولكل عمر */
   (d.checklist||[]).forEach(it=>{
     const sm=smps.find(x=>x.checklist_item_id===it.id)
           || smps.find(x=>String(x.fabric_type||"").trim()===String(it.name||"").trim());
     if(!sm || seen.has(sm.id)) return;
     seen.add(sm.id);
-    let q=parseFloat(toAsciiDigits(it.qty))||0;
-    const u=String(it.unit||"متر");
-    if(u==="يارد"||u==="yard") q=Math.round(q*YARD*1000)/1000;   /* المخزون يمشي بالمتر */
-    out.push({material_id:sm.id, qty:q});
+    out.push({material_id:sm.id, qty:0});
   });
   smps.forEach(sm=>{ if(!seen.has(sm.id)){ seen.add(sm.id); out.push({material_id:sm.id, qty:0}); } });
   return out;
