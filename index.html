@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.75:APPV-->
+<!--APPV:2026-08-12.76:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -392,11 +392,24 @@ function chartConv(chart, from, to){
     Object.keys(chart[sz]||{}).forEach(k=>{ out[sz][k]=convMeas(chart[sz][k], from, to); }); });
   return out;
 }
-/* وحدة الجهة المنفّذة: الصين سنتيمتر، الكويت إنش */
+/* وحدة الجهة المنفّذة: من بيانات المورّد نفسه أولاً، وإلا من قناته (الصين سم · الكويت إنش) */
 function execUnit(channel){ return (channel||"local")==="china" ? "cm" : "inch"; }
-/* جدول جاهز للطباعة لجهة معيّنة */
-function chartFor(owner, channel){
-  const from=chartUnitOf(owner), to=execUnit(channel);
+function supUnit(sup, fallbackChannel){
+  if(sup && (sup.meas_unit==="cm" || sup.meas_unit==="inch")) return sup.meas_unit;
+  return execUnit((sup&&sup.channel) || fallbackChannel || "local");
+}
+/* يلقى المورّد بالمعرّف أو بالاسم — عشان لو كتبت اسم المشغل يدوي بدل ما تختاره */
+function supFind(id, name){
+  const list=(DB.suppliers||[]);
+  if(id){ const f=list.find(x=>x.id===id); if(f) return f; }
+  const nm=String(name||"").trim().toLowerCase();
+  if(!nm) return null;
+  return list.find(x=>String(x.name||"").trim().toLowerCase()===nm) || null;
+}
+/* جدول جاهز للطباعة لجهة معيّنة: تقبل مورّد أو اسم قناة */
+function chartFor(owner, who){
+  const from=chartUnitOf(owner);
+  const to = (who && typeof who==="object") ? supUnit(who) : execUnit(who);
   return {chart:chartConv(owner&&owner.size_chart||{}, from, to), unit:to, from};
 }
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الحوض","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
@@ -1184,7 +1197,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.75";
+const APP_VERSION="2026-08-12.76";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1626,7 +1639,7 @@ async function syncNow(){
   toast(isAr()?"تحدّثت البيانات ✓":"Updated ✓", 1500);
 }
 /* البث الفوري: أي تعديل من جهاز ثاني يوصلنا خلال ثانية بدل ما ننتظر الدورة */
-let _rtCh=null, _rtT=null;
+let _rtCh=null, _rtT=null, _rtOK=false;
 function rtStart(){
   if(!sb || !AUTHED || _rtCh) return;
   try{
@@ -1635,10 +1648,25 @@ function rtStart(){
         clearTimeout(_rtT);
         _rtT=setTimeout(()=>{ if(!userBusy()) refresh(); }, 700);   /* نجمّع التغييرات المتتالية */
       })
-      .subscribe();
-  }catch(e){ _rtCh=null; }
+      .subscribe((st)=>{ _rtOK = (st==="SUBSCRIBED"); });
+  }catch(e){ _rtCh=null; _rtOK=false; }
 }
-function rtStop(){ try{ if(_rtCh) sb.removeChannel(_rtCh); }catch(e){} _rtCh=null; clearTimeout(_rtT); }
+function rtStop(){ try{ if(_rtCh) sb.removeChannel(_rtCh); }catch(e){} _rtCh=null; _rtOK=false; clearTimeout(_rtT); }
+/* فحص شامل: أي جدول ناقصه بث فوري أو حماية أو سياسة وصول — عشان ما نكتشف النقص بخطأ */
+async function sysCheck(){
+  const box=el("sysCheckOut"); if(box) box.innerHTML=`<span class="muted">${isAr()?"جارٍ الفحص…":"Checking…"}</span>`;
+  if(!NETOK || !AUTHED || !sb){ if(box) box.innerHTML=`<span style="color:var(--wine-dk)">${isAr()?"يحتاج إنترنت":"Needs internet"}</span>`; return; }
+  try{
+    const {data,error}=await sb.rpc("vv_setup_audit");
+    if(error) throw error;
+    const rows=Array.isArray(data)?data:[];
+    const bad=rows.filter(r=>!r.realtime || !r.rls || !r.policies);
+    if(box) box.innerHTML = bad.length
+      ? `<div style="color:var(--wine-dk)">⚠ ${bad.length} ${isAr()?"جدول ناقص إعداد":"tables incomplete"}:</div>`
+        + bad.map(r=>`<div class="muted" style="font-size:11px;font-family:Arial;direction:ltr;text-align:left">${esc(r.tbl)} — ${r.realtime?"":"no realtime "}${r.rls?"":"no rls "}${r.policies?"":"no policy"}</div>`).join("")
+      : `<span style="color:var(--green-dk)">✓ ${rows.length} ${isAr()?"جدول — كلها مغطّاة بالبث الفوري والحماية":"tables — all covered"}</span>`;
+  }catch(e){ if(box) box.innerHTML=`<span style="color:var(--wine-dk)">${isAr()?"تعذّر الفحص":"Check failed"}: ${esc(String((e&&e.message)||e)).slice(0,60)}</span>`; }
+}
 
 /* ================= العرض ================= */
 function render(){
@@ -3055,6 +3083,11 @@ function supSheet(id){
       <div><label>${isAr()?"الدور":"Floor"}</label><input id="sup_floor" value="${esc(x.floor||"")}"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>${isAr()?"يتعامل بـ":"Works in"}</label>
+        <select id="sup_unit">
+          <option value="inch" ${supUnit(x,chChannel)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+          <option value="cm" ${supUnit(x,chChannel)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option>
+        </select></div>
       <div><label>${isAr()?"المدينة":"City"}</label><input id="sup_city" value="${esc(x.city||"")}"></div>
       <div><label>${isAr()?"تلفون":"Phone"}</label><input id="sup_phone" value="${esc(x.phone||"")}"></div>
     </div>
@@ -3133,6 +3166,7 @@ async function supSave(){
     plaza:el("sup_plaza")?el("sup_plaza").value||null:null, floor:el("sup_floor")?el("sup_floor").value||null:null,
     contact_person:el("sup_person")?el("sup_person").value||null:null,
     address:el("sup_address")?el("sup_address").value||null:null,
+    meas_unit:(el("sup_unit")?el("sup_unit").value:null)||null,
     wechat_qr:window._supWechatQR||null,
     card_photos:window._supCards||[]};
   if(!row.name) return alert(isAr()?"اكتب الاسم":"Name?");
@@ -4829,6 +4863,15 @@ function tabSettings(){
                      :"Not cached yet — stay online a moment, then reopen.")}
       <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"النسخة":"Version"} ${esc(APP_VERSION)}</div>
     </div>
+    <div class="note-box" style="${_rtOK?"background:var(--green-lt);color:var(--green-dk)":""}">
+      ${_rtOK ? (isAr()?"✓ التحديث الفوري شغّال — أي تعديل من أي جهاز يوصلك خلال ثانية."
+                      :"Live sync on — changes arrive within a second.")
+              : (isAr()?"التحديث الفوري مو متصل الحين — البيانات تتجدد كل 20 ثانية، أو اضغط ⟳ فوق."
+                      :"Live sync off — refreshing every 20s.")}
+    </div>
+    <button class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:13px" onclick="sysCheck()">${isAr()?"افحص تغطية كل الأقسام":"Check all sections"}</button>
+    <div id="sysCheckOut" style="font-size:12px;margin-top:6px"></div>
+    <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"يتأكد إن كل قسم في النظام — القديم والجديد — داخل التحديث الفوري ومحمي. أي قسم نضيفه لاحقاً ينضم تلقائياً.":"Verifies every table is covered."}</div>
   </div>
   <div class="card">
     <div class="title">${I.clock} ${t("workHours")}</div>
@@ -6446,7 +6489,9 @@ function tabExternal(){
     ${l.fix_reason?`<div class="chip wine" style="margin-top:4px">${I.fix} ${isAr()?"إرجاع تصليح":"return"} ${l.ext_fix_count>1?"("+l.ext_fix_count+")":""} — ${esc(l.fix_reason)}</div>`:""}</div></div>`;};
   el("tabbody").innerHTML=`
     <div class="card"><div class="title">${I.emb} ${t("emb")} (${embPool.length})</div>
-      ${embPool.length? embPool.map(embRow).join("")+`<div class="grid2" style="margin-top:8px"><input id="j_vendor" placeholder="${isAr()?"اسم المصدر":"Vendor"}"><button class="btn btn-ink" onclick="makeJob('emb')">${I.shipped}</button></div>`
+      ${embPool.length? embPool.map(embRow).join("")+`<div class="grid2" style="margin-top:8px"><select id="j_vendor_sel" onchange="if(this.value)el('j_vendor').value=this.options[this.selectedIndex].text.split(' · ')[0]">
+        <option value="">${isAr()?"— اختر المشغل —":"— pick —"}</option>${vendorOpts()}</select>
+        <input id="j_vendor" placeholder="${isAr()?"أو اكتب الاسم":"Or type name"}"><button class="btn btn-ink" onclick="makeJob('emb')">${I.shipped}</button></div>`
       : `<div class="muted">—</div>`}
     </div>
     <div class="card"><div class="title">${I.ext} ${t("ext")} (${extPool.length})</div>
@@ -6454,8 +6499,11 @@ function tabExternal(){
         <div class="note-box" style="margin-top:8px">${isAr()
           ?"لو في تطريز أو طباعة على أي قطعة، يطلع لك <b>جوب أوردرين</b>: واحد للملابس وواحد للتطريز. اكتب مشغل التطريز لو كان مكاناً ثانياً، وإلا اتركه فاضي."
           :"If any part needs embroidery you get two separate job orders."}</div>
-        <input id="x_vendor" placeholder="${isAr()?"مشغل الملابس":"Garment vendor"}" style="margin-top:6px">
+        <select id="x_vendor_sel" style="margin-top:6px" onchange="if(this.value)el('x_vendor').value=this.options[this.selectedIndex].text.split(' · ')[0]">
+          <option value="">${isAr()?"— اختر مشغل الملابس —":"— pick garment vendor —"}</option>${vendorOpts()}</select>
+        <input id="x_vendor" placeholder="${isAr()?"أو اكتب اسم مشغل الملابس":"Or type garment vendor"}" style="margin-top:6px">
         <input id="x_vendor2" placeholder="${isAr()?"مشغل التطريز/الطباعة (لو مختلف)":"Embroidery vendor (if different)"}" style="margin-top:6px">
+        <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"اختيار المشغل من القائمة يخلي أمر التنفيذ يطلع بوحدة القياس اللي يتعامل فيها (سم أو إنش).":"Picking from the list prints the chart in that vendor's unit."}</div>
         <button class="btn btn-ink btn-big" style="margin-top:6px" onclick="makeJob('ext')">${I.shipped} ${isAr()?"أرسل واطبع الجوب أوردرات":"Send & print"}</button>`
       : `<div class="muted">—</div>`}
     </div>
@@ -6475,8 +6523,16 @@ function tabExternal(){
         ])}</div>
       </div>`;}).join("")}`;
 }
+/* المصانع والمشاغل — مع وحدة القياس عشان تبين وأنت تختار */
+function vendorOpts(){
+  return (DB.suppliers||[]).filter(x=>x.kind==="factory"||x.kind==="workshop"||!x.kind)
+    .map(x=>`<option value="${x.id}">${esc(x.name||"")} · ${unitLbl(supUnit(x))}</option>`).join("");
+}
 async function makeJob(mode){
   const vendor=el(mode==="emb"?"j_vendor":"x_vendor").value||null;
+  const selEl=el(mode==="emb"?"j_vendor_sel":"x_vendor_sel");
+  const vsup=supFind(selEl?selEl.value:null, vendor);
+  const supplier_id=(vsup&&vsup.id)||null;
   if(mode==="emb"){
     const pids=[...document.querySelectorAll(".embchk:checked")].map(c=>c.value);
     if(!pids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
@@ -6484,8 +6540,8 @@ async function makeJob(mode){
     const kind=(first&&first.emb_kind)||"تطريز";
     const isFix=pids.every(id=>{const x=DB.parts.find(y=>y.id===id); return x&&x.is_fix;});
     const jid=newId();
-    const {error}=await sb.from("ext_jobs").insert({id:jid,kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix});
-    const j={id:jid,kind,vendor,part_ids:pids,line_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
+    const {error}=await sb.from("ext_jobs").insert({id:jid,kind,vendor,supplier_id,part_ids:pids,line_ids:[],is_fix:isFix});
+    const j={id:jid,kind,vendor,supplier_id,part_ids:pids,line_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
     if(error) return alert(error.message);
     for(const id of pids) await sb.from("line_parts").update({status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
@@ -6496,8 +6552,8 @@ async function makeJob(mode){
     /* ١ — جوب أوردر الملابس (أو إرجاع تصليح لو القطع راجعة من الجودة) */
     const isFix=ids.every(id=>{const l=DB.lines.find(x=>x.id===id); return l&&l.fix_reason;});
     const jid=newId();
-    const {error}=await sb.from("ext_jobs").insert({id:jid,kind:"تنفيذ خارجي",vendor,line_ids:ids,part_ids:[],is_fix:isFix});
-    const j={id:jid,kind:"تنفيذ خارجي",vendor,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
+    const {error}=await sb.from("ext_jobs").insert({id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix});
+    const j={id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
     if(error) return alert(error.message);
     for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${isFix?(isAr()?"إرجاع تصليح":"fix return"):(isAr()?"تنفيذ خارجي":"external")} · ${ids.length}`);
@@ -6613,12 +6669,11 @@ async function printJob(jobId){
       `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — ${esc(x.part_ar||"")}:</b>
         ${x.emb_note?`<div>${esc(x.emb_note)}</div>`:""}
         ${x.emb_artwork?`<img crossorigin="anonymous" src="${esc(x.emb_artwork)}" style="max-width:300px;border:1px solid #ddd;border-radius:8px;margin-top:6px">`:""}</div>`).join("");
-  const _jsup=(DB.suppliers||[]).find(x=>x.id===j.supplier_id)||null;
-  const _jch=(_jsup&&_jsup.channel)||"local";           /* الصين سم · الكويت إنش */
+  const _jsup=supFind(j.supplier_id, j.vendor);        /* بالمعرّف أو بالاسم */
   const charts=isExt? [...new Set(lines.map(l=>l.product_id))].map(pid=>{const p=product(pid);
-    const _cf=chartFor(p,_jch); const chart=_cf.chart; const sizes=Object.keys(chart);
+    const _cf=chartFor(p, _jsup||"local"); const chart=_cf.chart; const sizes=Object.keys(chart);
     if(!sizes.length) return "";
-    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (${unitLbl(_cf.unit)}):</b>
+    return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (${unitLbl(_cf.unit)})${_cf.from!==_cf.unit?` <span style="font-size:11px;font-weight:400;color:#666">— محوّلة من ${unitLbl(_cf.from)}</span>`:""}:</b>
     <table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
     ${(p.patterns||[]).length?`<div>الباترونات: ${(p.patterns||[]).map(x=>`<a href="${esc(x.url)}">${esc(x.name)}</a>`).join(" · ")}</div>`:""}</div>`;}).join("") : "";
@@ -6634,10 +6689,10 @@ async function printJob(jobId){
 /* أمر تنفيذ العينة للمشغل الخارجي — ورقة كاملة يستلمها المشغل */
 async function printSampleJob(id){
   const d=design_(id); if(!d) return;
-  const sup=(DB.suppliers||[]).find(x=>x.id===d.sample_vendor_id);
+  const sup=supFind(d.sample_vendor_id, d.sample_vendor);
   const vendor=d.sample_vendor||(sup&&sup.name)||"—";
-  /* المصنع الصيني ياخذ سنتيمتر، والمشاغل المحلية إنش */
-  const _cf=chartFor(d, (sup&&sup.channel)||"local");
+  /* الوحدة من بيانات المشغل نفسه — المصنع الصيني سم والمشاغل المحلية إنش */
+  const _cf=chartFor(d, sup||"local");
   const chart=_cf.chart; const sizes=Object.keys(chart);
   const smp=(DB.samples||[]).filter(x=>x.design_id===id || (Array.isArray(x.design_ids)&&x.design_ids.indexOf(id)>=0));
   const chk=(d.checklist||[]);
@@ -7417,7 +7472,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
-    "photoAudit","syncPhotosNow","photoPurgeGone","syncNow","addNewBomMat","createPOsFromOrder","delLinked",
+    "photoAudit","syncPhotosNow","photoPurgeGone","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
   GUARDED.forEach(function(name){
