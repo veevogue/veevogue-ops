@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.80:APPV-->
+<!--APPV:2026-08-12.81:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1202,7 +1202,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.80";
+const APP_VERSION="2026-08-12.81";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4681,11 +4681,26 @@ function toggleOrder(id){
 }
 /* ===== قائمة الشراء التقديرية ===== */
 /* الخامات صارت لكل قطعة تصميم — نجمعها كلها */
-function allBom(p){
+/* بنود المنتج الخام كما هي محفوظة عليه */
+function rawBom(p){
   const out=[];
-  Object.values(p.bom_parts||{}).forEach(arr=>(arr||[]).forEach(b=>out.push(b)));
-  if(!out.length) (p.bom||[]).forEach(b=>out.push(b));   /* منتجات قديمة */
+  Object.values((p&&p.bom_parts)||{}).forEach(arr=>(arr||[]).forEach(b=>out.push(b)));
+  if(!out.length) ((p&&p.bom)||[]).forEach(b=>out.push(b));   /* منتجات قديمة */
   return out;
+}
+/* التصميم المربوط بهذا المنتج */
+function designOfProduct(p){
+  if(!p) return null;
+  return (DB.designs||[]).find(d=>d.product_id===p.id)
+      || (p.sku? (DB.designs||[]).find(d=>d.sku===p.sku) : null) || null;
+}
+/* خامات المنتج: المحفوظة عليه، وإلا مشتقّة من تشيك ليست تصميمه وعيناته المعتمدة.
+   كذا المخزون وأوامر الإنتاج ما تعتمد على نسخة تصير مرة وحدة وممكن تفشل. */
+function allBom(p){
+  const out=rawBom(p);
+  if(out.length) return out;
+  const d=designOfProduct(p);
+  return d? bomFromDesign(d) : [];
 }
 /* استهلاك الخام للسطر — يدعم استهلاك عام أو مخصّص لكل قياس (per_size جاهز للمستقبل) */
 function bomQtyForSize(b, size){
@@ -5256,6 +5271,16 @@ function showProductForm(pid){
   window._estSew =JSON.parse(JSON.stringify(p.est_parts||{}));
   window._estCut =JSON.parse(JSON.stringify(p.est_cut_parts||{}));
   window._bomP   =JSON.parse(JSON.stringify(p.bom_parts||{}));
+  /* منتج جاي من تصميم وما عنده خامات محفوظة: نعبّيها من تشيك ليست تصميمه
+     عشان تخصّصها على القطع بدل ما تعيد إدخالها */
+  if(p.id && !rawBom(p).length){
+    const _d=designOfProduct(p);
+    const _lines=_d? bomFromDesign(_d) : [];
+    if(_lines.length){
+      const _part=(((p.components||[])[0]||{}).ar) || (isAr()?"عام":"general");
+      window._bomP[_part]=JSON.parse(JSON.stringify(_lines));
+    }
+  }
   window._embP   =JSON.parse(JSON.stringify(p.emb_parts||{}));
   window._artNew ={};
   migrateLegacy(p);
@@ -6553,7 +6578,7 @@ async function finishApprove(id){
   /* خامات التصميم تنتقل للمنتج بكمياتها من التشيك ليست — كمية العينة الواحدة هي استهلاك القطعة */
   try{
     const cur=(DB.products||[]).find(x=>x.id===p.id);
-    const old=cur? allBom(cur) : [];
+    const old=cur? rawBom(cur) : [];
     const emptyBom = !old.length || old.every(b=>!(Number(b&&b.qty)>0));
     if(emptyBom){
       const lines=bomFromDesign(d);
