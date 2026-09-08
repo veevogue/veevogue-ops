@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.71:APPV-->
+<!--APPV:2026-08-12.72:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -426,10 +426,25 @@ function kindLabel(k){ return k==="accessory" ? (isAr()?"إكسسوار":"access
                           : k==="trim"      ? (isAr()?"كلف":"trim")
                           :                   (isAr()?"خام":"fabric"); }
 function isFabricKind(k){ return (k||"fabric")==="fabric"; }
+/* أكواد محفوظة بالطابور وما وصلت السيرفر بعد — نحسبها وإلا يتكرر الكود
+   لو التطبيق أعاد تحميل البيانات قبل ما ينرسل الطابور */
+function queuedSkus(){
+  const out=[];
+  try{
+    (qGet()||[]).forEach(it=>{
+      if(String(it.method||"").toUpperCase()!=="POST" || !it.body) return;
+      if(!/\/rest\/v1\/(trip_samples|materials|design_projects)/.test(String(it.url||""))) return;
+      let b=null; try{ b=JSON.parse(it.body); }catch(e){ return; }
+      (Array.isArray(b)?b:[b]).forEach(r=>{ if(r && r.sku) out.push({sku:r.sku}); });
+    });
+  }catch(e){}
+  return out;
+}
 function genSKU(kind, itemKind){
-  if(kind==="design") return skuNext("V", DB.designs, "sku");
+  const q=queuedSkus();
+  if(kind==="design") return skuNext("V", [...(DB.designs||[]), ...q], "sku");
   if(kind==="material" || kind==="sample")
-    return skuNext(skuPrefix(itemKind), [...(DB.materials||[]), ...(DB.samples||[])], "sku");
+    return skuNext(skuPrefix(itemKind), [...(DB.materials||[]), ...(DB.samples||[]), ...q], "sku");
   return "X-"+String(Date.now()).slice(-6);
 }
 
@@ -1137,7 +1152,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.71";
+const APP_VERSION="2026-08-12.72";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2378,11 +2393,14 @@ function samplePrice(x){
   const pr=Number(x&&x.price);
   if(!isFinite(pr) || !pr) return {price:null, unit:null};
   if((x.kind||"")==="accessory"){
-    const per=Number(x.per_count)||1;
+    const per=Number(x.per_count)||1;                     /* السعرة لدرزن أو لعدد حبات */
     return {price:Math.round((pr/per)*10000)/10000, unit:"count"};
   }
+  if(x.per==="count"||x.per==="عدد") return {price:pr, unit:"count"};   /* كلف ينباع بالحبة */
   return {price:pr, unit:(x.per==="yard"||x.per==="يارد")?"yard":"meter"};
 }
+/* العينة تُشترى بالعدد؟ (إكسسوار، أو كلف مسعّر بالحبة) */
+function smpByCount(x){ return (x&&x.kind)==="accessory" || (x&&(x.per==="count"||x.per==="عدد")); }
 /* تعديل سعر العينة ينزل على الخام المرتبط فيها */
 async function syncSamplePrice(x){
   if(!x) return false;
@@ -2400,7 +2418,8 @@ async function syncSamplePrice(x){
    الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
 function planFromChk(ci, isAcc){
   const o={qty_yd:null, plan_qty:null, buy_unit:null, buy_qty:null, plan_meters:null};
-  if(isAcc){
+  const _u=(ci && ci.unit)||"";
+  if(isAcc || _u==="عدد" || _u==="count"){
     o.buy_unit="count";
     if(ci && ci.qty){ o.plan_qty=parseInt(ci.qty)||null; o.buy_qty=o.plan_qty; }
     return o;
@@ -2478,7 +2497,7 @@ async function poFromSample(x){
     else { const sup={id:newId(), kind:"fabric", name:x.supplier_name, shop_no:x.shop_no||null, channel:chChannel};
       await sb.from("suppliers").insert(sup); DB.suppliers.unshift(sup); supId=sup.id; }
   }
-  const isAcc=x.kind==="accessory";
+  const isAcc=smpByCount(x);                 /* الوحدة تتبع طريقة الشراء، والاسم يتبع النوع */
   const fabName=x.fabric_type||kindLabel(x.kind);
   let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
   const _mp=samplePrice(x);
@@ -2563,8 +2582,17 @@ function sampleSheet(designId, itemId, kind){
   window._chItem = itemId||"";
   const k = kind||"fabric";
   const sups=(DB.suppliers||[]).filter(x=>x.kind!=="agent" && (x.channel||"china")===chChannel);
-  let itemName="";
-  if(designId && itemId){ const d=design_(designId); const it=((d&&d.checklist)||[]).find(c=>c.id===itemId); if(it) itemName=it.name||""; }
+  let itemName="", itemPer="", itemHint="";
+  if(designId && itemId){
+    const d=design_(designId); const it=((d&&d.checklist)||[]).find(c=>c.id===itemId);
+    if(it){
+      itemName=it.name||"";
+      const u=it.unit||"";
+      itemPer = (u==="يارد"||u==="yard") ? "yard" : (u==="عدد"||u==="count") ? "count" : (u==="متر"||u==="meter") ? "meter" : "";
+      if(it.qty!=null) itemHint=`${it.qty} ${esc(u||"متر")}`;
+    }
+  }
+  if(!itemPer) itemPer = (k==="accessory") ? "count" : "yard";
   openSheet(`<div class="title">${isAr()?"عينة جديدة":"New sample"}${itemName?` — ${esc(itemName)}`:""}</div>
     <label>${isAr()?"صور العينة":"Photos"}</label>
     <input type="file" accept="image/*" multiple id="smp_file" onchange="smpAddPhotos(this.files)">
@@ -2581,13 +2609,17 @@ function sampleSheet(designId, itemId, kind){
     </div>
     <label>${isAr()?"نوع الخام/الإكسسوار":"Item type"}</label>
     <input id="smp_fab" value="${esc(itemName)}">
+    ${itemHint?`<div class="muted" style="font-size:12px;margin-top:-2px">${isAr()?"المطلوب حسب التصميم":"Design needs"}: <b>${itemHint}</b></div>`:""}
     <div id="smp_fabbox">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <div><label>${isAr()?"السعر":"Price"}</label><input id="smp_price" inputmode="decimal"></div>
         <div><label>${isAr()?"العملة":"Currency"}</label><select id="smp_cur">${["KWD","CNY","USD"].map(x=>`<option ${chan(chChannel).currency===x?"selected":""}>${x}</option>`).join("")}</select></div>
-        <div><label>${isAr()?"لكل":"Per"}</label><select id="smp_per"><option value="yard">${isAr()?"يارد":"yard"}</option><option value="meter">${isAr()?"متر":"meter"}</option></select></div>
+        <div><label>${isAr()?"لكل":"Per"}</label><select id="smp_per" onchange="smpPerToggle()">
+          <option value="yard" ${itemPer==="yard"?"selected":""}>${isAr()?"يارد":"yard"}</option>
+          <option value="meter" ${itemPer==="meter"?"selected":""}>${isAr()?"متر":"meter"}</option>
+          <option value="count" ${itemPer==="count"?"selected":""}>${isAr()?"عدد (حبة)":"piece"}</option></select></div>
       </div>
-      <label>${isAr()?"العرض":"Width"}</label><input id="smp_width" placeholder="150cm">
+      <div id="smp_widthbox"><label>${isAr()?"العرض":"Width"}</label><input id="smp_width" placeholder="150cm"></div>
     </div>
     <div id="smp_accbox" style="display:none">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -2616,6 +2648,14 @@ function smpKindToggle(){
   const fb=el("smp_fabbox"), ab=el("smp_accbox");
   if(fb) fb.style.display = k==="accessory"?"none":"block";
   if(ab) ab.style.display = k==="accessory"?"block":"none";
+  /* الكلف اللي ينباع بالحبة ما له عرض */
+  if(k==="accessory" && el("smp_per") && el("smp_per").value!=="count") el("smp_per").value="count";
+  smpPerToggle();
+}
+/* السعر بالحبة ما يحتاج عرض قماش */
+function smpPerToggle(){
+  const per=el("smp_per")?el("smp_per").value:"yard";
+  const w=el("smp_widthbox"); if(w) w.style.display = per==="count" ? "none" : "block";
 }
 function smpRenderExtra(){
   const box=el("smpExtraList"); if(!box) return;
@@ -2857,7 +2897,7 @@ function sampleEdit(id){
   if(el("smp_note")) el("smp_note").value=x.note||"";
   if(el("smp_kind")){ el("smp_kind").value=x.kind||"fabric"; smpKindToggle(); }
   if((x.kind||"fabric")==="accessory"){ setv("smp_aprice",x.price); if(el("smp_acur"))el("smp_acur").value=x.currency||"CNY"; setv("smp_percount",x.per_count); }
-  else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); }
+  else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); smpPerToggle(); }
   smpRenderPhotos();
   smpRenderCards();
   smpRenderExtra();
