@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.73:APPV-->
+<!--APPV:2026-08-12.74:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -43,6 +43,9 @@
   header .who{font-size:13px;color:var(--gray);}
   .hbtn{background:var(--soft);color:var(--ink);border:0;border-radius:8px;padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;}
   .hbtn.dark{background:var(--ink);color:#fff;}
+  #syncBtn{font-size:16px;line-height:1;padding:6px 10px}
+  #syncBtn.spin{animation:vvspin .8s linear infinite}
+  @keyframes vvspin{to{transform:rotate(360deg)}}
   main{max-width:900px;margin:0 auto;padding:14px;}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:16px;}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;}
@@ -264,6 +267,7 @@
   <div class="right">
     <span class="netchip" id="netchip"></span>
     <span class="who" id="whoami"></span>
+    <button class="hbtn" id="syncBtn" title="تحديث" onclick="syncNow()" style="display:none">⟳</button>
     <button class="hbtn" id="langBtn" onclick="toggleLang()">EN</button>
     <button class="hbtn dark" id="logoutBtn" style="display:none" onclick="logout()">—</button>
   </div>
@@ -1152,7 +1156,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.73";
+const APP_VERSION="2026-08-12.74";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1211,10 +1215,10 @@ function pimg(p){return (p.images&&p.images[0])||null;}
 function thumb(p,cls){const u=pimg(p);
   return u?`<img class="${cls||'thumb'}" src="${esc(u)}" onclick="event.stopPropagation();viewImg('${esc(u)}')" style="cursor:zoom-in">`
          :`<div class="${cls||'thumb'}" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.design}</div>`;}
-function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();applyDir();render();}
+function logout(){session=null;localStorage.removeItem("vv2_session");stopAuto();rtStop();const b=el("syncBtn");if(b)b.style.display="none";applyDir();render();}
 function setSession(s){s.day=today();session=s;localStorage.setItem("vv2_session",JSON.stringify(s));applyDir();render();}
 /* ضغط الصور قبل الرفع — يوفر ~90% من المساحة */
-async function compressImage(file, maxDim=1600, quality=0.82){
+async function compressImage(file, maxDim=1280, quality=0.72){
   if(!file.type.startsWith("image/") || file.type==="image/gif") return file;
   try{
     const bmp = await createImageBitmap(file);
@@ -1582,8 +1586,31 @@ function userBusy(){
   if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return true;
   return false;
 }
-function startAuto(){ stopAuto(); autoTimer=setInterval(()=>{ flushQueue(); if(!userBusy()) refresh(); }, 30000); }
+function startAuto(){ stopAuto(); autoTimer=setInterval(()=>{ flushQueue(); if(!userBusy()) refresh(); }, 20000); }
 function stopAuto(){ if(autoTimer){clearInterval(autoTimer); autoTimer=null;} }
+/* تحديث يدوي من زر الأعلى */
+async function syncNow(){
+  const b=el("syncBtn"); if(b) b.classList.add("spin");
+  try{ await flushQueue(); }catch(e){}
+  try{ await uploadPendingPhotos(); await refreshPendCount(); }catch(e){}
+  try{ await refresh(); }catch(e){}
+  if(b) b.classList.remove("spin");
+  toast(isAr()?"تحدّثت البيانات ✓":"Updated ✓", 1500);
+}
+/* البث الفوري: أي تعديل من جهاز ثاني يوصلنا خلال ثانية بدل ما ننتظر الدورة */
+let _rtCh=null, _rtT=null;
+function rtStart(){
+  if(!sb || !AUTHED || _rtCh) return;
+  try{
+    _rtCh = sb.channel("vv-live")
+      .on("postgres_changes", {event:"*", schema:"public"}, ()=>{
+        clearTimeout(_rtT);
+        _rtT=setTimeout(()=>{ if(!userBusy()) refresh(); }, 700);   /* نجمّع التغييرات المتتالية */
+      })
+      .subscribe();
+  }catch(e){ _rtCh=null; }
+}
+function rtStop(){ try{ if(_rtCh) sb.removeChannel(_rtCh); }catch(e){} _rtCh=null; clearTimeout(_rtT); }
 
 /* ================= العرض ================= */
 function render(){
@@ -1592,8 +1619,9 @@ function render(){
   lb.style.display = session? "inline-block":"none";
   lb.textContent = t("logout");
   el("whoami").textContent = session? (session.role==="manager"?t("manager"): session.role==="creative"?t("creative"): wname(worker(session.workerId))) : "";
-  if(!session){ stopAuto(); return renderLogin(); }
-  if(session.role==="worker"||session.role==="creative") startAuto(); else stopAuto();
+  if(!session){ stopAuto(); const sb1=el("syncBtn"); if(sb1) sb1.style.display="none"; return renderLogin(); }
+  startAuto(); rtStart();
+  const _sb=el("syncBtn"); if(_sb) _sb.style.display="inline-block";
   if(session.role==="manager"||session.role==="creative"){ renderDesk(); setTimeout(enableSwipe,0); return; }
   renderWorker();
 }
@@ -2010,27 +2038,29 @@ function smpToggleOpen(did){ let a; try{a=JSON.parse(localStorage.getItem("vv_sm
 function purIsOpen(k){ try{ return JSON.parse(localStorage.getItem("vv_puropen")||"[]").includes(k);}catch(e){return false;} }
 function purToggleOpen(kEnc){ const k=decodeURIComponent(kEnc); let a; try{a=JSON.parse(localStorage.getItem("vv_puropen")||"[]");}catch(e){a=[];} a=a.includes(k)?a.filter(x=>x!==k):[...a,k]; try{localStorage.setItem("vv_puropen",JSON.stringify(a));}catch(e){} render(); }
 async function captureSamplePhoto(file){
-  const f=await compressImage(file, 1400, 0.8);
+  const f=await compressImage(file, 1280, 0.72);
   const path=`samples/${Date.now()}-${Math.random().toString(36).slice(2,7)}.jpg`;
   /* (1) نسخة على الجهاز أولاً — ما نخسر الصورة مهما صار */
   let cached=false;
   try{ await idbPut(path, f); await pendInit(); _pendSet.add(path); cached=true; }catch(e){}
-  /* (2) نحاول الرفع فوراً — الأصل إن الملف يوصل السيرفر قبل ما يُعتمد رابطه */
-  if(NETOK && AUTHED && sb){
-    let error=null;
-    try{ ({error} = await sb.storage.from("files").upload(path, f, {upsert:true, contentType:"image/jpeg"})); }
-    catch(e){ error=e; }
-    if(!error || /exists|duplicate/i.test((error&&error.message)||"")){
-      if(cached){ try{ await idbDel(path); }catch(e){} _pendSet.delete(path); }
-      try{ await refreshPendCount(); }catch(e){}
-      return sb.storage.from("files").getPublicUrl(path).data.publicUrl;
-    }
+  if(!cached && !(NETOK && AUTHED && sb)){
+    alert(isAr()?"فشل حفظ الصورة — أعد المحاولة":"Photo save failed — try again"); return null;
   }
-  /* (3) ما وصل — تبقى محفوظة على الجهاز وتُرفع تلقائياً، والتنبيه يظل ظاهر */
-  if(!cached){ alert(isAr()?"فشل حفظ الصورة — أعد المحاولة":"Photo save failed — try again"); return null; }
-  try{ await refreshPendCount(); }catch(e){}
-  pendKick();
-  return sb.storage.from("files").getPublicUrl(path).data.publicUrl;
+  /* (2) الرفع يمشي بالخلفية — ما نخلّي الشاشة تنتظر الشبكة.
+        لو فشل يبقى بالطابور ويُعاد تلقائياً كل نصف دقيقة. */
+  const url = sb.storage.from("files").getPublicUrl(path).data.publicUrl;
+  if(NETOK && AUTHED && sb){
+    (async()=>{
+      let error=null;
+      try{ ({error} = await sb.storage.from("files").upload(path, f, {upsert:true, contentType:"image/jpeg"})); }
+      catch(e){ error=e; }
+      if(!error || /exists|duplicate/i.test((error&&error.message)||"")){
+        if(cached){ try{ await idbDel(path); }catch(e){} _pendSet.delete(path); }
+      } else { pendKick(); }
+      try{ await refreshPendCount(); }catch(e){}
+    })();
+  } else { pendKick(); try{ refreshPendCount(); }catch(e){} }
+  return url;
 }
 
 /* -- استهلاك الموديل من خاماته المسجلة (وحدة متر فقط) -- */
@@ -2636,8 +2666,8 @@ function sampleSheet(designId, itemId, kind){
     <hr class="sep">
     <label>${isAr()?"بزنس كارد المورد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
     <input type="file" accept="image/*" multiple id="smp_cardfile" onchange="smpAddCard(this.files)">
-    <div id="smpCardRow" class="pillrow" style="min-height:24px"></div>
-    <div id="smpCardRead" class="muted" style="font-size:12px;margin-top:4px"></div>
+    <div id="smpCardRow" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px"></div>
+    <div id="smpCardRead" style="font-size:12px;margin-top:10px;line-height:1.7"></div>
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="smp_note"></textarea>
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
   smpKindToggle(); smpRenderExtra();
@@ -2703,19 +2733,19 @@ async function linkExtraDesigns(row){
   }
 }
 async function smpAddPhotos(files){
-  for(const f of [...files]){
-    const u=await captureSamplePhoto(f);
-    if(u) window._smpPhotos.push(u);
-  }
+  const us=await Promise.all([...files].map(f=>captureSamplePhoto(f).catch(()=>null)));
+  us.filter(Boolean).forEach(u=>window._smpPhotos.push(u));
   smpRenderPhotos();
 }
 async function smpAddCard(files){
   window._smpCards=window._smpCards||[];
-  const before=window._smpCards.length;
-  for(const f of [...(files||[])]){ if(window._smpCards.length>=2) break; const u=await captureSamplePhoto(f); if(u) window._smpCards.push(u); }
+  const room=Math.max(0, 2-window._smpCards.length);
+  const take=[...(files||[])].slice(0,room);
+  const us=await Promise.all(take.map(f=>captureSamplePhoto(f).catch(()=>null)));
+  us.filter(Boolean).forEach(u=>window._smpCards.push(u));
   window._smpCard=window._smpCards[0]||null;
   smpRenderCards();
-  if(before===0 && (window._smpCards||[]).length) smpReadCard();   /* قراءة تلقائية أول ما تضيف الكرت — بدون زر */
+  if((window._smpCards||[]).length) smpReadCard();   /* يقرأ الوجهين — كل مرة تضيف وجه */
 }
 /* صور العينة: زر حذف على كل صورة، والمكسورة تتعلّم بوضوح عشان تبدّلها */
 function smpRenderPhotos(){
@@ -2737,28 +2767,54 @@ function smpRmPhoto(i){
 
 function smpRenderCards(){
   const r=el("smpCardRow"); if(!r) return;
-  r.innerHTML=(window._smpCards||[]).map((u,idx)=>`<span style="position:relative;display:inline-block;margin-inline-end:6px">
-    <img class="thumb" src="${esc(u)}" style="width:64px;height:42px">
-    <span class="muted" style="position:absolute;bottom:-14px;inset-inline-start:0;font-size:9px">${idx===0?(isAr()?"وجه":"front"):(isAr()?"ظهر":"back")}</span>
-    <button type="button" onclick="smpRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button></span>`).join("");
+  r.innerHTML=(window._smpCards||[]).map((u,idx)=>`<div style="text-align:center">
+    <div style="position:relative;display:inline-block">
+      <img class="thumb" src="${esc(u)}" style="width:96px;height:62px;object-fit:cover">
+      <button type="button" onclick="smpRmCard(${idx})" style="position:absolute;top:-6px;inset-inline-end:-6px;background:var(--wine);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer">×</button>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:2px">${idx===0?(isAr()?"الوجه":"front"):(isAr()?"الظهر":"back")}</div>
+  </div>`).join("");
 }
 function smpRmCard(idx){ (window._smpCards||[]).splice(idx,1); window._smpCard=(window._smpCards||[])[0]||null; smpRenderCards(); }
+/* يقرأ وجه الكارت وظهره ويدمج البيانات — وكل وجه له حالته الواضحة */
+let _cardReading=false, _cardAgain=false;
 async function smpReadCard(){
-  const url=(window._smpCards||[])[0];
-  if(!url) return alert(isAr()?"صوّر البزنس كارد أول":"Add a card photo first");
-  if(!NETOK) return alert(isAr()?"لازم إنترنت لقراءة الكارت":"Need internet");
-  const box=el("smpCardRead"); if(box) box.textContent=isAr()?"جارٍ القراءة…":"Reading…";
-  try{
-    /* نرسل الصورة بايتات مباشرة (base64) بدل رابطها — لأن الصورة ممكن تكون لسا معلّقة على الجهاز وما رُفعت للسيرفر */
-    const body = await cardBody(url);
-    const {data,error}=await sb.functions.invoke("read-card",{body});
-    if(error) throw error;
-    if(!data||!data.ok||!data.fields){ if(box) box.textContent=(isAr()?"ما قدرت أقرأ الكارت — عبّي يدوي":"Could not read")+(data&&data.error?` (${data.error})`:""); return; }
-    const f=data.fields; window._smpCardFields=f;
-    const set=(idf,v)=>{ const e=el(idf); if(e&&v && !e.value) e.value=v; };
-    set("smp_supname", f.name); set("smp_shop", f.shop_no);
-    if(box) box.innerHTML=`<span style="color:var(--green-dk)">✓ ${isAr()?"تمت القراءة":"Read"}</span> — ${[f.name,f.contact_person,f.phone,f.wechat?("WeChat: "+f.wechat):"",f.market,f.floor?((isAr()?"دور ":"floor ")+f.floor):""].filter(Boolean).map(esc).join(" · ")||"—"}`;
-  }catch(e){ if(box) box.textContent=(isAr()?"تعذّرت القراءة — ":"Read failed — ")+((e&&e.message)||e); }
+  const cards=(window._smpCards||[]);
+  const box=el("smpCardRead"); if(!box) return;
+  if(!cards.length) return;
+  if(_cardReading){ _cardAgain=true; return; }   /* أضفت وجه ثاني والقراءة شغالة — نعيدها بعد ما تخلص */
+  _cardReading=true;
+  if(!NETOK){ box.innerHTML=`<span style="color:var(--wine-dk)">${isAr()?"⚠ لازم إنترنت لقراءة الكارت":"Need internet"}</span>`; _cardReading=false; return; }
+  const side=i=>i===0?(isAr()?"الوجه":"front"):(isAr()?"الظهر":"back");
+  box.innerHTML=`<span class="muted">${isAr()?"جارٍ القراءة":"Reading"}…</span>`;
+  const merged={}, notes=[];
+  for(let i=0;i<cards.length;i++){
+    try{
+      /* نرسل الصورة بايتات مباشرة (base64) — ممكن تكون لسا معلّقة على الجهاز وما رُفعت */
+      const body=await cardBody(cards[i]);
+      const {data,error}=await sb.functions.invoke("read-card",{body});
+      if(error) throw error;
+      if(!data || !data.ok || !data.fields){
+        notes.push(`<span style="color:var(--wine-dk)">✕ ${side(i)}: ${isAr()?"ما انقرأ":"not read"}</span>`); continue;
+      }
+      let got=0;
+      Object.keys(data.fields).forEach(k=>{ const v=data.fields[k]; if(v && !merged[k]){ merged[k]=v; got++; } });
+      notes.push(`<span style="color:var(--green-dk)">✓ ${side(i)}${got?` · ${got} ${isAr()?"معلومة":"fields"}`:` · ${isAr()?"بلا جديد":"nothing new"}`}</span>`);
+    }catch(e){
+      notes.push(`<span style="color:var(--wine-dk)">✕ ${side(i)}: ${esc(String((e&&e.message)||e)).slice(0,40)}</span>`);
+    }
+  }
+  window._smpCardFields=merged;
+  const set=(idf,v)=>{ const e=el(idf); if(e&&v && !e.value) e.value=v; };
+  set("smp_supname", merged.name); set("smp_shop", merged.shop_no);
+  const parts=[merged.name, merged.contact_person, merged.phone,
+    merged.wechat?("WeChat: "+merged.wechat):"", merged.market,
+    merged.floor?((isAr()?"دور ":"floor ")+merged.floor):""].filter(Boolean).map(esc);
+  box.innerHTML=`<div>${notes.join(" &nbsp;·&nbsp; ")}</div>`
+    + (parts.length?`<div class="muted" style="margin-top:3px">${parts.join(" · ")}</div>`
+                   :`<div class="muted" style="margin-top:3px">${isAr()?"ما طلعت بيانات — عبّي يدوي":"No fields — fill manually"}</div>`);
+  _cardReading=false;
+  if(_cardAgain){ _cardAgain=false; setTimeout(smpReadCard,0); }
 }
 /* يحوّل صورة الكارت (من الطابور المحلي أو من السيرفر) إلى base64 عشان نرسلها للقارئ مباشرة */
 async function cardBody(url){
@@ -7258,7 +7314,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
-    "photoAudit","syncPhotosNow","photoPurgeGone","addNewBomMat","createPOsFromOrder","delLinked",
+    "photoAudit","syncPhotosNow","photoPurgeGone","syncNow","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive"];
   GUARDED.forEach(function(name){
