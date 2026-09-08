@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.72:APPV-->
+<!--APPV:2026-08-12.73:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1152,7 +1152,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.72";
+const APP_VERSION="2026-08-12.73";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3084,13 +3084,31 @@ function chCalc(){
   const c=chan(chChannel), needFx=(c.currency||"KWD")!=="KWD";
   el("chBody").innerHTML=`
   <div class="card" style="padding:14px">
-    <div class="title" style="font-size:16px">${isAr()?"محول سريع":"Converter"}</div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()?"اليارد":"yard"} = 0.9144 ${isAr()?"متر":"m"} · ${fxAge()}</div>
+    <div class="title" style="font-size:16px">${isAr()?"محول القياس":"Length converter"}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"القيمة":"Value"}</label><input id="lc_v" inputmode="decimal" placeholder="0" oninput="lenConv()"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="lc_u" onchange="lenConv()">
+        <option value="meter">${isAr()?"متر":"meter"}</option>
+        <option value="yard">${isAr()?"يارد":"yard"}</option>
+        <option value="cm">${isAr()?"سنتيمتر":"cm"}</option>
+        <option value="inch">${isAr()?"إنش":"inch"}</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      ${[["lc_m",isAr()?"متر":"meter"],["lc_yd",isAr()?"يارد":"yard"],["lc_cm",isAr()?"سنتيمتر":"cm"],["lc_in",isAr()?"إنش":"inch"]]
+        .map(([id,lbl])=>`<div class="note-box" style="text-align:center;padding:10px 6px;margin:0">
+          <div style="font-size:19px;font-weight:800" id="${id}">0</div>
+          <div class="muted" style="font-size:11px">${lbl}</div></div>`).join("")}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px">${isAr()
+      ? "1 يارد = 36 إنش = 91.44 سم · 1 إنش = 2.54 سم · 1 متر = 100 سم"
+      : "1 yd = 36 in = 91.44 cm · 1 in = 2.54 cm · 1 m = 100 cm"}</div>
+  </div>
+  <div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"محول العملة":"Currency"}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${fxAge()}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>${isAr()?"يارد ← متر":"yd → m"}</label><input inputmode="decimal" oninput="el('cv_m').textContent=(parseFloat(this.value)*0.9144||0).toFixed(2)"><div class="muted"><span id="cv_m">0</span> ${isAr()?"متر":"m"}</div></div>
-      <div><label>${isAr()?"متر ← يارد":"m → yd"}</label><input inputmode="decimal" oninput="el('cv_y').textContent=(parseFloat(this.value)/0.9144||0).toFixed(2)"><div class="muted"><span id="cv_y">0</span> ${isAr()?"يارد":"yd"}</div></div>
-      <div><label>${isAr()?"يوان ← دينار":"CNY → KWD"}</label><input inputmode="decimal" oninput="el('cv_c').textContent=fmtKD(toKWD(parseFloat(this.value)||0,'CNY'))"><div class="muted"><span id="cv_c">0</span> ${isAr()?"د.ك":"KWD"}</div></div>
-      <div><label>${isAr()?"دولار ← دينار":"USD → KWD"}</label><input inputmode="decimal" oninput="el('cv_u').textContent=fmtKD(toKWD(parseFloat(this.value)||0,'USD'))"><div class="muted"><span id="cv_u">0</span> ${isAr()?"د.ك":"KWD"}</div></div>
+      <div><label>${isAr()?"يوان ← دينار":"CNY → KWD"}</label><input inputmode="decimal" oninput="el('cv_c').textContent=fmtKD(toKWD(parseFloat(toAsciiDigits(this.value))||0,'CNY'))"><div class="muted"><span id="cv_c">0</span> ${isAr()?"د.ك":"KWD"}</div></div>
+      <div><label>${isAr()?"دولار ← دينار":"USD → KWD"}</label><input inputmode="decimal" oninput="el('cv_u').textContent=fmtKD(toKWD(parseFloat(toAsciiDigits(this.value))||0,'USD'))"><div class="muted"><span id="cv_u">0</span> ${isAr()?"د.ك":"KWD"}</div></div>
     </div>
   </div>
   <div class="card" style="padding:14px">
@@ -3115,6 +3133,20 @@ function chCalc(){
     </div>
     <div id="nc_out" class="note-box" style="margin-top:10px">—</div>
   </div>`;
+}
+/* محول القياس — الأساس بالسنتيمتر: اليارد 36 إنش، والإنش 2.54 سم */
+const LEN_CM={cm:1, inch:2.54, meter:100, yard:91.44};
+function lenConv(){
+  const v=parseFloat(toAsciiDigits((el("lc_v")||{}).value||""))||0;
+  const u=(el("lc_u")||{}).value||"meter";
+  const cm=v*(LEN_CM[u]||1);
+  const put=(id,val,dec)=>{ const e=el(id); if(!e) return;
+    const r=Math.round(val*Math.pow(10,dec))/Math.pow(10,dec);
+    e.textContent=r.toLocaleString("en-US",{maximumFractionDigits:dec}); };
+  put("lc_cm", cm, 2);
+  put("lc_in", cm/LEN_CM.inch, 2);
+  put("lc_m",  cm/LEN_CM.meter, 3);
+  put("lc_yd", cm/LEN_CM.yard, 3);
 }
 function ncProdPick(){
   const sel=el("nc_prod"), pid=sel.value, m=parseFloat(sel.options[sel.selectedIndex].dataset.m||"0");
