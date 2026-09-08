@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.76:APPV-->
+<!--APPV:2026-08-12.77:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -950,7 +950,9 @@ let stTab=localStorage.getItem("vv_sttab")||"mat";
 function tabStock(){
   const sub=(k,l)=>`<button class="btn ${stTab===k?'btn-ink':'btn-ghost'}" style="padding:8px 14px"
       onclick="stTab='${k}';localStorage.setItem('vv_sttab','${k}');render()">${l}</button>`;
-  const mats=(DB.materials||[]).filter(m=>m.active!==false);
+  /* نعرض المسجّل + أي خام عليه حركة فعلية — ما نزحم الشاشة بعينات ما اشتريتها بعد */
+  const _moved=new Set((DB.moves||[]).filter(x=>x.item_kind!=="product" && x.material_id).map(x=>x.material_id));
+  const mats=matPool().filter(m=>!m._fromSample || _moved.has(m.id));
   const low=mats.filter(m=>matBalance(m.id)<0);
   const matRow=m=>{ const b=matBalance(m.id);
     return `<div class="lineitem"><div style="flex:1"><b>${esc(m.name)}</b>${m.color?` · ${esc(m.color)}`:""}
@@ -1197,7 +1199,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.76";
+const APP_VERSION="2026-08-12.77";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2585,15 +2587,10 @@ async function poFromSample(x){
   }
   const isAcc=smpByCount(x);                 /* الوحدة تتبع طريقة الشراء، والاسم يتبع النوع */
   const fabName=x.fabric_type||kindLabel(x.kind);
-  let mat=(DB.materials||[]).find(m=>(m.name||"")===fabName && (supId? m.supplier_id===supId : (m.supplier||"")===(x.supplier_name||"")));
-  const _mp=samplePrice(x);
-  if(!mat){ mat={id:newId(), sku:x.sku||genSKU("material", x.kind), kind:x.kind||"fabric", name:fabName, unit:isAcc?"حبة":"متر",
-      supplier:x.supplier_name||null, supplier_id:supId||null, price:_mp.price, price_unit:_mp.unit, active:true};
-    await sb.from("materials").insert(mat); DB.materials.unshift(mat); }
-  else if(_mp.price!=null && (mat.price!==_mp.price || mat.price_unit!==_mp.unit)){
-    await sb.from("materials").update({price:_mp.price, price_unit:_mp.unit}).eq("id",mat.id);
-    mat.price=_mp.price; mat.price_unit=_mp.unit;
-  }
+  /* ما ننسخ الخامة في السجل — العينة المعتمدة نفسها هي الخام بكودها.
+     الخامة تدخل المخزون فعلياً لما تشتريها لأمر إنتاج وتستلمها. */
+  if(x.supplier_id!==supId && supId){ try{ await sb.from("trip_samples").update({supplier_id:supId}).eq("id",x.id); x.supplier_id=supId; }catch(e){} }
+  const mat={id:x.id};
   const ci = x.checklist_item_id? chk.find(c=>c.id===x.checklist_item_id)
            : (chk.find(c=>String(c.name||"").trim()===String(fabName).trim()) || chk.find(c=>isFabricKind(c.kind)===isFabricKind(x.kind)));
   const {qty_yd, plan_qty, buy_unit, buy_qty, plan_meters} = planFromChk(ci, isAcc);
@@ -5272,7 +5269,32 @@ function toggleEmb(){
 }
 function hasEmbOn(){ return !!(el("p_hasemb")&&el("p_hasemb").checked); }
 /* ===== كل قطعة تصميم لها بطاقتها: خامات + وقت قص + وقت خياطة + تطريز ===== */
-function material(id){return (DB.materials||[]).find(m=>m.id===id)||{name:"؟",unit:""};}
+/* العينة المعتمدة هي الخام نفسه — بكودها ومورّدها وسعرها.
+   سجل الخامات يبقى لللي تسجّله بيدك (مخزون قديم أو بند مو من عينة). */
+function sampleAsMat(x){
+  const byCount=smpByCount(x); const mp=samplePrice(x);
+  return {id:x.id, sku:x.sku||null, name:x.fabric_type||kindLabel(x.kind),
+          kind:x.kind||"fabric", unit:byCount?"حبة":"متر", color:null,
+          supplier:x.supplier_name||null, supplier_id:x.supplier_id||null,
+          price:mp.price, price_unit:mp.unit, design_id:x.design_id||null,
+          active:true, _fromSample:true};
+}
+/* كل الخامات المتاحة للاستخدام: المسجّلة + العينات المعتمدة */
+function matPool(){
+  const regs=(DB.materials||[]).filter(m=>m.active!==false);
+  const have=new Set(regs.map(m=>m.sku).filter(Boolean));
+  const smps=(DB.samples||[])
+    .filter(x=>x.status==="shortlist" && x.sku && !have.has(x.sku))
+    .map(sampleAsMat);
+  return [...regs, ...smps];
+}
+function material(id){
+  const m=(DB.materials||[]).find(x=>x.id===id);
+  if(m) return m;
+  const s=(DB.samples||[]).find(x=>x.id===id);
+  if(s) return sampleAsMat(s);
+  return {name:"؟",unit:""};
+}
 function pkey(s){return String(s).replace(/[^\p{L}\p{N}]/gu,"_");}
 /* متوسط فعلي تاريخي */
 function histAvg(pid, stage, partAr){
@@ -5299,7 +5321,7 @@ function redrawParts(){
   capturePartCards();
   const parts=currentParts();
   if(!parts.length){ box.innerHTML=`<div class="muted">${isAr()?"اختر القطع أولاً":"Pick parts first"}</div>`; return; }
-  const mats=(DB.materials||[]).filter(m=>m.active);
+  const mats=matPool();
   const html=parts.map(c=>{
     const k=pkey(c.ar), e=window._embP[c.ar]||{};
     return `<div class="partcard">
