@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.82:APPV-->
+<!--APPV:2026-08-12.83:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1202,7 +1202,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.82";
+const APP_VERSION="2026-08-12.83";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6608,23 +6608,8 @@ async function finishApprove(id){
   }
   { const dd=design_(id); if(dd) Object.assign(dd, dpatch); }   /* الشاشة تعكس الاعتماد فوراً بلا انتظار التحديث */
   cacheDB();
-  /* خامات التصميم تنتقل للمنتج بكمياتها من التشيك ليست — كمية العينة الواحدة هي استهلاك القطعة */
-  try{
-    const cur=(DB.products||[]).find(x=>x.id===p.id);
-    const old=cur? rawBom(cur) : [];
-    const emptyBom = !old.length || old.every(b=>!(Number(b&&b.qty)>0));
-    if(emptyBom){
-      const lines=bomFromDesign(d);
-      if(lines.length){
-        const partName=((d.components||[])[0]&&(d.components||[])[0].ar) || (isAr()?"عام":"general");
-        const bp={}; bp[partName]=lines;
-        const bres=await sb.from("products").update({bom_parts:bp}).eq("id",p.id);
-        if(bres && bres.error && !/queued/i.test(bres.error.message||"")) throw bres.error;
-        if(cur) cur.bom_parts=bp;
-        else { const c2=(DB.products||[]).find(x=>x.id===p.id); if(c2) c2.bom_parts=bp; }
-      }
-    }
-  }catch(e){ vvErr(e, isAr()?"نقل خامات التصميم":"BOM"); }
+  /* ما ننسخ الخامات تحت قطعة وهمية — المنتج يشتقها من تصميمه،
+     وتتوزّع على القطع اللي تضيفها في بطاقة المنتج. */
   if(!existing) { try{ await sb.from("photoshoots").insert({product_id:p.id}); }catch(e){} }
   closeSheet(); await refresh();
   mTab="products"; render(); showProductForm(p.id);
