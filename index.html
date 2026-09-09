@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.86:APPV-->
+<!--APPV:2026-08-12.87:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -494,6 +494,7 @@ const SZ_ADULTS = ["XS","S","M","L","XL","XXL","XXXL"];
 const SZ_SHOE_K = ["20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35"];
 const SZ_SHOE_A = ["36","37","38","39","40","41","42","43","44","45"];
 const SZ_ONE    = "مقاس واحد";
+const SZ_FREE   = "مقاس حر";
 function audLabel(a){ const f=RDY_AUD.find(x=>x[0]===(a||"kids")); return f?(isAr()?f[1]:f[2]):""; }
 function itemTypeLabel(k){ const f=RDY_TYPES.find(x=>x[0]===(k||"clothing")); return f?(isAr()?f[1]:f[2]):""; }
 /* مقاسات مقترحة حسب الفئة ونوع المنتج — وتقدر تضيف أي مقاس ثاني بيدك */
@@ -502,7 +503,7 @@ function rdySizePreset(aud, it){
   if(it==="bag")      return [SZ_ONE,"S","M","L"];
   if(it==="shoes")    return aud==="adults"? SZ_SHOE_A : SZ_SHOE_K;
   if(it==="accessory")return [SZ_ONE, ...(aud==="adults"? SZ_ADULTS : SZ_KIDS)];
-  return aud==="adults"? SZ_ADULTS : SZ_KIDS;
+  return [...(aud==="adults"? SZ_ADULTS : SZ_KIDS), SZ_FREE];
 }
 function rdyStatusLabel(st){ return st==="shortlist"? (isAr()?"معتمد":"approved")
                                : st==="rejected"? (isAr()?"مرفوض":"rejected")
@@ -1248,7 +1249,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.86";
+const APP_VERSION="2026-08-12.87";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3407,7 +3408,7 @@ function readySection(cid, opts){
 const SUP_KINDS=[
   ["fabric","مورد خامات وإكسسوارات","Materials & trims"],
   ["factory","مصنع تنفيذ ملابس","Garment factory"],
-  ["ready","مورد ملابس جملة (جاهز)","Wholesale clothing"],
+  ["ready","مورد الجاهز","Ready-made supplier"],
   ["shoes","مصنع أحذية","Shoe factory"],
   ["bags","مصنع حقائب","Bag factory"],
   ["packaging","حلول تغليف","Packaging"],
