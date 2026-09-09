@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.83:APPV-->
+<!--APPV:2026-08-12.84:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1202,7 +1202,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.83";
+const APP_VERSION="2026-08-12.84";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5230,23 +5230,6 @@ function showProductForm(pid){
       <div style="flex:1"><b>${isAr()?"تطريز أو طباعة":"Embroidery / print"}</b></div>
     </div>
 
-    <div id="partsWrap">
-      <label>${isAr()?"قطع التصميم — كل اللي بعدها يتفرّع منها":"Design parts"}</label>
-      <div class="pillrow" id="partPills">${PARTS_PRESET.map(([a,e])=>`<span class="pill ${(p.components||[]).some(c=>c.ar===a)?'on':''}" data-ar="${a}" data-en="${e}" onclick="this.classList.toggle('on');redrawParts()">${isAr()?a:e}</span>`).join("")}
-        ${(p.components||[]).filter(c=>!PARTS_PRESET.some(x=>x[0]===c.ar)).map(c=>`<span class="pill on" data-ar="${esc(c.ar)}" data-en="${esc(c.en||c.ar)}" onclick="this.remove();redrawParts()">${esc(isAr()?c.ar:(c.en||c.ar))} ✕</span>`).join("")}
-      </div>
-      <div style="display:flex;gap:6px;margin-top:6px">
-        <input id="p_newpart_ar" placeholder="${isAr()?"قطعة جديدة (عربي)":"New part AR"}" style="flex:1">
-        <input id="p_newpart_en" dir="ltr" placeholder="EN" style="flex:1">
-        <button class="btn btn-ghost" onclick="addCustomPart()">${I.plus}</button>
-      </div>
-      ${!(DB.materials||[]).length?`<div class="note-box">${isAr()?"ما في خامات مسجلة — أضفها من الإعدادات ← الخامات":"No materials yet"}</div>`:""}
-      <div class="note-box">${isAr()
-        ?`الوقت المعتمد هو <b>متوسط أداء العمال الفعلي</b> بعد ${EST_MIN_SAMPLE} قراءات. الأرقام اللي تكتبها مؤقتة لأول تشغيل.`
-        :`The team's real average replaces these after ${EST_MIN_SAMPLE} readings.`}</div>
-      <div id="partCards"></div>
-    </div>
-    <label>${isAr()?"ملاحظة خامات عامة (اختياري)":"General materials note"}</label><textarea id="p_materials">${esc(p.materials||"")}</textarea>
     <label>${isAr()?"الأعمار المتوفرة":"Available ages"}</label>
     <div class="pillrow" id="agePills">${AGES_PRESET.map(a=>`<span class="pill ${(p.size_chart||{})[a]!==undefined?'on':''}" data-a="${a}" onclick="this.classList.toggle('on');syncAges()">${a}</span>`).join("")}
       ${Object.keys(p.size_chart||{}).filter(a=>!AGES_PRESET.includes(a)).map(a=>`<span class="pill on" data-a="${esc(a)}" onclick="this.remove();syncAges()">${esc(a)} ✕</span>`).join("")}
@@ -5269,6 +5252,24 @@ function showProductForm(pid){
       const on=(p.meas_rows&&p.meas_rows.length? p.meas_rows : defaultRows(p.garment_type||"full")).includes(m[0]);
       return `<span class="pill ${on?'on':''}" data-k="${m[0]}" onclick="captureChart();this.classList.toggle('on');redrawChart()">${isAr()?m[1]:m[2]}</span>`;}).join("")}</div>
     <div id="chartGrid"></div>
+    <div class="note-box" style="font-size:12px">${isAr()?"حدد الأعمار أول — عشان تقدر تكتب استهلاك كل خام لعمر محدد تحت كل قطعة.":"Pick ages first — per-age consumption depends on them."}</div>
+    <div id="partsWrap">
+      <label>${isAr()?"قطع التصميم — كل اللي بعدها يتفرّع منها":"Design parts"}</label>
+      <div class="pillrow" id="partPills">${PARTS_PRESET.map(([a,e])=>`<span class="pill ${(p.components||[]).some(c=>c.ar===a)?'on':''}" data-ar="${a}" data-en="${e}" onclick="this.classList.toggle('on');redrawParts()">${isAr()?a:e}</span>`).join("")}
+        ${(p.components||[]).filter(c=>!PARTS_PRESET.some(x=>x[0]===c.ar)).map(c=>`<span class="pill on" data-ar="${esc(c.ar)}" data-en="${esc(c.en||c.ar)}" onclick="this.remove();redrawParts()">${esc(isAr()?c.ar:(c.en||c.ar))} ✕</span>`).join("")}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <input id="p_newpart_ar" placeholder="${isAr()?"قطعة جديدة (عربي)":"New part AR"}" style="flex:1">
+        <input id="p_newpart_en" dir="ltr" placeholder="EN" style="flex:1">
+        <button class="btn btn-ghost" onclick="addCustomPart()">${I.plus}</button>
+      </div>
+      ${!(DB.materials||[]).length?`<div class="note-box">${isAr()?"ما في خامات مسجلة — أضفها من الإعدادات ← الخامات":"No materials yet"}</div>`:""}
+      <div class="note-box">${isAr()
+        ?`الوقت المعتمد هو <b>متوسط أداء العمال الفعلي</b> بعد ${EST_MIN_SAMPLE} قراءات. الأرقام اللي تكتبها مؤقتة لأول تشغيل.`
+        :`The team's real average replaces these after ${EST_MIN_SAMPLE} readings.`}</div>
+      <div id="partCards"></div>
+    </div>
+    <label>${isAr()?"ملاحظة خامات عامة (اختياري)":"General materials note"}</label><textarea id="p_materials">${esc(p.materials||"")}</textarea>
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="p_notes">${esc(p.notes||"")}</textarea>
     <button class="btn btn-wine btn-big" onclick="saveProduct()">${t("save")}</button>
   `);
@@ -5683,6 +5684,8 @@ function syncAges(){
   captureChart();
   const ages=[...document.querySelectorAll("#agePills .pill.on")].map(x=>x.dataset.a);
   el("p_sizes").value=ages.join(","); redrawChart();
+  /* زر «لكل عمر» تحت كل خامة يتبع الأعمار المختارة فوق */
+  currentParts().forEach(c=>redrawBomP(c.ar));
 }
 function addCustomAge(){
   const a=el("p_newage").value.trim(); if(!a) return;
