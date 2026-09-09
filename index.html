@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.85:APPV-->
+<!--APPV:2026-08-12.86:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -487,6 +487,23 @@ function readyItems(cid){
 }
 function ready_(id){ return (DB.samples||[]).find(x=>x.id===id && isReadySmp(x))||null; }
 function csvList(v){ return String(v||"").split(/[,\u060C]/).map(x=>x.trim()).filter(Boolean); }
+const RDY_AUD   = [["kids","أطفال","Kids"],["adults","كبار","Adults"]];
+const RDY_TYPES = [["clothing","ملابس","Clothing"],["shoes","حذاء","Shoes"],["bag","حقيبة","Bag"],["accessory","إكسسوار","Accessory"]];
+const SZ_KIDS   = ["1","2","3","4","5","6","7","8","9","10","11","12"];
+const SZ_ADULTS = ["XS","S","M","L","XL","XXL","XXXL"];
+const SZ_SHOE_K = ["20","21","22","23","24","25","26","27","28","29","30","31","32","33","34","35"];
+const SZ_SHOE_A = ["36","37","38","39","40","41","42","43","44","45"];
+const SZ_ONE    = "مقاس واحد";
+function audLabel(a){ const f=RDY_AUD.find(x=>x[0]===(a||"kids")); return f?(isAr()?f[1]:f[2]):""; }
+function itemTypeLabel(k){ const f=RDY_TYPES.find(x=>x[0]===(k||"clothing")); return f?(isAr()?f[1]:f[2]):""; }
+/* مقاسات مقترحة حسب الفئة ونوع المنتج — وتقدر تضيف أي مقاس ثاني بيدك */
+function rdySizePreset(aud, it){
+  aud=aud||"kids"; it=it||"clothing";
+  if(it==="bag")      return [SZ_ONE,"S","M","L"];
+  if(it==="shoes")    return aud==="adults"? SZ_SHOE_A : SZ_SHOE_K;
+  if(it==="accessory")return [SZ_ONE, ...(aud==="adults"? SZ_ADULTS : SZ_KIDS)];
+  return aud==="adults"? SZ_ADULTS : SZ_KIDS;
+}
 function rdyStatusLabel(st){ return st==="shortlist"? (isAr()?"معتمد":"approved")
                                : st==="rejected"? (isAr()?"مرفوض":"rejected")
                                :                  (isAr()?"مبدئي":"candidate"); }
@@ -1231,7 +1248,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.85";
+const APP_VERSION="2026-08-12.86";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2773,7 +2790,15 @@ function sampleSheet(designId, itemId, kind){
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
   smpKindToggle(); smpRenderExtra();
 }
-function smpSupPick(id){ const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return; const n=el("smp_supname"); if(n)n.value=spx.name||""; const sh=el("smp_shop"); if(sh)sh.value=spx.shop_no||""; }
+function smpSupPick(id){
+  const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return;
+  const n=el("smp_supname"); if(n)n.value=spx.name||"";
+  const sh=el("smp_shop"); if(sh)sh.value=spx.shop_no||"";
+  const pz=el("rdy_plaza"); if(pz)pz.value=spx.plaza||"";
+  const fl=el("rdy_floor"); if(fl)fl.value=spx.floor||"";
+  const qb=el("rdyQRbox");
+  if(qb) qb.innerHTML = spx.wechat_qr? `<img src="${esc(spx.wechat_qr)}" style="width:110px;height:110px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(spx.wechat_qr)}')">` : "";
+}
 function smpKindToggle(){
   const k=el("smp_kind")?el("smp_kind").value:"fabric";
   const fb=el("smp_fabbox"), ab=el("smp_accbox");
@@ -2971,8 +2996,18 @@ async function cropWechatQR(sources){
   for(const s of list){ const u=await cropQRFromImage(s); if(u) return {status:"found", url:u}; }
   return {status:"none"};
 }
-async function ensurePotentialSupplier(row){
-  if(!row.supplier_name || row.supplier_id) return;
+async function ensurePotentialSupplier(row, extra){
+  extra=extra||{};
+  /* حتى لو المورّد مسجّل: نكمّل الناقص من بيانات المحل اللي كتبتها الحين */
+  if(row.supplier_id){
+    const sp=(DB.suppliers||[]).find(z=>z.id===row.supplier_id);
+    if(sp){ const pt={}; ["plaza","floor","wechat_qr"].forEach(k=>{ if(extra[k] && !sp[k]) pt[k]=extra[k]; });
+      if(row.shop_no && !sp.shop_no) pt.shop_no=row.shop_no;
+      if(extra.kind && (sp.kind||"fabric")==="fabric" && extra.kind!=="fabric") pt.kind=extra.kind;
+      if(Object.keys(pt).length){ await sb.from("suppliers").update(pt).eq("id",sp.id); Object.assign(sp,pt); } }
+    return;
+  }
+  if(!row.supplier_name) return;
   const nm=(row.supplier_name||"").trim(); if(!nm) return;
   const cf=window._smpCardFields||{};
   const cards=(window._smpCards&&window._smpCards.length)? [...window._smpCards] : null;
@@ -2982,13 +3017,17 @@ async function ensurePotentialSupplier(row){
     /* إثراء المورد الموجود بأي بيانات ناقصة من الكارت */
     const patch={}; const setIf=(k,v)=>{ if(v && !found[k]) patch[k]=v; };
     setIf("shop_no",row.shop_no||cf.shop_no); setIf("phone",cf.phone); setIf("wechat",cf.wechat);
-    setIf("market",cf.market); setIf("floor",cf.floor); setIf("contact_person",cf.contact_person); setIf("city",cf.city);
+    setIf("market",cf.market); setIf("floor",extra.floor||cf.floor); setIf("contact_person",cf.contact_person); setIf("city",cf.city);
+    setIf("plaza",extra.plaza); setIf("wechat_qr",extra.wechat_qr);
+    if(extra.kind && (found.kind||"fabric")==="fabric" && extra.kind!=="fabric") patch.kind=extra.kind;
     if(cards && !(found.card_photos&&found.card_photos.length)) patch.card_photos=cards;
     if(Object.keys(patch).length){ await sb.from("suppliers").update(patch).eq("id",found.id); Object.assign(found,patch); }
     return;
   }
-  const sup={id:newId(), channel:row.channel, kind:"fabric", name:nm, shop_no:row.shop_no||cf.shop_no||null, status:"potential",
-    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null, floor:cf.floor||null, contact_person:cf.contact_person||null, city:cf.city||null,
+  const sup={id:newId(), channel:row.channel, kind:extra.kind||"fabric", name:nm, shop_no:row.shop_no||cf.shop_no||null, status:"potential",
+    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null,
+    plaza:extra.plaza||null, floor:extra.floor||cf.floor||null, wechat_qr:extra.wechat_qr||null,
+    contact_person:cf.contact_person||null, city:cf.city||null,
     card_photos:cards};
   await sb.from("suppliers").insert(sup);
   if(!(DB.suppliers||[]).some(x=>x.id===sup.id)) DB.suppliers.unshift(sup);
@@ -3065,16 +3104,42 @@ function sampleEdit(id){
 /* القطعة الجاهزة تنسجّل في نفس دفتر العينات (trip_samples) بنوع ready وتحت كولكشن،
    بدون تصميم ولا بند تشيك ليست. الاعتماد يعطيها كود R — وما ينشئ منتج،
    لأن اعتمادك يعني «القطعة زينة» مو «بشتريها هالموسم». */
-function rdySizePills(sel){
+function rdySizePills(sel, aud, it){
   const on=new Set(csvList(sel));
-  const extra=[...on].filter(a=>!AGES_PRESET.includes(a));
-  return `<div class="pillrow" id="rdySizes">${AGES_PRESET.map(a=>
-      `<span class="pill ${on.has(a)?"on":""}" data-a="${esc(a)}" onclick="this.classList.toggle('on')">${a}</span>`).join("")}
-    ${extra.map(a=>`<span class="pill on" data-a="${esc(a)}" onclick="this.remove()">${esc(a)} ✕</span>`).join("")}</div>
-    <div style="display:flex;gap:6px;margin-top:6px">
-      <input id="rdy_newsize" placeholder="${isAr()?"مقاس آخر":"Other size"}" style="flex:1">
-      <button type="button" class="btn btn-ghost" onclick="rdyAddSize()">${I.plus}</button>
-    </div>`;
+  const pre=rdySizePreset(aud,it);
+  const extra=[...on].filter(a=>!pre.includes(a));
+  return `${pre.map(a=>
+      `<span class="pill ${on.has(a)?"on":""}" data-a="${esc(a)}" onclick="this.classList.toggle('on')">${esc(a)}</span>`).join("")}
+    ${extra.map(a=>`<span class="pill on" data-a="${esc(a)}" onclick="this.remove()">${esc(a)} ✕</span>`).join("")}`;
+}
+/* تبديل الفئة أو النوع يعيد بناء الشرائح ويحافظ على اللي اخترته */
+function rdyRedrawSizes(){
+  const box=el("rdySizes"); if(!box) return;
+  box.innerHTML=rdySizePills(rdySizesVal(), rdyAudVal(), rdyTypeVal());
+}
+function rdyPillVal(boxId, def){ const p=document.querySelector("#"+boxId+" .pill.on"); return p? p.dataset.k : def; }
+function rdyAudVal(){ return rdyPillVal("rdyAud","kids"); }
+function rdyTypeVal(){ return rdyPillVal("rdyType","clothing"); }
+function rdyPickPill(boxId, k){
+  document.querySelectorAll("#"+boxId+" .pill").forEach(p=>p.classList.toggle("on", p.dataset.k===k));
+  rdyRedrawSizes();
+}
+function rdyPerToggle(){
+  const per=rdyPillVal("rdyPer","piece");
+  const b=el("rdyPackBox"); if(b) b.hidden=(per!=="carton");
+  const l=el("rdyPriceLbl");
+  if(l) l.textContent = per==="carton" ? (isAr()?"سعر الكرتون":"Price / carton") : (isAr()?"سعر الحبة":"Price / pc");
+}
+function rdyPickPer(k){
+  document.querySelectorAll("#rdyPer .pill").forEach(p=>p.classList.toggle("on", p.dataset.k===k));
+  rdyPerToggle();
+}
+async function rdyAddQR(files){
+  const f=files&&files[0]; if(!f) return;
+  const u=await captureSamplePhoto(f); if(!u) return;
+  window._rdyQR=u;
+  const b=el("rdyQRbox");
+  if(b) b.innerHTML=`<img src="${esc(u)}" style="width:110px;height:110px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(u)}')">`;
 }
 function rdyAddSize(){
   const v=(el("rdy_newsize").value||"").trim(); if(!v) return;
@@ -3094,13 +3159,24 @@ function readySheet(cid, id){
   window._smpCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : (x.card_photo?[x.card_photo]:[]);
   window._smpCard=window._smpCards[0]||null;
   window._smpCardFields={};
-  const sups=(DB.suppliers||[]).filter(sp=>(sp.channel||"china")===chChannel);
+  window._rdyQR=null;
+  const sups=(DB.suppliers||[]).filter(sp=>(sp.channel||"china")===chChannel)
+    .sort((a,b)=>((a.kind||"fabric")==="fabric"?1:0)-((b.kind||"fabric")==="fabric"?1:0));
   const cols=(DB.collections||[]);
   const cur0=x.currency||chan(chChannel).currency||"KWD";
+  const aud0=x.audience||"kids", it0=x.item_type||"clothing", per0=x.price_per||"piece";
+  const sup0=x.supplier_id? ((DB.suppliers||[]).find(sp=>sp.id===x.supplier_id)||{}) : {};
   openSheet(`<div class="title">${id?(isAr()?"تعديل قطعة جاهزة":"Edit ready item"):(isAr()?"قطعة جاهزة":"Ready-made item")}</div>
     <label>${isAr()?"صور القطعة":"Photos"}</label>
     <input type="file" accept="image/*" multiple id="rdy_file" onchange="smpAddPhotos(this.files)">
     <div id="smpPhotoRow" class="pillrow" style="min-height:24px"></div>
+
+    <label>${isAr()?"نوع المنتج":"Item type"}</label>
+    <div class="pillrow" id="rdyType">${RDY_TYPES.map(([k,ar,en])=>
+      `<span class="pill ${it0===k?"on":""}" data-k="${k}" onclick="rdyPickPill('rdyType','${k}')">${isAr()?ar:en}</span>`).join("")}</div>
+    <label>${isAr()?"لمن؟":"For"}</label>
+    <div class="pillrow" id="rdyAud">${RDY_AUD.map(([k,ar,en])=>
+      `<span class="pill ${aud0===k?"on":""}" data-k="${k}" onclick="rdyPickPill('rdyAud','${k}')">${isAr()?ar:en}</span>`).join("")}</div>
 
     <label>${isAr()?"الاسم اللي تسميه أنت":"Your name for it"}</label>
     <input id="rdy_name" value="${esc(x.fabric_type||"")}" placeholder="${isAr()?"بجامة قطن مقلّمة":"..."}">
@@ -3117,19 +3193,40 @@ function readySheet(cid, id){
     <label>${isAr()?"المورد (من السجل أو اكتب)":"Supplier"}</label>
     <select id="smp_sup" onchange="smpSupPick(this.value)">
       <option value="">—</option>
-      ${sups.map(sp=>`<option value="${sp.id}" ${x.supplier_id===sp.id?"selected":""}>${esc(sp.name||"")}${sp.shop_no?` (${esc(sp.shop_no)})`:""}</option>`).join("")}
+      ${sups.map(sp=>`<option value="${sp.id}" ${x.supplier_id===sp.id?"selected":""}>${esc(sp.name||"")} — ${esc(supKindLabel(sp.kind))}${sp.plaza?` · ${esc(sp.plaza)}`:""}</option>`).join("")}
     </select>
-    <input id="smp_supname" value="${esc(x.supplier_name||"")}" placeholder="${isAr()?"اسم المحل/المورد":"Supplier name"}">
-    <label>${isAr()?"رقم المحل":"Shop no."}</label><input id="smp_shop" value="${esc(x.shop_no||"")}">
+    <input id="smp_supname" value="${esc(x.supplier_name||"")}" placeholder="${isAr()?"اسم المحل (صوّر لوحته لو ما تعرف تكتبه)":"Shop name"}">
+    <div class="grid3">
+      <div><label>${isAr()?"المجمع":"Mall"}</label><input id="rdy_plaza" value="${esc(sup0.plaza||"")}"></div>
+      <div><label>${isAr()?"الدور":"Floor"}</label><input id="rdy_floor" value="${esc(sup0.floor||"")}"></div>
+      <div><label>${isAr()?"رقم المحل":"Shop no."}</label><input id="smp_shop" value="${esc(x.shop_no||sup0.shop_no||"")}"></div>
+    </div>
+    <label>${isAr()?"صورة كود الوي تشات (صوّرها من جواله)":"WeChat QR photo"}</label>
+    <input type="file" accept="image/*" id="rdy_qrfile" onchange="rdyAddQR(this.files)">
+    <div id="rdyQRbox" style="margin-top:6px">${sup0.wechat_qr?`<img src="${esc(sup0.wechat_qr)}" style="width:110px;height:110px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(sup0.wechat_qr)}')">`:""}</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-      <div><label>${isAr()?"سعر الحبة":"Price / pc"}</label><input id="rdy_price" inputmode="decimal" value="${x.price!=null?esc(String(x.price)):""}"></div>
+    <label>${isAr()?"يبيع بـ":"Sold by"}</label>
+    <div class="pillrow" id="rdyPer">
+      <span class="pill ${per0!=="carton"?"on":""}" data-k="piece" onclick="rdyPickPer('piece')">${isAr()?"الحبة":"Piece"}</span>
+      <span class="pill ${per0==="carton"?"on":""}" data-k="carton" onclick="rdyPickPer('carton')">${isAr()?"الكرتون":"Carton"}</span>
+    </div>
+    <div id="rdyPackBox" ${per0==="carton"?"":"hidden"}>
+      <label>${isAr()?"كم حبة في الكرتون":"Pieces per carton"}</label>
+      <input id="rdy_pack" inputmode="numeric" value="${x.pack_size!=null?esc(String(x.pack_size)):""}" placeholder="12">
+    </div>
+
+    <div class="grid3">
+      <div><label id="rdyPriceLbl">${isAr()?"السعر":"Price"}</label><input id="rdy_price" inputmode="decimal" value="${x.price!=null?esc(String(x.price)):""}"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="rdy_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur0===c?"selected":""}>${c}</option>`).join("")}</select></div>
-      <div><label>${isAr()?"أقل كمية":"MOQ"}</label><input id="rdy_moq" inputmode="numeric" value="${x.moq!=null?esc(String(x.moq)):""}" placeholder="${isAr()?"اختياري":"optional"}"></div>
+      <div><label>${isAr()?"أقل كمية (حبة)":"MOQ (pcs)"}</label><input id="rdy_moq" inputmode="numeric" value="${x.moq!=null?esc(String(x.moq)):""}" placeholder="${isAr()?"اختياري":"optional"}"></div>
     </div>
 
     <label>${isAr()?"المقاسات المتوفرة عنده":"Sizes available"}</label>
-    ${rdySizePills(x.sizes)}
+    <div class="pillrow" id="rdySizes">${rdySizePills(x.sizes, aud0, it0)}</div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <input id="rdy_newsize" placeholder="${isAr()?"مقاس آخر":"Other size"}" style="flex:1">
+      <button type="button" class="btn btn-ghost" onclick="rdyAddSize()">${I.plus}</button>
+    </div>
     <label>${isAr()?"الألوان (اختياري — افصلها بفاصلة)":"Colors (optional)"}</label>
     <input id="rdy_colors" value="${esc(x.colors||"")}" placeholder="${isAr()?"وردي، أزرق":"pink, blue"}">
 
@@ -3144,14 +3241,15 @@ function readySheet(cid, id){
     </div>
 
     <hr class="sep">
-    <label>${isAr()?"بزنس كارد المورد (وجه وظهر)":"Business card"}</label>
+    <label>${isAr()?"صور: بزنس كارد أو لوحة المحل":"Photos: card or storefront"}</label>
+    <div class="muted" style="font-size:11px;margin-top:-2px">${isAr()?"أغلب المحلات ما عندها كرت — صوّر لوحة المحل واسمه.":"Most shops have no card — a storefront photo works."}</div>
     <input type="file" accept="image/*" multiple id="rdy_cardfile" onchange="smpAddCard(this.files)">
     <div id="smpCardRow" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px"></div>
     <div id="smpCardRead" style="font-size:12px;margin-top:10px;line-height:1.7"></div>
 
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="rdy_note">${esc(x.note||"")}</textarea>
     <button class="btn btn-ink btn-big" onclick="readySave()">${t("save")}</button>`);
-  smpRenderPhotos(); smpRenderCards();
+  smpRenderPhotos(); smpRenderCards(); rdyPerToggle();
 }
 async function readySave(){
   const name=(el("rdy_name").value||"").trim();
@@ -3169,6 +3267,9 @@ async function readySave(){
     fabric_type:name,
     supplier_model:(el("rdy_model").value||"").trim()||null,
     collection_id:el("rdy_col").value||null,
+    audience:rdyAudVal(), item_type:rdyTypeVal(),
+    price_per:rdyPillVal("rdyPer","piece"),
+    pack_size:parseFloat(toAsciiDigits(el("rdy_pack")?el("rdy_pack").value:""))||null,
     price:parseFloat(toAsciiDigits(el("rdy_price").value))||null,
     currency:el("rdy_cur").value,
     per:"count",
@@ -3181,7 +3282,13 @@ async function readySave(){
     note:el("rdy_note").value||null,
     design_id:null};
   if(!row.sample_bought){ row.sample_cost=null; }
-  await ensurePotentialSupplier(row);
+  if(row.price_per==="carton" && !(row.pack_size>0))
+    return alert(isAr()?"اكتب كم حبة في الكرتون":"How many pieces per carton?");
+  await ensurePotentialSupplier(row, {
+    kind: supKindForItem(row.item_type),
+    plaza:(el("rdy_plaza")?el("rdy_plaza").value:"")||null,
+    floor:(el("rdy_floor")?el("rdy_floor").value:"")||null,
+    wechat_qr: window._rdyQR||null});
   if(edit){
     const upd={...row}; delete upd.id; delete upd.trip_id;
     const res=await sb.from("trip_samples").update(upd).eq("id",edit);
@@ -3191,6 +3298,8 @@ async function readySave(){
     const pr=prodOfReady(edit);
     if(pr){ const ppatch={name:row.fabric_type, images:row.photos, supplier_id:row.supplier_id,
         supplier_model:row.supplier_model, colors:row.colors, moq:row.moq,
+        audience:row.audience, item_type:row.item_type,
+        price_per:row.price_per, pack_size:row.pack_size,
         cost:row.price, cost_currency:row.currency};
       await sb.from("products").update(ppatch).eq("id",pr.id); Object.assign(pr,ppatch); }
     window._rdyEdit=null; closeSheet(); cacheDB(); render(); return;
@@ -3255,10 +3364,16 @@ function readyCard(x){
           ${x.sku?`<b style="font-family:Arial">${esc(x.sku)}</b> · `:""}${esc(x.supplier_name||"—")}${x.supplier_model?` · <span style="font-family:Arial">${esc(x.supplier_model)}</span>`:""}
         </div>
         <div class="muted" style="font-size:12px">
-          ${x.price!=null?`${x.price} ${esc(x.currency||"")} / ${isAr()?"حبة":"pc"}`:`<span style="color:var(--wine)">${isAr()?"بلا سعر":"no price"}</span>`}
+          ${x.price!=null
+            ? `${x.price} ${esc(x.currency||"")} / ${x.price_per==="carton"?(isAr()?"كرتون":"carton"):(isAr()?"حبة":"pc")}`
+              + (x.price_per==="carton"&&x.pack_size? ` <span style="font-size:11px">(${x.pack_size} ${isAr()?"حبة":"pcs"} ≈ ${Math.round((x.price/x.pack_size)*100)/100}/${isAr()?"حبة":"pc"})</span>`:"")
+            : `<span style="color:var(--wine)">${isAr()?"بلا سعر":"no price"}</span>`}
           ${x.moq?` · ${isAr()?"أقل كمية":"MOQ"} ${x.moq}`:""}
         </div>
         <div class="pillrow" style="margin-top:4px">
+          <span class="chip" style="font-size:10px">${itemTypeLabel(x.item_type)}</span>
+          <span class="chip" style="font-size:10px">${audLabel(x.audience)}</span>
+          ${x.price_per==="carton"?`<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"بالكرتون":"by carton"}</span>`:""}
           ${sizes.length?`<span class="chip" style="font-size:10px">${isAr()?"مقاسات":"sizes"}: ${sizes.map(esc).join(" · ")}</span>`
                         :`<span class="chip wine" style="font-size:10px">${isAr()?"بلا مقاسات":"no sizes"}</span>`}
           ${colors.length?`<span class="chip" style="font-size:10px">${isAr()?"ألوان":"colors"}: ${colors.map(esc).join(" · ")}</span>`:""}
@@ -3289,21 +3404,39 @@ function readySection(cid, opts){
 }
 
 /* -- الموردين -- */
-const SUP_KINDS=[["fabric","مورد خام","Fabric"],["factory","مصنع","Factory"],["ready","مورد جاهز","Ready-made"],["agent","وساطة/شحن","Agent"]];
+const SUP_KINDS=[
+  ["fabric","مورد خامات وإكسسوارات","Materials & trims"],
+  ["factory","مصنع تنفيذ ملابس","Garment factory"],
+  ["ready","مورد ملابس جملة (جاهز)","Wholesale clothing"],
+  ["shoes","مصنع أحذية","Shoe factory"],
+  ["bags","مصنع حقائب","Bag factory"],
+  ["packaging","حلول تغليف","Packaging"],
+  ["agent","وساطة / شحن","Agent / freight"]];
+function supKindLabel(k){ const f=SUP_KINDS.find(x=>x[0]===(k||"fabric")); return f? (isAr()?f[1]:f[2]) : (k||""); }
+/* نوع المنتج الجاهز يقترح تصنيف مورّده */
+function supKindForItem(it){ return it==="shoes"?"shoes" : it==="bag"?"bags" : "ready"; }
 function chSuppliers(){
   const q=(window._supQ||"").trim().toLowerCase();
   let arr=(DB.suppliers||[]).filter(x=>(x.channel||"china")===chChannel);
   if(q) arr=arr.filter(x=>[x.name,x.shop_no,x.market,x.plaza,x.floor,x.city,x.phone,x.wechat,x.contact_person,x.notes].filter(Boolean).map(v=>String(v).toLowerCase()).join(" § ").includes(q));
   const search=`<input id="supQ" placeholder="${isAr()?'بحث… اسم، رقم محل، تلفون، ويتشات':'Search…'}" value="${esc(window._supQ||"")}" oninput="window._supQ=this.value;chSuppliers();var e=el('supQ');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}" style="margin-bottom:10px">`;
-  el("chBody").innerHTML=search+
-    SUP_KINDS.map(([k,ar,en])=>{
+  const kf=window._supKind||"all";
+  const kb=(v,l,n)=>`<button class="btn btn-ghost" style="padding:4px 11px;font-size:12px;${kf===v?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._supKind='${v}';chSuppliers()">${l} (${n})</button>`;
+  const kinds = kf==="all"? SUP_KINDS : SUP_KINDS.filter(x=>x[0]===kf);
+  const filt=`<div class="pillrow" style="margin-bottom:10px">${kb("all",isAr()?"الكل":"All",arr.length)}
+    ${SUP_KINDS.map(([k,ar,en])=>{ const n=arr.filter(x=>(x.kind||"fabric")===k).length; return n?kb(k,isAr()?ar:en,n):""; }).join("")}</div>`;
+  el("chBody").innerHTML=search+filt+
+    kinds.map(([k,ar,en])=>{
       const g=arr.filter(x=>(x.kind||"fabric")===k);
+      if(!g.length && kf==="all") return "";
       return `<div class="title" style="font-size:15px;margin-top:10px">${isAr()?ar:en} (${g.length})</div>
       ${g.map(x=>{ const pot=x.status==="potential";
         return `<div class="lineitem" style="${pot?'background:var(--wine-lt);border-radius:10px;padding:9px 10px;':''}">
           <div style="min-width:0;flex:1;cursor:pointer" onclick="supDetail('${x.id}')">
             <div style="font-weight:700">${esc(x.name||"")} ${pot?`<span class="chip" style="background:#fff;color:var(--wine-dk);font-size:10px">${isAr()?"محتمل":"potential"}</span>`:""}</div>
-            ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:`<div class="muted" style="font-size:11px;opacity:.6">${isAr()?"اضغط لعرض البيانات":"tap for details"}</div>`}
+            ${(function(){ const loc=[x.plaza?esc(x.plaza):"", x.floor?`${isAr()?"دور":"fl"} ${esc(x.floor)}`:"", x.shop_no?`${isAr()?"محل":"shop"} ${esc(x.shop_no)}`:""].filter(Boolean).join(" · ");
+              return loc?`<div class="muted" style="font-size:12px">${loc}</div>`:""; })()}
+            ${x.notes?`<div class="muted" style="font-size:12px">${esc(x.notes)}</div>`:(x.plaza||x.shop_no?"":`<div class="muted" style="font-size:11px;opacity:.6">${isAr()?"اضغط لعرض البيانات":"tap for details"}</div>`)}
           </div>
           <div class="pillrow" style="flex-wrap:nowrap;align-items:center">
             ${pot?`<button class="btn btn-ok" style="padding:4px 10px" onclick="event.stopPropagation();supApprove('${x.id}')">${isAr()?"اعتمد":"approve"}</button>`:""}
@@ -3320,6 +3453,7 @@ function supDetail(id){
   const cards=(x.card_photos&&x.card_photos.length)? x.card_photos : (x.card_photo?[x.card_photo]:[]);
   openSheet(`<div class="title">${esc(x.name||"")} ${x.status==="potential"?`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:11px">${isAr()?"محتمل":"potential"}</span>`:""}</div>
     ${cards.length?`<div class="pillrow" style="margin-bottom:8px">${cards.map((u,i)=>`<img class="thumb" src="${esc(u)}" style="width:96px;height:62px" onclick="viewSupplierCard('${x.id}')">`).join("")}</div>`:""}
+    ${row(isAr()?"التصنيف":"Kind", supKindLabel(x.kind))}
     ${row(isAr()?"رقم المحل":"Shop", x.shop_no)}
     ${row(isAr()?"السوق":"Market", x.market)}
     ${row(isAr()?"المجمع":"Mall", x.plaza)}
@@ -3328,6 +3462,7 @@ function supDetail(id){
     ${row(isAr()?"تلفون":"Phone", x.phone)}
     ${row("WeChat", x.wechat)}
     ${row(isAr()?"اسم الموظف":"Staff", x.contact_person)}
+    ${x.wechat_qr?`<div class="lineitem"><div class="muted" style="font-size:12px">${isAr()?"كود وي تشات":"WeChat QR"}</div><img src="${esc(x.wechat_qr)}" style="width:96px;height:96px;border-radius:8px" onclick="viewImg('${esc(x.wechat_qr)}')"></div>`:""}
     ${row(isAr()?"ملاحظات":"Notes", x.notes)}
     <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="closeSheet();supSheet('${x.id}')">${I.edit} ${isAr()?"تعديل":"Edit"}</button>`);
 }
@@ -3367,8 +3502,11 @@ function supSheet(id){
       <div><label>WeChat</label><input id="sup_wechat" value="${esc(x.wechat||"")}"></div>
       <div><label>${isAr()?"اسم الموظف":"Staff name"}</label><input id="sup_person" value="${esc(x.contact_person||"")}"></div>
     </div>
+    <label>${isAr()?"صورة كود الوي تشات (صوّرها من جواله)":"WeChat QR photo"}</label>
+    <input type="file" accept="image/*" id="sup_qrfile" onchange="supAddQR(this.files)">
     <div id="supQRbox">${x.wechat_qr?`<div class="muted" style="font-size:12px">${isAr()?"كود وي تشات:":"WeChat QR:"}</div><img src="${esc(x.wechat_qr)}" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(x.wechat_qr)}')">`:""}</div>
-    <label>${isAr()?"بزنس كارد (وجه وظهر — تتحفظ للرجوع)":"Business card (front & back)"}</label>
+    <label>${isAr()?"صور: بزنس كارد أو واجهة المحل واسمه":"Photos: business card or storefront"}</label>
+    <div class="muted" style="font-size:11px;margin-top:-2px">${isAr()?"أغلب المحلات ما عندها كرت — صوّر لوحة المحل واسمه وهي تنحفظ نفس الشي.":"Most shops have no card — a storefront photo works."}</div>
     <input type="file" accept="image/*" multiple id="sup_cardfile" onchange="supAddCard(this.files)">
     <div id="supCardRow" class="pillrow" style="min-height:24px;padding-bottom:20px"></div>
     <div id="supCardRead" class="muted" style="font-size:12px;margin-top:8px;line-height:1.7"></div>
@@ -3376,6 +3514,15 @@ function supSheet(id){
     <label>${isAr()?"ملاحظات":"Notes"}</label><textarea id="sup_notes">${esc(x.notes||"")}</textarea>
     <button class="btn btn-ink btn-big" onclick="supSave()">${t("save")}</button>`);
   supRenderCards();
+}
+/* صورة الوي تشات تنرفع مباشرة — بدون ما ننتظر كارت */
+async function supAddQR(files){
+  const f=files&&files[0]; if(!f) return;
+  const u=await captureSamplePhoto(f);
+  if(!u) return;
+  window._supWechatQR=u;
+  const b=el("supQRbox");
+  if(b) b.innerHTML=`<div class="muted" style="font-size:12px">${isAr()?"كود وي تشات:":"WeChat QR:"}</div><img src="${esc(u)}" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--line)" onclick="viewImg('${esc(u)}')">`;
 }
 function supRenderCards(){
   const r=el("supCardRow"); if(!r) return;
@@ -3709,7 +3856,8 @@ function poReadyCard(x){
       <span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span>
       ${p.sku?`<span class="muted" style="font-family:Arial;font-size:11px">${esc(p.sku)}</span>`:""}</div>
     ${p.supplier_model?`<div class="muted" style="font-size:12px">${isAr()?"كود الموديل":"model"}: <span style="font-family:Arial">${esc(p.supplier_model)}</span></div>`:""}
-    <div style="font-size:13px;margin-top:3px">${fmtN(x.buy_qty||0)} ${isAr()?"حبة":"pcs"} × ${x.unit_price||0} ${esc(x.currency||"KWD")}</div>
+    <div style="font-size:13px;margin-top:3px">${fmtN(x.buy_qty||0)} ${unitAr(x.buy_unit||"count")} × ${x.unit_price||0} ${esc(x.currency||"KWD")}</div>
+    ${(x.buy_unit==="carton")?`<div class="muted" style="font-size:12px">= ${fmtN(x.plan_qty||0)} ${isAr()?"حبة":"pcs"}${(function(){const need=(Array.isArray(x.size_lines)?x.size_lines:[]).reduce((a,r)=>a+(Number(r.qty)||0),0); const ex=(Number(x.plan_qty)||0)-need; return ex>0?` · ${isAr()?"زيادة":"extra"} ${fmtN(ex)}`:"";})()}</div>`:""}
     <div style="font-size:14px;margin-top:2px"><b>${fmtN(dt.total)} ${esc(dt.cur)}</b>${lc?` <span class="muted" style="font-size:11px">≈ ${fmtKD(lc.total)} ${isAr()?"د.ك":"KWD"}${lc.per!=null?` · ${fmtKD(lc.per)}/${isAr()?"حبة":"pc"}`:""}</span>`:""}</div>
     ${sl.length?`<table style="margin-top:8px"><tr><th>${isAr()?"المقاس":"Size"}</th>${sl.some(r=>r.color)?`<th>${isAr()?"اللون":"Color"}</th>`:""}<th>${isAr()?"العدد":"Qty"}</th>${recv.length?`<th>${isAr()?"المستلم":"Recv"}</th>`:""}</tr>
       ${sl.map(r=>`<tr><td>${esc(r.size||"—")}</td>${sl.some(z=>z.color)?`<td>${esc(r.color||"—")}</td>`:""}<td><b>${fmtN(r.qty||0)}</b></td>${recv.length?`<td>${r.received!=null?fmtN(r.received):"—"}</td>`:""}</tr>`).join("")}</table>`:""}
@@ -3736,7 +3884,7 @@ function readyPOEdit(id){
   window._rpo=JSON.parse(JSON.stringify(sl));
   openSheet(`<div class="title">${esc(x.fabric_name||pname(p))} — ${isAr()?"توزيعة الطلب":"Order breakdown"}</div>
     <div class="grid2">
-      <div><label>${isAr()?"سعر الحبة":"Price / pc"}</label><input id="rp_price" inputmode="decimal" value="${x.unit_price!=null?esc(String(x.unit_price)):""}"></div>
+      <div><label>${x.buy_unit==="carton"?(isAr()?"سعر الكرتون":"Price / carton"):(isAr()?"سعر الحبة":"Price / pc")}</label><input id="rp_price" inputmode="decimal" value="${x.unit_price!=null?esc(String(x.unit_price)):""}"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="rp_cur">${["KWD","CNY","USD"].map(c=>`<option ${(x.currency||"CNY")===c?"selected":""}>${c}</option>`).join("")}</select></div>
     </div>
     <label>${isAr()?"المقاسات والأعداد":"Sizes & quantities"}</label>
@@ -3782,10 +3930,14 @@ async function readyPOSave(id){
   if(!sl.length) return alert(isAr()?"اكتب عدد لمقاس واحد على الأقل":"Enter at least one quantity");
   const tot=sl.reduce((a,r)=>a+r.qty,0);
   const p=product(x.product_id)||{};
-  if(p.moq && tot<Number(p.moq) && !confirm(isAr()
-      ? `الإجمالي ${tot} أقل من الحد الأدنى للمورّد (${p.moq}). نكمل؟`
+  const cc=cartonCalc(p, tot);
+  if(cc.byCarton && cc.extra>0 && !confirm(isAr()
+      ? `${tot} حبة = ${cc.cartons} كرتون (${cc.pieces} حبة، زيادة ${cc.extra}). نكمل؟`
+      : `Rounded up to ${cc.cartons} cartons. Continue?`)) return;
+  if(p.moq && cc.pieces<Number(p.moq) && !confirm(isAr()
+      ? `الإجمالي ${cc.pieces} أقل من الحد الأدنى للمورّد (${p.moq}). نكمل؟`
       : `Below MOQ. Continue?`)) return;
-  const patch={size_lines:sl, buy_qty:tot, plan_qty:tot,
+  const patch={size_lines:sl, buy_qty:cc.qty, plan_qty:cc.pieces, unit:cc.unit, buy_unit:cc.unit,
     unit_price:parseFloat(toAsciiDigits(el("rp_price").value))||0, currency:el("rp_cur").value};
   const res=await sb.from("purchases").update(patch).eq("id",id);
   if(res && res.error && !/queued/i.test(res.error.message||"")) return alert(res.error.message);
@@ -3801,8 +3953,11 @@ function readyReceive(id){
   window._rrec=sl.map(r=>({size:r.size||null, color:r.color||null, qty:Number(r.qty)||0, got:Number(r.qty)||0}));
   openSheet(`<div class="title">📦 ${isAr()?"استلام":"Receive"} — ${esc(x.fabric_name||pname(p))}</div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()
-      ?"اكتب اللي استلمته فعلاً لكل مقاس. اللي تكتبه ينزل المخزون بنفس المقاس واللون."
-      :"Enter the actual received quantity per size."}</div>
+      ?"اكتب اللي استلمته فعلاً لكل مقاس <b>بالحبة</b>. اللي تكتبه ينزل المخزون بنفس المقاس واللون."
+      :"Enter the actual received quantity per size (pieces)."}</div>
+    ${x.buy_unit==="carton"?`<div class="note-box" style="font-size:12px">${isAr()
+      ?`الطلب ${fmtN(x.buy_qty||0)} كرتون = <b>${fmtN(x.plan_qty||0)} حبة</b>. وزّع المستلم على المقاسات.`
+      :`Ordered ${x.buy_qty} cartons = ${x.plan_qty} pcs.`}</div>`:""}
     <div id="rrRows"></div>
     <div class="lineitem" style="font-weight:800"><div>${isAr()?"إجمالي المستلم":"Total received"}</div><div id="rrTot">—</div></div>
     <button class="btn btn-ok btn-big" onclick="readyReceiveSave('${id}')">${isAr()?"أدخله المخزون":"Add to stock"}</button>`);
@@ -4269,7 +4424,7 @@ const EXP_CATS=[["transport","نقل"],["food","أكل"],["hotel","سكن"],["ti
 function expCatLabel(k){ const f=EXP_CATS.find(x=>x[0]===k); return f? f[1] : k; }
 function expKWD(x){ return (x.currency||"KWD")==="KWD"? (parseFloat(x.amount)||0) : (toKWD(parseFloat(x.amount)||0, x.currency)||0); }
 function toKWDsafe(amt,cur){ amt=parseFloat(amt)||0; return (cur||"KWD")==="KWD"? amt : (toKWD(amt,cur)||0); }
-function unitAr(u){ return u==="count"?(isAr()?"حبة":"pc") : u==="meter"?(isAr()?"متر":"m") : (isAr()?"يارد":"yd"); }
+function unitAr(u){ return u==="carton"?(isAr()?"كرتون":"ctn") : u==="count"?(isAr()?"حبة":"pc") : u==="meter"?(isAr()?"متر":"m") : (isAr()?"يارد":"yd"); }
 function poQtyUnit(x){
   if(x.buy_qty!=null && x.buy_unit) return {qty:x.buy_qty, unit:x.buy_unit};
   if((x.kind||"")==="accessory") return {qty:x.plan_qty||0, unit:"count"};
@@ -4453,7 +4608,7 @@ async function poDel(id){
   DB.purchases=(DB.purchases||[]).filter(x=>x.id!==id); cacheDB(); render();
 }
 /* إرسال الطلب لكل مورد (واتساب/وي تشات) */
-function manUnit(u,lang){ if(lang==="zh") return u==="count"?"个":u==="meter"?"米":"码"; if(lang==="ar") return u==="count"?"حبة":u==="meter"?"متر":"يارد"; return u==="count"?"pc":u==="meter"?"m":"yd"; }
+function manUnit(u,lang){ if(lang==="zh") return u==="carton"?"箱":u==="count"?"个":u==="meter"?"米":"码"; if(lang==="ar") return u==="carton"?"كرتون":u==="count"?"حبة":u==="meter"?"متر":"يارد"; return u==="carton"?"carton":u==="count"?"pc":u==="meter"?"m":"yd"; }
 function manT(lang){
   if(lang==="zh") return {po:"采购订单", shop:"店铺", shopno:"店号", mall:"商场", floor:"楼层", staff:"员工", wechat:"微信", tel:"电话", photo:"图片", item:"品名", qty:"数量", card:"名片", addr:"地址", mkt:"市场", city:"城市", date:"日期"};
   if(lang==="ar") return {po:"طلب شراء", shop:"المحل", shopno:"رقم المحل", mall:"المجمع", floor:"الدور", staff:"الموظف", wechat:"وي تشات", tel:"الهاتف", photo:"الصورة", item:"الصنف", qty:"الكمية", card:"البزنس كارد", addr:"العنوان", mkt:"السوق", city:"المدينة", date:"التاريخ"};
@@ -5211,6 +5366,15 @@ function readyNeedFromOrder(orderId){
   });
   return out;
 }
+/* بعض الموردين يبيعون بالكرتون: التوزيعة تبقى بالحبة (هي اللي تدخل المخزون)
+   والطلب والسعر يتحوّلان لكراتين كاملة. */
+function packOf(p){ return (p && p.price_per==="carton" && Number(p.pack_size)>0)? Number(p.pack_size) : 0; }
+function cartonCalc(p, pieces){
+  const pack=packOf(p);
+  if(!pack) return {byCarton:false, pack:0, cartons:0, pieces, unit:"count", qty:pieces, extra:0};
+  const cartons=Math.ceil(pieces/pack);
+  return {byCarton:true, pack, cartons, pieces:cartons*pack, unit:"carton", qty:cartons, extra:cartons*pack-pieces};
+}
 function posOfOrderReady(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===orderId && (x.stage||"")==="ready"); }
 function poIsReady(x){ return !!x && ((x.stage||"")==="ready"); }
 
@@ -5305,13 +5469,15 @@ async function createPOsFromOrder(orderId){
         tot+=Math.ceil(short);
       });
       if(!sl.length || tot<=0) return;
-      if(p.moq && tot<Number(p.moq)) moqWarn.push(`${pname(p)}: ${tot} < ${p.moq}`);
+      const cc=cartonCalc(p, tot);
+      if(p.moq && cc.pieces<Number(p.moq)) moqWarn.push(`${pname(p)}: ${cc.pieces} < ${p.moq}`);
+      if(cc.byCarton && cc.extra>0) moqWarn.push(`${pname(p)}: ${isAr()?`${cc.cartons} كرتون = ${cc.pieces} حبة (زيادة ${cc.extra})`:`${cc.cartons} cartons`}`);
       const ck=sup.channel||chChannel||"china";
       rows.push({id:newId(), order_id:orderId, collection_id:productCollection(pid)||null,
         trip_id:tr?tr.id:null, channel:ck,
         supplier_id:sup.id, supplier_name:sup.name||null,
         product_id:pid, fabric_name:pname(p), kind:"ready",
-        unit:"count", buy_unit:"count", buy_qty:tot, plan_qty:tot, size_lines:sl,
+        unit:cc.unit, buy_unit:cc.unit, buy_qty:cc.qty, plan_qty:cc.pieces, size_lines:sl,
         unit_price:Number(p.cost)||0, currency:p.cost_currency||chan(ck).currency||"KWD",
         deliver_status:"ordered", pay_log:[], status:"planned", stage:"ready"});
       rdyRows++;
@@ -5345,7 +5511,7 @@ async function createPOsFromOrder(orderId){
       + (rdyCovered? `\n\n📦 ${rdyCovered} بند جاهز مغطّى من مخزونك — ما طلع له أمر.`:"")
       + (skipped? `\n\n🔍 ${skipped} خامة بدون مورّد — باقية بقائمة البحث.`:"")
       + (rdySkipped? `\n\n⚠️ ${rdySkipped} قطعة جاهزة بدون مورّد — حدّده من بطاقة المنتج.`:"")
-      + (moqWarn.length? `\n\n⚠️ أقل من الحد الأدنى للمورّد:\n${moqWarn.join("\n")}`:"")
+      + (moqWarn.length? `\n\n⚠️ انتبه:\n${moqWarn.join("\n")}`:"")
       + (noCol? `\n\n⚠️ ${noCol} بند ما انحدد له كولكشن — تكلفته ما راح تتحمّل على أي كولكشن.`:"")
     : `Created ${rows.length} POs.`);
   closeSheet(); await refresh();
@@ -5390,7 +5556,8 @@ function showPurchase(orderId){
           const have=Math.max(0,prodBalance(pid,size,color)); const buy=Math.max(0,(Number(q)||0)-have);
           return {size,color,q:Number(q)||0,have,buy}; });
         const tot=rows.reduce((a,r)=>a+r.buy,0);
-        const cost=(Number(p.cost)||0)*tot; gt+=cost;
+        const cc=cartonCalc(p, tot);
+        const cost=(Number(p.cost)||0)*(cc.byCarton? cc.cartons : tot); gt+=cost;
         return `<div class="sechead" style="font-size:15px">${I.pack} ${esc(pname(p))}
             <span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span>
             <span class="muted" style="font-weight:600">· ${sup?esc(sup.name||""):`<span style="color:var(--wine)">${isAr()?"بدون مورّد":"no supplier"}</span>`}</span></div>
@@ -5399,7 +5566,10 @@ function showPurchase(orderId){
             <td style="color:${r.have>0?"var(--green)":"var(--faint)"}">${fmtN(r.have)}</td>
             <td><b>${fmtN(r.buy)}</b></td></tr>`).join("")}
           <tr><td colspan="4"><b>${isAr()?"الإجمالي":"Total"}</b></td><td><b>${fmtN(tot)} ${isAr()?"حبة":"pcs"}</b></td></tr></table>
-          ${p.moq&&tot&&tot<Number(p.moq)?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px">${isAr()?`أقل من الحد الأدنى للمورّد (${p.moq}).`:`Below MOQ (${p.moq}).`}</div>`:""}`;
+          ${cc.byCarton&&tot?`<div class="note-box" style="font-size:12px">${isAr()
+            ?`يبيع بالكرتون (${cc.pack} حبة) — الطلب يتقرّب لـ <b>${cc.cartons} كرتون = ${cc.pieces} حبة</b>${cc.extra?` (زيادة ${cc.extra})`:""}.`
+            :`Sold by carton — ${cc.cartons} cartons = ${cc.pieces} pcs.`}</div>`:""}
+          ${p.moq&&tot&&cc.pieces<Number(p.moq)?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px">${isAr()?`أقل من الحد الأدنى للمورّد (${p.moq}).`:`Below MOQ (${p.moq}).`}</div>`:""}`;
       }).join("");
       return `<div class="sechead" style="margin-top:12px">${isAr()?"الجاهز — القطع المطلوبة":"READY-MADE"}</div>${body}
         ${gt?`<div class="lineitem" style="font-weight:800"><div>${isAr()?"تكلفة الجاهز التقديرية":"Ready total"}</div><div>${fmtN(gt)}</div></div>`:""}`;
@@ -5737,7 +5907,8 @@ function tabProducts(){
       <div class="wtop">${thumb(p)}
         <div style="flex:1"><div class="title">${esc(pname(p))} ${p.sku?`<span class="muted" style="font-family:'Inter';font-size:12px">${esc(p.sku)}</span>`:""}</div>
         <div class="pillrow">
-          ${isReadyProd(p)?`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk)">${isAr()?"جاهز":"ready"}</span>`:""}
+          ${isReadyProd(p)?`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk)">${isAr()?"جاهز":"ready"}</span>
+            <span class="chip">${itemTypeLabel(p.item_type)}</span><span class="chip">${audLabel(p.audience)}</span>`:""}
           ${isReadyProd(p)&&p.supplier_id?`<span class="chip">${esc(((DB.suppliers||[]).find(sp=>sp.id===p.supplier_id)||{}).name||"")}</span>`:""}
           ${p.external_make?`<span class="chip wine">${I.ext}</span>`:""}
           ${Object.keys(p.emb_parts||{}).flatMap(part=>embOf(p,part).map(e=>
@@ -5775,7 +5946,7 @@ function readyPickSheet(){
         ${ph?`<img class="thumb" src="${esc(ph)}" style="width:46px;height:46px">`:`<div class="thumb" style="width:46px;height:46px;display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.pack}</div>`}
         <div style="flex:1;min-width:0;padding-inline-start:8px">
           <b>${esc(x.fabric_type||"—")}</b> <span class="muted" style="font-family:Arial;font-size:11px">${esc(x.sku||"")}</span>
-          <div class="muted" style="font-size:12px">${esc(x.supplier_name||"")}${x.price!=null?` · ${x.price} ${esc(x.currency||"")}`:""}${sizes.length?` · ${sizes.length} ${isAr()?"مقاس":"sizes"}`:""}</div>
+          <div class="muted" style="font-size:12px">${itemTypeLabel(x.item_type)} · ${audLabel(x.audience)} · ${esc(x.supplier_name||"")}${x.price!=null?` · ${x.price} ${esc(x.currency||"")}${x.price_per==="carton"?(isAr()?"/كرتون":"/ctn"):""}`:""}${sizes.length?` · ${sizes.length} ${isAr()?"مقاس":"sizes"}`:""}</div>
         </div><div class="muted" style="font-size:18px">←</div></div>`;}).join("")
       : `<div class="empty">${isAr()
           ? (taken? "كل القطع المعتمدة صارت منتجات." : "ما فيه قطع جاهزة معتمدة. سجّلها بدفتر العينات واعتمدها أول.")
@@ -5788,6 +5959,8 @@ async function createReadyProduct(rid){
   const p={id:newId(), name:x.fabric_type||"", sku:x.sku||genSKU("ready"), track:"ready", ready_id:rid,
     images:[...(x.photos||[])], patterns:[], components:[], size_chart:chart, chart_unit:"inch",
     supplier_id:x.supplier_id||null, supplier_model:x.supplier_model||null,
+    audience:x.audience||"kids", item_type:x.item_type||"clothing",
+    price_per:x.price_per||"piece", pack_size:x.pack_size||null,
     colors:x.colors||null, moq:x.moq||null, cost:x.price||null, cost_currency:x.currency||null,
     notes:x.note||null, active:true, external_make:false};
   const {error}=await sb.from("products").insert(p);
@@ -5806,7 +5979,7 @@ function readyHistory(pid){
     .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   const bal=(DB.moves||[]).filter(m=>m.item_kind==="product" && m.product_id===pid)
     .reduce((a,m)=>a+(Number(m.qty)||0),0);
-  const totBought=pos.reduce((a,x)=>a+(Number(x.buy_qty)||0),0);
+  const totBought=pos.reduce((a,x)=>a+(Number(x.plan_qty!=null?x.plan_qty:x.buy_qty)||0),0);
   const show = el("ov")? openSheet2 : openSheet;
   show(`<div class="title">${esc(pname(p))} — ${isAr()?"سجل الطلبات":"Order history"}</div>
     <div class="muted" style="font-size:12px">${p.sku?`<b style="font-family:Arial">${esc(p.sku)}</b> · `:""}${p.supplier_model?`${isAr()?"كود المورّد":"model"}: <b style="font-family:Arial">${esc(p.supplier_model)}</b>`:""}</div>
@@ -5816,7 +5989,7 @@ function readyHistory(pid){
       const sl=Array.isArray(x.size_lines)?x.size_lines:[];
       return `<div class="card" style="padding:10px">
         <div style="font-weight:700;font-size:13px">${esc(String(x.created_at||"").slice(0,10))} · ${esc(x.supplier_name||"")}</div>
-        <div style="font-size:13px">${fmtN(x.buy_qty||0)} ${isAr()?"حبة":"pcs"} × ${x.unit_price||0} ${esc(x.currency||"")} = <b>${fmtN((x.buy_qty||0)*(x.unit_price||0))} ${esc(x.currency||"")}</b></div>
+        <div style="font-size:13px">${fmtN(x.buy_qty||0)} ${unitAr(x.buy_unit||"count")} × ${x.unit_price||0} ${esc(x.currency||"")} = <b>${fmtN((x.buy_qty||0)*(x.unit_price||0))} ${esc(x.currency||"")}</b>${x.buy_unit==="carton"?` <span class="muted">(${fmtN(x.plan_qty||0)} ${isAr()?"حبة":"pcs"})</span>`:""}</div>
         ${sl.length?`<div class="muted" style="font-size:11px;margin-top:3px">${sl.map(r=>`${esc(r.size||"—")}${r.color?"/"+esc(r.color):""}: ${r.qty}`).join(" · ")}</div>`:""}
         <div class="muted" style="font-size:11px">${x.received_at?`📦 ${isAr()?"استُلم":"received"} ${esc(String(x.received_at).slice(0,10))}`:(isAr()?"ما استُلم بعد":"not received")}</div>
       </div>`;}).join("")
@@ -5851,8 +6024,23 @@ function showProductForm(pid){
         ${(DB.suppliers||[]).map(sp=>`<option value="${sp.id}" ${p.supplier_id===sp.id?"selected":""}>${esc(sp.name||"")}${sp.city?` · ${esc(sp.city)}`:""}</option>`).join("")}</select>
       <label>${isAr()?"كود الموديل عند المورّد":"Supplier model code"}</label>
       <input id="p_model" dir="ltr" value="${esc(p.supplier_model||"")}">
+      <div class="grid2">
+        <div><label>${isAr()?"نوع المنتج":"Item type"}</label>
+          <select id="p_itype">${RDY_TYPES.map(([k,ar,en])=>`<option value="${k}" ${(p.item_type||"clothing")===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select></div>
+        <div><label>${isAr()?"لمن؟":"For"}</label>
+          <select id="p_aud">${RDY_AUD.map(([k,ar,en])=>`<option value="${k}" ${(p.audience||"kids")===k?"selected":""}>${isAr()?ar:en}</option>`).join("")}</select></div>
+      </div>
+      <div class="grid2">
+        <div><label>${isAr()?"يبيع بـ":"Sold by"}</label>
+          <select id="p_pricper" onchange="pPackToggle()">
+            <option value="piece" ${(p.price_per||"piece")!=="carton"?"selected":""}>${isAr()?"الحبة":"Piece"}</option>
+            <option value="carton" ${(p.price_per||"")==="carton"?"selected":""}>${isAr()?"الكرتون":"Carton"}</option>
+          </select></div>
+        <div id="pPackBox" ${(p.price_per||"")==="carton"?"":"hidden"}><label>${isAr()?"حبات بالكرتون":"Pcs / carton"}</label>
+          <input id="p_pack" inputmode="numeric" value="${p.pack_size!=null?esc(String(p.pack_size)):""}"></div>
+      </div>
       <div class="grid3">
-        <div><label>${isAr()?"تكلفة الحبة":"Cost / pc"}</label><input id="p_cost" inputmode="decimal" value="${p.cost!=null?esc(String(p.cost)):""}"></div>
+        <div><label id="pCostLbl">${(p.price_per||"")==="carton"?(isAr()?"تكلفة الكرتون":"Cost / carton"):(isAr()?"تكلفة الحبة":"Cost / pc")}</label><input id="p_cost" inputmode="decimal" value="${p.cost!=null?esc(String(p.cost)):""}"></div>
         <div><label>${isAr()?"العملة":"Currency"}</label>
           <select id="p_costcur">${["KWD","CNY","USD"].map(c=>`<option ${(p.cost_currency||"CNY")===c?"selected":""}>${c}</option>`).join("")}</select></div>
         <div><label>${isAr()?"أقل كمية":"MOQ"}</label><input id="p_moq" inputmode="numeric" value="${p.moq!=null?esc(String(p.moq)):""}"></div>
@@ -5938,6 +6126,12 @@ function migrateLegacy(p){
   if(!Object.keys(window._embP).length && p.embroidery_kind && p.embroidery && p.embroidery!=="none")
     window._embP[comps[0].ar]={kind:p.embroidery_kind, when:(p.embroidery==="external_piece"?"after_cut":p.embroidery),
       note:p.embroidery_note||"", artwork:p.artwork_url||""};
+}
+function pPackToggle(){
+  const v=el("p_pricper")?el("p_pricper").value:"piece";
+  const b=el("pPackBox"); if(b) b.hidden=(v!=="carton");
+  const l=el("pCostLbl");
+  if(l) l.textContent = v==="carton" ? (isAr()?"تكلفة الكرتون":"Cost / carton") : (isAr()?"تكلفة الحبة":"Cost / pc");
 }
 function toggleExt(){
   const on=!!(el("p_ext")&&el("p_ext").checked);
@@ -6409,6 +6603,12 @@ async function saveProduct(){
     row.cost_currency=el("p_costcur")?el("p_costcur").value:null;
     row.moq=el("p_moq")?(parseFloat(toAsciiDigits(el("p_moq").value))||null):null;
     row.colors=el("p_colors")?((el("p_colors").value||"").trim()||null):null;
+    row.item_type=el("p_itype")?el("p_itype").value:null;
+    row.audience=el("p_aud")?el("p_aud").value:null;
+    row.price_per=el("p_pricper")?el("p_pricper").value:"piece";
+    row.pack_size=el("p_pack")?(parseFloat(toAsciiDigits(el("p_pack").value))||null):null;
+    if(row.price_per==="carton" && !(row.pack_size>0))
+      return alert(isAr()?"اكتب كم حبة في الكرتون":"How many pieces per carton?");
   }
   if(editProductId) await sb.from("products").update(row).eq("id",editProductId);
   else await sb.from("products").insert(row);
@@ -8335,7 +8535,7 @@ async function wDone(lineId, partId){
     "photoAudit","syncPhotosNow","photoPurgeGone","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive",
-    "readySave","readyApprove","readyUnapprove","readyReject","readyDelete",
+    "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
     var orig = window[name];
