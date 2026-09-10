@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.92:APPV-->
+<!--APPV:2026-08-12.93:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -177,6 +177,9 @@
   .netchip.off{background:#F3E3E6;color:#8C2F3E;border:1px solid #E8D4D8;}
   .netchip.pend{background:#FBF0DC;color:#8A6420;border:1px solid #F0E0BE;}
   .netchip .dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:vvpulse 1.4s ease-in-out infinite;}
+  .vvbadge{display:none;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;
+    border-radius:11px;background:#C0394B;color:#fff;font-size:12px;font-weight:800;line-height:1;
+    font-family:Arial,sans-serif;cursor:pointer;}
   @keyframes vvpulse{0%,100%{opacity:1}50%{opacity:.25}}
   .offbar{background:#F3E3E6;color:#8C2F3E;border:1px solid #E8D4D8;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-weight:700;font-size:14px;}
   .partcard{border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0;background:var(--paper);}
@@ -266,7 +269,7 @@
   <div class="brand"><span class="lgbox"><img src="veevogue%20logo.jpg" alt="V" onerror="this.parentElement.style.display='none'"></span><span class="bname">VEEVOGUE</span></div>
   <div class="right">
     <span class="netchip" id="netchip"></span>
-    <span class="netchip" id="photochip" onclick="photoAudit()" style="cursor:pointer"></span>
+    <span class="vvbadge" id="photochip" onclick="photoAudit()"></span>
     <span class="who" id="whoami"></span>
     <button class="hbtn" id="syncBtn" title="تحديث" onclick="syncNow()" style="display:none">⟳</button>
     <button class="hbtn" id="langBtn" onclick="toggleLang()">EN</button>
@@ -654,16 +657,14 @@ function paintNet(){
   }
   paintPhotoChip();
 }
-/* صورة ما وصلت السيرفر لازم تشوفها من أي شاشة — مو بس لو دخلت دفتر العينات */
+/* رقم فقط — مثل بادج التطبيقات. التفاصيل داخل ورقة الفحص. */
 function paintPhotoChip(){
   const p=document.getElementById("photochip"); if(!p) return;
   const n=_pendCount||0;
-  if(!n){ p.style.display="none"; return; }
+  if(!n){ p.style.display="none"; p.textContent=""; return; }
   p.style.display="inline-flex";
-  const bad=!!_pendErr;
-  p.className="netchip "+(bad?"off":"pend");
-  p.title=bad? (_pendErr||"") : (isAr()?"صور ما وصلت السيرفر — اضغط للفحص":"photos not on server");
-  p.innerHTML=`<span class="dot"></span>📷 ${n}`;
+  p.title=_pendErr || (isAr()?"صور ما وصلت السيرفر":"photos not on server");
+  p.textContent=String(n);
 }
 function offBar(){
   const n=qGet().length;
@@ -1279,7 +1280,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.92";
+const APP_VERSION="2026-08-12.93";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
