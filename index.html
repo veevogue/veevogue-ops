@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.91:APPV-->
+<!--APPV:2026-08-12.92:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -266,6 +266,7 @@
   <div class="brand"><span class="lgbox"><img src="veevogue%20logo.jpg" alt="V" onerror="this.parentElement.style.display='none'"></span><span class="bname">VEEVOGUE</span></div>
   <div class="right">
     <span class="netchip" id="netchip"></span>
+    <span class="netchip" id="photochip" onclick="photoAudit()" style="cursor:pointer"></span>
     <span class="who" id="whoami"></span>
     <button class="hbtn" id="syncBtn" title="تحديث" onclick="syncNow()" style="display:none">⟳</button>
     <button class="hbtn" id="langBtn" onclick="toggleLang()">EN</button>
@@ -641,12 +642,28 @@ async function flushQueue(){
   } finally { flushing=false; }
 }
 function paintNet(){
-  const c=document.getElementById("netchip"); if(!c) return;
-  const n=qGet().length;
-  if(NETOK && !n){ c.style.display="none"; return; }
-  c.style.display="inline-flex";
-  if(!NETOK){ c.className="netchip off"; c.innerHTML=`<span class="dot"></span>${isAr()?"بدون إنترنت":"OFFLINE"}${n?" · "+n:""}`; }
-  else { c.className="netchip pend"; c.innerHTML=`<span class="dot"></span>${isAr()?"يُرسل… "+n:"SYNCING "+n}`; }
+  const c=document.getElementById("netchip");
+  if(c){
+    const n=qGet().length;
+    if(NETOK && !n){ c.style.display="none"; }
+    else {
+      c.style.display="inline-flex";
+      if(!NETOK){ c.className="netchip off"; c.innerHTML=`<span class="dot"></span>${isAr()?"بدون إنترنت":"OFFLINE"}${n?" · "+n:""}`; }
+      else { c.className="netchip pend"; c.innerHTML=`<span class="dot"></span>${isAr()?"يُرسل… "+n:"SYNCING "+n}`; }
+    }
+  }
+  paintPhotoChip();
+}
+/* صورة ما وصلت السيرفر لازم تشوفها من أي شاشة — مو بس لو دخلت دفتر العينات */
+function paintPhotoChip(){
+  const p=document.getElementById("photochip"); if(!p) return;
+  const n=_pendCount||0;
+  if(!n){ p.style.display="none"; return; }
+  p.style.display="inline-flex";
+  const bad=!!_pendErr;
+  p.className="netchip "+(bad?"off":"pend");
+  p.title=bad? (_pendErr||"") : (isAr()?"صور ما وصلت السيرفر — اضغط للفحص":"photos not on server");
+  p.innerHTML=`<span class="dot"></span>📷 ${n}`;
 }
 function offBar(){
   const n=qGet().length;
@@ -1262,7 +1279,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.91";
+const APP_VERSION="2026-08-12.92";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2040,7 +2057,9 @@ async function uploadPendingPhotos(force){
 }
 let _pendCount=0;
 /* نقرأ المفاتيح من القرص كل مرة — ذاكرة قديمة كانت تخلي الرقم يكذب */
-async function refreshPendCount(){ try{ await pendInit(true); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; } return _pendCount; }
+async function refreshPendCount(){ try{ await pendInit(true); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; }
+  try{ paintPhotoChip(); }catch(e){}
+  return _pendCount; }
 async function syncPhotosNow(){
   await refreshPendCount();
   if(!_pendCount){ toast(isAr()?"ما فيه صور معلّقة على هذا الجهاز":"No pending photos"); return; }
@@ -2260,14 +2279,6 @@ function photoGuardBar(){
   return `<div style="margin:0 0 10px"><button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}${pend?` · <b style="color:var(--wine)">${pend} ${isAr()?"معلّقة":"pending"}</b>`:""}</button></div>`;
 }
 
-function photoSyncBanner(){
-  if(!_pendCount) return "";
-  return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-    <div>📷 <b>${_pendCount}</b> ${isAr()?"نسخة محفوظة على هذا الجهاز — نتأكد إذا وصلت السيرفر":"local copies — verify they reached the server"}
-      ${_pendErr?`<div style="font-size:11px;opacity:.85">${esc(_pendErr)}</div>`:""}</div>
-    <button class="btn btn-ink" style="width:auto;padding:5px 14px;font-size:13px" onclick="syncPhotosNow()">${isAr()?"افحص وارفع":"Check & upload"}</button>
-  </div>`;
-}
 function smpIsOpen(did){ try{ return JSON.parse(localStorage.getItem("vv_smpopen")||"[]").includes(did);}catch(e){return false;} }
 function smpToggleOpen(did){ let a; try{a=JSON.parse(localStorage.getItem("vv_smpopen")||"[]");}catch(e){a=[];} a=a.includes(did)?a.filter(x=>x!==did):[...a,did]; try{localStorage.setItem("vv_smpopen",JSON.stringify(a));}catch(e){} render(); }
 function purIsOpen(k){ try{ return JSON.parse(localStorage.getItem("vv_puropen")||"[]").includes(k);}catch(e){return false;} }
