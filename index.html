@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.97:APPV-->
+<!--APPV:2026-08-12.98:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1290,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.97";
+const APP_VERSION="2026-08-12.98";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8133,7 +8133,7 @@ async function printJob(jobId){
     if(!sizes.length) return "";
     return `<div style="margin-top:14px;page-break-inside:avoid"><b>${esc(p.name)} — القياسات (${unitLbl(_cf.unit)})${_cf.from!==_cf.unit?` <span style="font-size:11px;font-weight:400;color:#666">— محوّلة من ${unitLbl(_cf.from)}</span>`:""}:</b>
     <table><tr><th>القياس</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
-    ${MEAS.map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
+    ${productRows(p).filter(m=>sizes.some(s=>chart[s]&&chart[s][m[0]])).map(m=>`<tr><td>${m[1]}</td>${sizes.map(s=>`<td>${esc(chart[s]?.[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}</table>
     ${(p.patterns||[]).length?`<div>الباترونات: ${(p.patterns||[]).map(x=>`<a href="${esc(x.url)}">${esc(x.name)}</a>`).join(" · ")}</div>`:""}</div>`;}).join("") : "";
   const content=`<div id="joSheet" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,Arial,sans-serif">
   <style>#joSheet table{width:100%;border-collapse:collapse;margin-top:12px}#joSheet td,#joSheet th{border:1px solid #E6E1D8;padding:8px;text-align:right}#joSheet .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px}#joSheet .lg{font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px}</style>
