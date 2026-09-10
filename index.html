@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.88:APPV-->
+<!--APPV:2026-08-12.89:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -706,7 +706,7 @@ window.addEventListener("DOMContentLoaded", async ()=>{
   if(enforceAccess()) return;
   try{ await refreshPendCount(); }catch(e){}
   try{ persistStorage(); }catch(e){}
-  if(_pendCount){ try{ await uploadPendingPhotos(); await refreshPendCount(); }catch(e){} pendKick(); }
+  if(_pendCount){ try{ await uploadPendingPhotos(true); await refreshPendCount(); }catch(e){} if(_pendCount) pendKick(); }
   render();
   paintNet();
   autoBackup();
@@ -1257,7 +1257,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.88";
+const APP_VERSION="2026-08-12.89";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1915,9 +1915,9 @@ const idbPut=(k,v)=>idbDo("readwrite",st=>st.put(v,k));
 const idbGet=(k)=>idbDo("readonly",st=>st.get(k));
 const idbDel=(k)=>idbDo("readwrite",st=>st.delete(k));
 const idbKeys=()=>idbDo("readonly",st=>st.getAllKeys());
-async function pendInit(){
-  if(_pendSet) return _pendSet;
-  try{ _pendSet=new Set(await idbKeys()||[]); }catch(e){ _pendSet=new Set(); }
+async function pendInit(force){
+  if(_pendSet && !force) return _pendSet;
+  try{ _pendSet=new Set(await idbKeys()||[]); }catch(e){ _pendSet=_pendSet||new Set(); }
   return _pendSet;
 }
 async function displayUrl(u){
@@ -1963,12 +1963,46 @@ function pendKick(){
   }, 30000);
 }
 
-async function uploadPendingPhotos(){
-  if(_pupBusy || !NETOK || !AUTHED || !sb) return {up:0,failed:0,lost:0};
-  _pupBusy=true;
-  let up=0, failed=0, lost=0;
+/* «معلّقة» تعني: نسخة على الجهاز وما وصلت السيرفر.
+   لو الملف موجود على السيرفر أصلاً فالنسخة المحلية بقايا — تنمسح وما تنعدّ.
+   بدون هذي المطابقة كان العدّاد يعلق على رقم قديم للأبد. */
+let _pendErr=null;
+async function serverHas(path){
   try{
-    await pendInit();
+    const u=sb.storage.from("files").getPublicUrl(path).data.publicUrl;
+    const r=await fetch(u+(u.indexOf("?")<0?"?":"&")+"v="+Date.now(), {method:"HEAD", cache:"no-store"});
+    return !!(r && r.ok);
+  }catch(e){ return false; }
+}
+let _rcAt=0;
+async function reconcilePending(force){
+  await pendInit(true);
+  if(!_pendSet.size || !NETOK || !sb) return {cleared:0, checked:0};
+  if(!force && (Date.now()-_rcAt) < 300000) return {cleared:0, checked:0, skipped:true};
+  _rcAt=Date.now();
+  const list=[..._pendSet]; let cleared=0, checked=0;
+  for(let i=0;i<list.length;i+=8){
+    const chunk=list.slice(i,i+8);
+    const res=await Promise.all(chunk.map(p=>serverHas(p).catch(()=>false)));
+    for(let j=0;j<chunk.length;j++){
+      checked++;
+      if(!res[j]) continue;
+      const path=chunk[j];
+      try{ await idbDel(path); }catch(e){}
+      _pendSet.delete(path);
+      if(_pendUrls[path]){ try{URL.revokeObjectURL(_pendUrls[path]);}catch(e){} delete _pendUrls[path]; }
+      cleared++;
+    }
+  }
+  return {cleared, checked};
+}
+async function uploadPendingPhotos(force){
+  if(_pupBusy || !NETOK || !AUTHED || !sb) return {up:0,failed:0,lost:0,cleared:0};
+  _pupBusy=true;
+  let up=0, failed=0, lost=0, cleared=0;
+  _pendErr=null;
+  try{
+    const rc=await reconcilePending(force); cleared=rc.cleared||0;
     for(const path of [..._pendSet]){
       let blob=null;
       try{ blob=await idbGet(path); }catch(e){}
@@ -1976,27 +2010,34 @@ async function uploadPendingPhotos(){
       let error=null;
       try{ ({error} = await sb.storage.from("files").upload(path, blob, {upsert:true, contentType:"image/jpeg"})); }
       catch(e){ error=e; }
-      if(error && !/exists|duplicate/i.test(error.message||"")){ failed++; continue; }
+      if(error && !/exists|duplicate/i.test(error.message||"")){
+        failed++; _pendErr=(error&&error.message)||String(error);   /* ما نفشل بصمت */
+        continue; }
       try{ await idbDel(path); }catch(e){}
       _pendSet.delete(path); up++;
       if(_pendUrls[path]){ try{URL.revokeObjectURL(_pendUrls[path]);}catch(e){} delete _pendUrls[path]; }
     }
-  }catch(e){} finally{ _pupBusy=false; }
-  return {up, failed, lost};
+  }catch(e){ _pendErr=(e&&e.message)||String(e); } finally{ _pupBusy=false; }
+  return {up, failed, lost, cleared};
 }
 let _pendCount=0;
-async function refreshPendCount(){ try{ await pendInit(); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; } return _pendCount; }
+/* نقرأ المفاتيح من القرص كل مرة — ذاكرة قديمة كانت تخلي الرقم يكذب */
+async function refreshPendCount(){ try{ await pendInit(true); _pendCount=_pendSet? _pendSet.size:0; }catch(e){ _pendCount=0; } return _pendCount; }
 async function syncPhotosNow(){
   await refreshPendCount();
   if(!_pendCount){ toast(isAr()?"ما فيه صور معلّقة على هذا الجهاز":"No pending photos"); return; }
   const n=_pendCount;
   if(!NETOK){ toast(isAr()?"ما فيه إنترنت — حاول لما يرجع الاتصال":"No internet"); return; }
-  toast(isAr()?`جاري رفع ${n} صورة…`:`Uploading ${n}…`, 9000);
-  const r=await uploadPendingPhotos();
+  toast(isAr()?`جاري فحص ${n} صورة…`:`Checking ${n}…`, 9000);
+  const r=await uploadPendingPhotos(true);
   await refreshPendCount();
-  const done=n-_pendCount;
-  const extra=(r&&r.lost)?(isAr()?` · ${r.lost} ضاعت من الجهاز`:` · ${r.lost} lost`):"";
-  toast((isAr()?`انرفعت ${done} صورة${_pendCount?` — باقي ${_pendCount}`:" ✓"}`:`Uploaded ${done}`)+extra);
+  const parts=[];
+  if(r&&r.cleared) parts.push(isAr()?`${r.cleared} كانت مرفوعة أصلاً — نظّفتها`:`${r.cleared} already uploaded`);
+  if(r&&r.up)      parts.push(isAr()?`${r.up} انرفعت الحين`:`${r.up} uploaded`);
+  if(r&&r.lost)    parts.push(isAr()?`${r.lost} ضاعت من الجهاز`:`${r.lost} lost`);
+  if(_pendCount)   parts.push(isAr()?`باقي ${_pendCount}`:`${_pendCount} left`);
+  if(!parts.length) parts.push(isAr()?"ما فيه شي معلّق ✓":"nothing pending");
+  toast(parts.join(" · ") + ((_pendCount&&_pendErr)?(isAr()?`\n\nسبب التعثّر: ${_pendErr}`:`\n${_pendErr}`):""), 8000);
   await refresh();
 }
 /* -- كل روابط الصور المسجّلة بالنظام -- */
@@ -2140,14 +2181,18 @@ async function photoPurgeGone(){
 /* زر واحد بس — ما نعلّق شرائط تنبيه فوق الشاشة. العدد المعلّق يبين على الزر نفسه. */
 function photoGuardBar(){
   const pend=_pendCount||0;
-  return `<div style="margin:0 0 10px"><button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}${pend?` · <b style="color:var(--wine)">${pend} ${isAr()?"معلّقة":"pending"}</b>`:""}</button></div>`;
+  return `<div style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}</button>
+    ${pend?`<button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px;color:var(--wine)" onclick="syncPhotosNow()">📷 ${pend} ${isAr()?"معلّقة — افحصها":"pending — check"}</button>`:""}
+  </div>`;
 }
 
 function photoSyncBanner(){
   if(!_pendCount) return "";
   return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-    <div>📷 <b>${_pendCount}</b> ${isAr()?"صورة محفوظة على هذا الجهاز ولم تُرفع للسيرفر":"photos saved on this device, not uploaded"}</div>
-    <button class="btn btn-ink" style="width:auto;padding:5px 14px;font-size:13px" onclick="syncPhotosNow()">${isAr()?"ارفعها الآن":"Upload now"}</button>
+    <div>📷 <b>${_pendCount}</b> ${isAr()?"نسخة محفوظة على هذا الجهاز — نتأكد إذا وصلت السيرفر":"local copies — verify they reached the server"}
+      ${_pendErr?`<div style="font-size:11px;opacity:.85">${esc(_pendErr)}</div>`:""}</div>
+    <button class="btn btn-ink" style="width:auto;padding:5px 14px;font-size:13px" onclick="syncPhotosNow()">${isAr()?"افحص وارفع":"Check & upload"}</button>
   </div>`;
 }
 function smpIsOpen(did){ try{ return JSON.parse(localStorage.getItem("vv_smpopen")||"[]").includes(did);}catch(e){return false;} }
@@ -8693,7 +8738,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
-    "photoAudit","syncPhotosNow","photoPurgeGone","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
+    "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
