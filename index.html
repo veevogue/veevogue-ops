@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.89:APPV-->
+<!--APPV:2026-08-12.90:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1257,7 +1257,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.89";
+const APP_VERSION="2026-08-12.90";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1975,34 +1975,47 @@ async function serverHas(path){
   }catch(e){ return false; }
 }
 let _rcAt=0;
+/* عمر النسخة من اسمها: samples/<وقت>-<عشوائي>.jpg */
+function pathAge(path){ const m=String(path).match(/\/(\d{10,})-/); return m? (Date.now()-Number(m[1])) : Infinity; }
+async function pendDrop(path){
+  try{ await idbDel(path); }catch(e){}
+  _pendSet.delete(path);
+  if(_pendUrls[path]){ try{URL.revokeObjectURL(_pendUrls[path]);}catch(e){} delete _pendUrls[path]; }
+}
+/* النسخة المحلية لها ثلاث حالات، ووحدة بس منها «معلّقة»:
+   1) ما لها أي مكان في النظام (صوّرتها وشلتها قبل الحفظ) ← بقايا، تنمسح
+   2) مربوطة وموجودة على السيرفر ← وصلت، النسخة المحلية ما لها داعي
+   3) مربوطة ومو على السيرفر ← هذي وحدها المعلّقة، ترتفع */
 async function reconcilePending(force){
   await pendInit(true);
-  if(!_pendSet.size || !NETOK || !sb) return {cleared:0, checked:0};
-  if(!force && (Date.now()-_rcAt) < 300000) return {cleared:0, checked:0, skipped:true};
+  if(!_pendSet.size || !NETOK || !sb) return {cleared:0, dropped:0, checked:0};
+  if(!force && (Date.now()-_rcAt) < 300000) return {cleared:0, dropped:0, checked:0, skipped:true};
   _rcAt=Date.now();
-  const list=[..._pendSet]; let cleared=0, checked=0;
+  let ref=new Set();
+  try{ ref=new Set(photoIndex().urls.map(filePath).filter(Boolean)); }catch(e){}
+  let cleared=0, dropped=0, checked=0;
+  /* البقايا: مو مربوطة بشي، وعمرها أكثر من ساعة (عشان ما نلمس صورة تحت الإدخال الحين) */
+  for(const p of [..._pendSet]){
+    if(!ref.has(p) && pathAge(p) > 3600000){ await pendDrop(p); dropped++; }
+  }
+  const list=[..._pendSet];
   for(let i=0;i<list.length;i+=8){
     const chunk=list.slice(i,i+8);
     const res=await Promise.all(chunk.map(p=>serverHas(p).catch(()=>false)));
     for(let j=0;j<chunk.length;j++){
       checked++;
-      if(!res[j]) continue;
-      const path=chunk[j];
-      try{ await idbDel(path); }catch(e){}
-      _pendSet.delete(path);
-      if(_pendUrls[path]){ try{URL.revokeObjectURL(_pendUrls[path]);}catch(e){} delete _pendUrls[path]; }
-      cleared++;
+      if(res[j]){ await pendDrop(chunk[j]); cleared++; }
     }
   }
-  return {cleared, checked};
+  return {cleared, dropped, checked};
 }
 async function uploadPendingPhotos(force){
   if(_pupBusy || !NETOK || !AUTHED || !sb) return {up:0,failed:0,lost:0,cleared:0};
   _pupBusy=true;
-  let up=0, failed=0, lost=0, cleared=0;
+  let up=0, failed=0, lost=0, cleared=0, dropped=0;
   _pendErr=null;
   try{
-    const rc=await reconcilePending(force); cleared=rc.cleared||0;
+    const rc=await reconcilePending(force); cleared=rc.cleared||0; dropped=rc.dropped||0;
     for(const path of [..._pendSet]){
       let blob=null;
       try{ blob=await idbGet(path); }catch(e){}
@@ -2018,7 +2031,7 @@ async function uploadPendingPhotos(force){
       if(_pendUrls[path]){ try{URL.revokeObjectURL(_pendUrls[path]);}catch(e){} delete _pendUrls[path]; }
     }
   }catch(e){ _pendErr=(e&&e.message)||String(e); } finally{ _pupBusy=false; }
-  return {up, failed, lost, cleared};
+  return {up, failed, lost, cleared, dropped};
 }
 let _pendCount=0;
 /* نقرأ المفاتيح من القرص كل مرة — ذاكرة قديمة كانت تخلي الرقم يكذب */
@@ -2032,7 +2045,8 @@ async function syncPhotosNow(){
   const r=await uploadPendingPhotos(true);
   await refreshPendCount();
   const parts=[];
-  if(r&&r.cleared) parts.push(isAr()?`${r.cleared} كانت مرفوعة أصلاً — نظّفتها`:`${r.cleared} already uploaded`);
+  if(r&&r.cleared) parts.push(isAr()?`${r.cleared} كانت مرفوعة أصلاً`:`${r.cleared} already uploaded`);
+  if(r&&r.dropped) parts.push(isAr()?`${r.dropped} بقايا ما لها مكان — نظّفتها`:`${r.dropped} stray copies removed`);
   if(r&&r.up)      parts.push(isAr()?`${r.up} انرفعت الحين`:`${r.up} uploaded`);
   if(r&&r.lost)    parts.push(isAr()?`${r.lost} ضاعت من الجهاز`:`${r.lost} lost`);
   if(_pendCount)   parts.push(isAr()?`باقي ${_pendCount}`:`${_pendCount} left`);
@@ -2122,6 +2136,8 @@ async function photoPurge(paths){
 /* -- فحص شامل: كل صورة مسجّلة — موجودة فعلاً على السيرفر؟ -- */
 async function photoAudit(){
   if(!NETOK || !AUTHED || !sb){ alert(isAr()?"يحتاج إنترنت واتصال":"Needs connection"); return; }
+  /* ننظّف البقايا ونرفع المعلّق فعلاً قبل ما نعدّ — عشان الأرقام تكون صادقة */
+  try{ await uploadPendingPhotos(true); await refreshPendCount(); }catch(e){}
   const IDX=photoIndex();
   const paths=[...new Set(IDX.urls.map(filePath).filter(Boolean))];
   if(!paths.length){ alert(isAr()?"ما فيه صور مسجّلة":"No photos"); return; }
@@ -2164,8 +2180,7 @@ async function photoAudit(){
     ${gone.length?`<div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"مفقودة — الملف ما هو على السيرفر":"MISSING ON SERVER"}</div>
       ${box(gone,"var(--wine-dk)")}
       <div class="muted" style="font-size:12px;margin-top:6px">${isAr()?"هذي روابط لصور ما وصلت السيرفر. امسح الروابط عشان تختفي المربعات المكسورة، وأعد تصوير اللي تحتاجه.":"These links point to files that never reached the server."}</div>
-      <button class="btn btn-line btn-big" style="margin-top:6px" onclick="photoPurgeGone()">${I.trash} ${isAr()?`امسح الـ ${gone.length} رابط المكسور`:`Delete ${gone.length} broken links`}</button>`:""}
-    <button class="btn btn-ghost btn-big" style="margin-top:8px" onclick="closeSheet()">${isAr()?"تمام":"Done"}</button>`);
+      <button class="btn btn-line btn-big" style="margin-top:6px" onclick="photoPurgeGone()">${I.trash} ${isAr()?`امسح الـ ${gone.length} رابط المكسور`:`Delete ${gone.length} broken links`}</button>`:""}`);
 }
 /* يمسح روابط الصور المفقودة اللي طلعت بآخر فحص */
 async function photoPurgeGone(){
@@ -2181,10 +2196,7 @@ async function photoPurgeGone(){
 /* زر واحد بس — ما نعلّق شرائط تنبيه فوق الشاشة. العدد المعلّق يبين على الزر نفسه. */
 function photoGuardBar(){
   const pend=_pendCount||0;
-  return `<div style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}</button>
-    ${pend?`<button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px;color:var(--wine)" onclick="syncPhotosNow()">📷 ${pend} ${isAr()?"معلّقة — افحصها":"pending — check"}</button>`:""}
-  </div>`;
+  return `<div style="margin:0 0 10px"><button class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:13px" onclick="photoAudit()">🔍 ${isAr()?"فحص الصور":"Verify photos"}${pend?` · <b style="color:var(--wine)">${pend} ${isAr()?"معلّقة":"pending"}</b>`:""}</button></div>`;
 }
 
 function photoSyncBanner(){
