@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.95:APPV-->
+<!--APPV:2026-08-12.96:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1290,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.95";
+const APP_VERSION="2026-08-12.96";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5180,7 +5180,9 @@ function reqDocHTML(groups, lang, opts){
       </tr>`;
     }).join("");
     return `<div style="margin-top:16px;page-break-inside:avoid">
-      <div style="background:#1C1B1A;color:#fff;padding:8px 12px;border-radius:8px 8px 0 0;font-weight:700">${esc(su.name||"Supplier")}${info?`<div style="font-weight:400;font-size:12px;opacity:.85">${info}</div>`:""}</div>
+      <div style="background:#1C1B1A;color:#fff;padding:10px 12px;border-radius:8px 8px 0 0">
+        <div style="font-weight:800;font-size:20px;line-height:1.25;letter-spacing:.2px">${esc(su.name||"Supplier")}</div>
+        ${info?`<div style="font-weight:400;font-size:12px;opacity:.85;margin-top:3px">${info}</div>`:""}</div>
       <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th><th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}</table>
       ${opts.qr?`<div style="margin-top:8px;text-align:${align}"><span style="color:#666;font-size:12px">WeChat</span><br><img src="${opts.qr}" style="width:120px;height:120px;border-radius:8px"></div>`:""}
     </div>`;
