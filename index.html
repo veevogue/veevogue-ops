@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.93:APPV-->
+<!--APPV:2026-08-12.94:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -177,6 +177,16 @@
   .netchip.off{background:#F3E3E6;color:#8C2F3E;border:1px solid #E8D4D8;}
   .netchip.pend{background:#FBF0DC;color:#8A6420;border:1px solid #F0E0BE;}
   .netchip .dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:vvpulse 1.4s ease-in-out infinite;}
+  .vvchk{appearance:none;-webkit-appearance:none;width:23px;height:23px;flex:none;cursor:pointer;position:relative;
+    border:2px solid #CFC9BE;background:#fff;border-radius:50%;margin:0;}
+  .vvchk.sq{border-radius:7px;}
+  .vvchk:checked{background:var(--ink);border-color:var(--ink);}
+  .vvchk.sq:checked{background:var(--wine);border-color:var(--wine);}
+  .vvchk:checked::after{content:"";position:absolute;left:50%;top:46%;width:5px;height:10px;
+    border:solid #fff;border-width:0 2.5px 2.5px 0;transform:translate(-50%,-50%) rotate(45deg);}
+  .vvchk:indeterminate{background:#fff;border-color:var(--wine);}
+  .vvchk:indeterminate::after{content:"";position:absolute;left:50%;top:50%;width:11px;height:3px;
+    background:var(--wine);border:0;transform:translate(-50%,-50%);}
   .vvbadge{display:none;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;
     border-radius:11px;background:#C0394B;color:#fff;font-size:12px;font-weight:800;line-height:1;
     font-family:Arial,sans-serif;cursor:pointer;}
@@ -1280,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.93";
+const APP_VERSION="2026-08-12.94";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3859,22 +3869,55 @@ function ncCalc(){
 }
 
 /* -- أوامر الشراء -- */
+/* فلتر متعدّد الاختيار على التسليم والدفع — يبقى فعّال لين تمسحه */
+function poF(){ const f=window._poF; if(!f||typeof f!=="object"){ window._poF={dlv:[],pay:[]}; }
+  window._poF.dlv=window._poF.dlv||[]; window._poF.pay=window._poF.pay||[]; return window._poF; }
+function poFCount(){ const f=poF(); return f.dlv.length+f.pay.length; }
+function poFPass(x){ const f=poF();
+  if(f.dlv.length && f.dlv.indexOf(poDlvKey(x))<0) return false;
+  if(f.pay.length && f.pay.indexOf(poPayKey(x))<0) return false;
+  return true; }
+function poFilterSheet(){
+  const f=poF();
+  const pool=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
+  const row=(kind,list,cur)=>`<div class="pillrow" id="pf_${kind}">${list.map(([k,ar,en])=>{
+      const n=pool.filter(x=>(kind==="dlv"?poDlvKey(x):poPayKey(x))===k).length;
+      return `<span class="pill ${cur.indexOf(k)>=0?"on":""}" data-k="${k}" onclick="this.classList.toggle('on')">${isAr()?ar:en} (${n})</span>`;
+    }).join("")}</div>`;
+  openSheet(`<div class="title">${isAr()?"فلتر أوامر الشراء":"Filter orders"}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"تقدر تختار أكثر من حالة. بلا اختيار = الكل.":"Multi-select. None = all."}</div>
+    <label>${isAr()?"حالة التسليم":"Delivery"}</label>
+    ${row("dlv",DLV_KEYS,f.dlv)}
+    <label style="margin-top:10px">${isAr()?"حالة الدفع":"Payment"}</label>
+    ${row("pay",PAY_KEYS,f.pay)}
+    <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="poFApply()">${isAr()?"طبّق":"Apply"}</button>
+    <button class="btn btn-ghost btn-big" onclick="poFClear()">${isAr()?"امسح الفلتر":"Clear"}</button>`);
+}
+function poFApply(){
+  const get=(id)=>[...document.querySelectorAll("#"+id+" .pill.on")].map(x=>x.dataset.k);
+  window._poF={dlv:get("pf_dlv"), pay:get("pf_pay")};
+  closeSheet(); render();
+}
+function poFClear(){ window._poF={dlv:[],pay:[]}; closeSheet(); render(); }
 function chPurch(){
-  const all=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
+  const all=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel).filter(poFPass);
   const _pf=window._poFilter||"all";
   const arr = _pf==="all"? all : all.filter(x=>(x.stage||"sample")===_pf);
   const nS=all.filter(x=>(x.stage||"sample")==="sample").length, nP=all.filter(x=>(x.stage||"sample")==="production").length,
         nR=all.filter(poIsReady).length;
   const _pw=(v)=>_pf===v?'background:var(--wine);color:#fff;border-color:var(--wine)':'';
+  const _fn=poFCount();
   const pills=`<div class="pillrow" style="margin-bottom:10px">
       <button class="btn btn-ghost" style="padding:5px 12px;${_pw("all")}" onclick="window._poFilter='all';render()">${isAr()?"الكل":"All"} (${all.length})</button>
       <button class="btn btn-ghost" style="padding:5px 12px;${_pw("sample")}" onclick="window._poFilter='sample';render()">${isAr()?"عينات":"Samples"} (${nS})</button>
       <button class="btn btn-ghost" style="padding:5px 12px;${_pw("production")}" onclick="window._poFilter='production';render()">${isAr()?"إنتاج":"Production"} (${nP})</button>
       ${nR?`<button class="btn btn-ghost" style="padding:5px 12px;${_pw("ready")}" onclick="window._poFilter='ready';render()">${isAr()?"جاهز":"Ready"} (${nR})</button>`:""}
+      <button class="btn btn-ghost" style="padding:5px 12px;${_fn?'background:var(--ink);color:#fff;border-color:var(--ink)':''}" onclick="poFilterSheet()">⛃ ${isAr()?"فلتر":"Filter"}${_fn?` (${_fn})`:""}</button>
+      ${_fn?`<button class="btn btn-ghost" style="padding:5px 10px;color:var(--wine)" onclick="poFClear()">✕</button>`:""}
     </div>`;
-  if(!all.length){ el("chBody").innerHTML=`<div class="empty">${isAr()?"ما في أوامر شراء بعد":"No purchase orders yet"}</div>
+  if(!all.length){ el("chBody").innerHTML=(poFCount()?pills:"")+`<div class="empty">${poFCount()?(isAr()?"ما في أوامر تطابق الفلتر":"Nothing matches the filter"):(isAr()?"ما في أوامر شراء بعد":"No purchase orders yet")}</div>
     <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
-  if(!arr.length){ el("chBody").innerHTML=pills+`<div class="empty">${isAr()?"ما في أوامر بهذي المرحلة":"None in this stage"}</div>
+  if(!arr.length){ el("chBody").innerHTML=pills+`<div class="empty">${poFCount()?(isAr()?"ما في أوامر تطابق الفلتر":"Nothing matches the filter"):(isAr()?"ما في أوامر بهذي المرحلة":"None in this stage")}</div>
     <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
   const groups={};
   arr.forEach(po=>{ const k=po.supplier_id||("name:"+(po.supplier_name||"—"));
@@ -5010,64 +5053,112 @@ function poPhotos(po){
   const bySku=(DB.samples||[]).find(x=>x.id===po.material_id);
   return (bySku && (bySku.photos||[]).length)? bySku.photos.filter(Boolean) : [];
 }
+/* حالة التسليم والدفع — مفاتيح موحّدة يستخدمها الفلتر في كل مكان */
+const DLV_KEYS=[["ordered","لم يُرسل","Not sent"],["sent","أُرسل","Sent"],["ready","جاهز للاستلام","Ready"],["received","استُلم","Received"]];
+const PAY_KEYS=[["unpaid","غير مدفوع","Unpaid"],["partial","مدفوع جزئي","Partial"],["paid","مدفوع بالكامل","Paid"]];
+function poDlvKey(po){ const d=(po&&po.deliver_status)||"ordered"; return d==="planned"?"ordered":d; }
+function poDlvLabel(k){ const f=DLV_KEYS.find(x=>x[0]===k); return f?(isAr()?f[1]:f[2]):k; }
+function poPayKey(po){ const t=poDealTotals(po);
+  if(!(t.total>0)) return t.paid>0.001?"paid":"unpaid";
+  if(t.paid<=0.001) return "unpaid";
+  return (t.paid>=t.total-0.001)?"paid":"partial"; }
+function poPayLabel(k){ const f=PAY_KEYS.find(x=>x[0]===k); return f?(isAr()?f[1]:f[2]):k; }
+
 /* اختيار البنود قبل الطباعة — ما كل مرة تبي كل شي */
+function prPool(){ return (DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel); }
+function prVisible(){
+  const d=window._prDlv;
+  const pool=prPool();
+  return (d && d.length)? pool.filter(po=>d.indexOf(poDlvKey(po))>=0) : pool;
+}
 function purchaseReq(){
-  const pos=(DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel);
+  const pos=prPool();
   if(!pos.length) return alert(isAr()?"ما في أوامر شراء لهذه القناة":"No purchase orders");
-  if(!(window._prSel instanceof Set) || !window._prSelCh || window._prSelCh!==chChannel){
-    window._prSel=new Set(pos.map(p=>p.id)); window._prSelCh=chChannel;
-  }
+  if(!Array.isArray(window._prDlv) || window._prSelCh!==chChannel){ window._prDlv=[]; window._prSelCh=chChannel; }
+  window._prSel=new Set(prVisible().map(p=>p.id));
+  prSheet();
+}
+function prSheet(){
+  const vis=prVisible();
   const gs={};
-  pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—";
+  vis.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—";
     (gs[k]=gs[k]||{name:supNameOf(po), rows:[]}).rows.push(po); });
   const stgChip=(po)=> poIsReady(po)? `<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span>`
     : poIsSample(po)? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
     : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"prod"}</span>`;
+  const cnt=(k)=>prPool().filter(po=>poDlvKey(po)===k).length;
   openSheet(`<div class="title">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}</div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
-      ?"اختر البنود اللي تبيها تطلع بالورقة."
-      :"Pick the items to include."}</div>
-    <div class="pillrow" style="margin-bottom:8px">
-      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prAll(true)">${isAr()?"اختر الكل":"All"}</button>
-      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prAll(false)">${isAr()?"ولا واحد":"None"}</button>
-      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prOnly('unreceived')">${isAr()?"اللي ما استلمته":"Not received"}</button>
-    </div>
-    <div id="prList">${Object.values(gs).map(g=>`
-      <div class="sechead" style="font-size:13px;display:flex;align-items:center;gap:8px">
-        <span style="flex:1">${esc(g.name)}</span>
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:2px 9px;font-size:11px" onclick="prGroup('${esc(encodeURIComponent(g.rows.map(r=>r.id).join(",")))}')">${isAr()?"قلب":"toggle"}</button>
-      </div>
+    <label>${isAr()?"حالة التسليم":"Delivery status"}</label>
+    <div class="pillrow" id="prDlv">${DLV_KEYS.map(([k])=>{ const n=cnt(k); if(!n) return "";
+      const on=(window._prDlv||[]).indexOf(k)>=0;
+      return `<span class="pill ${on?"on":""}" data-k="${k}" onclick="prDlvToggle('${k}')">${poDlvLabel(k)} (${n})</span>`;}).join("")}</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"بلا اختيار = الكل. اختيارك يحدّد اللي ينعرض ويتأشّر.":"None = all."}</div>
+
+    <label class="lineitem" style="cursor:pointer;font-weight:800;margin-top:10px;align-items:center">
+      <input type="checkbox" class="vvchk sq" id="prAllChk" onchange="prAll(this.checked)">
+      <span style="flex:1;padding-inline-start:10px">${isAr()?"اختر الكل":"Select all"}</span>
+      <span id="prCount" style="font-weight:800">0</span>
+    </label>
+
+    <div id="prList">${Object.entries(gs).map(([gk,g])=>{
+      const ids=g.rows.map(r=>r.id);
+      return `<label class="lineitem" style="cursor:pointer;align-items:center;background:var(--paper);border-radius:8px;padding:7px 8px;margin-top:8px">
+        <input type="checkbox" class="vvchk sq prGrp" data-ids="${esc(ids.join(","))}" onchange="prGroup(this)">
+        <b style="flex:1;padding-inline-start:10px;font-size:13px">${esc(g.name)}</b>
+        <span class="muted" style="font-size:11px">${g.rows.length}</span>
+      </label>
       ${g.rows.map(po=>{ const q=poQtyUnit(po); const n=poPhotos(po).length;
-        return `<label class="lineitem" style="cursor:pointer;align-items:center">
-          <input type="checkbox" class="prChk" data-id="${po.id}" ${window._prSel.has(po.id)?"checked":""}
-            onchange="prToggle('${po.id}',this.checked)" style="width:20px;height:20px;flex:none">
-          <div style="flex:1;min-width:0;padding-inline-start:8px">
+        return `<label class="lineitem" style="cursor:pointer;align-items:center;padding-inline-start:16px">
+          <input type="checkbox" class="vvchk prChk" data-id="${po.id}" ${window._prSel.has(po.id)?"checked":""}
+            onchange="prToggle('${po.id}',this.checked)">
+          <div style="flex:1;min-width:0;padding-inline-start:10px">
             <b style="font-size:13px">${esc(po.fabric_name||"—")}</b> ${stgChip(po)}
+            <span class="chip" style="font-size:10px">${poDlvLabel(poDlvKey(po))}</span>
             <div class="muted" style="font-size:12px">${fmtN(q.qty)} ${unitAr(q.unit)}${po.unit_price?` · ${po.unit_price} ${esc(po.currency||"")}`:""}${n?` · ${n} ${isAr()?"صورة":"photos"}`:` · <span style="color:var(--wine)">${isAr()?"بلا صورة":"no photo"}</span>`}</div>
-          </div></label>`;}).join("")}`).join("")}</div>
-    <div class="lineitem" style="font-weight:800"><div>${isAr()?"المختار":"Selected"}</div><div id="prCount">${window._prSel.size}</div></div>
+          </div></label>`;}).join("")}`;}).join("")
+      || `<div class="empty">${isAr()?"ما فيه بنود بهذي الحالة":"None in this status"}</div>`}</div>
     <button class="btn btn-ink btn-big" onclick="purchaseReqPrint()">${I.print} ${isAr()?"اعرض الورقة":"Build sheet"}</button>`);
+  prPaint();
 }
-function prToggle(id,on){ if(on) window._prSel.add(id); else window._prSel.delete(id); const c=el("prCount"); if(c) c.textContent=window._prSel.size; }
-function prAll(on){
-  document.querySelectorAll("#prList .prChk").forEach(c=>{ c.checked=on; prToggle(c.dataset.id,on); });
+function prDlvToggle(k){
+  const a=window._prDlv||[];
+  window._prDlv = a.indexOf(k)>=0? a.filter(x=>x!==k) : [...a,k];
+  window._prSel=new Set(prVisible().map(p=>p.id));
+  prSheet();
 }
-function prGroup(idsEnc){
-  const ids=decodeURIComponent(idsEnc).split(",").filter(Boolean);
-  const anyOff=ids.some(i=>!window._prSel.has(i));
-  ids.forEach(i=>{ const c=document.querySelector(`#prList .prChk[data-id="${i}"]`); if(c){ c.checked=anyOff; prToggle(i,anyOff); } });
-}
-function prOnly(mode){
-  document.querySelectorAll("#prList .prChk").forEach(c=>{
-    const po=(DB.purchases||[]).find(x=>x.id===c.dataset.id);
-    const on = mode==="unreceived"? !(po&&po.received_at) : true;
-    c.checked=on; prToggle(c.dataset.id,on);
+/* الرأس والمجموعات تعكس حالة أبنائها: كل / بعض / ولا واحد */
+function prPaint(){
+  const c=el("prCount"); if(c) c.textContent=window._prSel.size;
+  document.querySelectorAll("#prList .prGrp").forEach(g=>{
+    const ids=(g.dataset.ids||"").split(",").filter(Boolean);
+    const on=ids.filter(i=>window._prSel.has(i)).length;
+    g.checked = on>0 && on===ids.length;
+    g.indeterminate = on>0 && on<ids.length;
   });
+  const all=el("prAllChk");
+  if(all){ const vis=prVisible().map(p=>p.id);
+    const on=vis.filter(i=>window._prSel.has(i)).length;
+    all.checked = on>0 && on===vis.length;
+    all.indeterminate = on>0 && on<vis.length; }
+}
+function prToggle(id,on){ if(on) window._prSel.add(id); else window._prSel.delete(id); prPaint(); }
+function prAll(on){
+  document.querySelectorAll("#prList .prChk").forEach(c=>{ c.checked=on;
+    if(on) window._prSel.add(c.dataset.id); else window._prSel.delete(c.dataset.id); });
+  prPaint();
+}
+function prGroup(box){
+  const ids=(box.dataset.ids||"").split(",").filter(Boolean);
+  const on=!!box.checked;
+  ids.forEach(i=>{ const c=document.querySelector(`#prList .prChk[data-id="${i}"]`);
+    if(c) c.checked=on;
+    if(on) window._prSel.add(i); else window._prSel.delete(i); });
+  prPaint();
 }
 function purchaseReqPrint(){
   const isChina=chChannel==="china";
   const sel=window._prSel||new Set();
-  const pos=(DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel && sel.has(po.id));
+  const pos=prVisible().filter(po=>sel.has(po.id));
   if(!pos.length) return alert(isAr()?"ما اخترت أي بند":"Nothing selected");
   const H=(en,ar,zh)=> isChina? `${en} / ${zh}` : `${ar} / ${en}`;
   const uLbl=(u)=> isChina? manUnit(u,"en") : unitAr(u);
