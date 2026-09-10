@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.87:APPV-->
+<!--APPV:2026-08-12.88:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -487,6 +487,14 @@ function readyItems(cid){
 }
 function ready_(id){ return (DB.samples||[]).find(x=>x.id===id && isReadySmp(x))||null; }
 function csvList(v){ return String(v||"").split(/[,\u060C]/).map(x=>x.trim()).filter(Boolean); }
+/* قراءة الكارت ترجّع أحياناً أكثر من رقم — نطبعها نص نظيف مو مصفوفة خام */
+function phoneStr(v){
+  if(v==null) return "";
+  if(Array.isArray(v)) return v.filter(Boolean).join(" · ");
+  const t=String(v).trim();
+  if(t.charAt(0)==="["){ try{ const a=JSON.parse(t); if(Array.isArray(a)) return a.filter(Boolean).join(" · "); }catch(e){} }
+  return t;
+}
 const RDY_AUD   = [["kids","أطفال","Kids"],["adults","كبار","Adults"]];
 const RDY_TYPES = [["clothing","ملابس","Clothing"],["shoes","حذاء","Shoes"],["bag","حقيبة","Bag"],["accessory","إكسسوار","Accessory"]];
 const SZ_KIDS   = ["1","2","3","4","5","6","7","8","9","10","11","12"];
@@ -1249,7 +1257,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.87";
+const APP_VERSION="2026-08-12.88";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -3017,7 +3025,7 @@ async function ensurePotentialSupplier(row, extra){
     row.supplier_id=found.id;
     /* إثراء المورد الموجود بأي بيانات ناقصة من الكارت */
     const patch={}; const setIf=(k,v)=>{ if(v && !found[k]) patch[k]=v; };
-    setIf("shop_no",row.shop_no||cf.shop_no); setIf("phone",cf.phone); setIf("wechat",cf.wechat);
+    setIf("shop_no",row.shop_no||cf.shop_no); setIf("phone",phoneStr(cf.phone)); setIf("wechat",cf.wechat);
     setIf("market",cf.market); setIf("floor",extra.floor||cf.floor); setIf("contact_person",cf.contact_person); setIf("city",cf.city);
     setIf("plaza",extra.plaza); setIf("wechat_qr",extra.wechat_qr);
     if(extra.kind && (found.kind||"fabric")==="fabric" && extra.kind!=="fabric") patch.kind=extra.kind;
@@ -3026,7 +3034,7 @@ async function ensurePotentialSupplier(row, extra){
     return;
   }
   const sup={id:newId(), channel:row.channel, kind:extra.kind||"fabric", name:nm, shop_no:row.shop_no||cf.shop_no||null, status:"potential",
-    phone:cf.phone||null, wechat:cf.wechat||null, market:cf.market||null,
+    phone:phoneStr(cf.phone)||null, wechat:cf.wechat||null, market:cf.market||null,
     plaza:extra.plaza||null, floor:extra.floor||cf.floor||null, wechat_qr:extra.wechat_qr||null,
     contact_person:cf.contact_person||null, city:cf.city||null,
     card_photos:cards};
@@ -3460,7 +3468,7 @@ function supDetail(id){
     ${row(isAr()?"المجمع":"Mall", x.plaza)}
     ${row(isAr()?"الدور":"Floor", x.floor)}
     ${row(isAr()?"المدينة":"City", x.city)}
-    ${row(isAr()?"تلفون":"Phone", x.phone)}
+    ${row(isAr()?"تلفون":"Phone", phoneStr(x.phone))}
     ${row("WeChat", x.wechat)}
     ${row(isAr()?"اسم الموظف":"Staff", x.contact_person)}
     ${x.wechat_qr?`<div class="lineitem"><div class="muted" style="font-size:12px">${isAr()?"كود وي تشات":"WeChat QR"}</div><img src="${esc(x.wechat_qr)}" style="width:96px;height:96px;border-radius:8px" onclick="viewImg('${esc(x.wechat_qr)}')"></div>`:""}
@@ -3581,7 +3589,7 @@ async function supReadCard(){
 function viewSupplierCard(id){ const sp=(DB.suppliers||[]).find(x=>x.id===id); if(sp&&sp.card_photos&&sp.card_photos.length) viewGallery(sp.card_photos,0); }
 async function supSave(){
   const row={kind:el("sup_kind").value, name:el("sup_name").value||null, shop_no:el("sup_shop").value||null,
-    market:el("sup_market").value||null, city:el("sup_city").value||null, phone:el("sup_phone").value||null,
+    market:el("sup_market").value||null, city:el("sup_city").value||null, phone:phoneStr(el("sup_phone").value)||null,
     wechat:el("sup_wechat").value||null, notes:el("sup_notes").value||null,
     plaza:el("sup_plaza")?el("sup_plaza").value||null:null, floor:el("sup_floor")?el("sup_floor").value||null:null,
     contact_person:el("sup_person")?el("sup_person").value||null:null,
@@ -3738,7 +3746,7 @@ function chPurch(){
   el("chBody").innerHTML = pills + Object.values(groups).map(g=>{
     const sup=g.sup||{}; const nm=(g.sup&&g.sup.name)||g.name||"—";
     const dinfo=supDueInfo(g.rows); const cur=dinfo.cur; const _sp=supPaid(g.key,cur); const paid=_sp.paid; const rem=Math.max(0,dinfo.total-paid);
-    const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(String(sup.phone)):""].filter(Boolean).join(" · ");
+    const contact=[sup.shop_no?`${isAr()?"محل":"shop"} ${esc(sup.shop_no)}`:"", sup.plaza?esc(sup.plaza):"", sup.wechat?`WeChat: ${esc(sup.wechat)}`:"", sup.phone?esc(phoneStr(sup.phone)):""].filter(Boolean).join(" · ");
     const _po=purIsOpen(g.key);
     return `<div class="card" style="padding:14px 12px;background:var(--soft)">
       <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="purToggleOpen('${encodeURIComponent(g.key)}')">
@@ -3942,7 +3950,25 @@ async function readyPOSave(id){
     unit_price:parseFloat(toAsciiDigits(el("rp_price").value))||0, currency:el("rp_cur").value};
   const res=await sb.from("purchases").update(patch).eq("id",id);
   if(res && res.error && !/queued/i.test(res.error.message||"")) return alert(res.error.message);
-  Object.assign(x,patch); cacheDB(); closeSheet(); render();
+  Object.assign(x,patch); cacheDB();
+  /* السعر ينزل على المنتج الجاهز وعلى قطعته في دفتر العينات — سعر واحد بكل مكان */
+  let note="";
+  if(x.product_id && patch.unit_price!=null){
+    const pr=(DB.products||[]).find(z=>z.id===x.product_id);
+    if(pr && (Number(pr.cost)!==patch.unit_price || pr.cost_currency!==patch.currency)){
+      const pp={cost:patch.unit_price, cost_currency:patch.currency};
+      await sb.from("products").update(pp).eq("id",pr.id); Object.assign(pr,pp);
+      note=isAr()?`\n\nونزل السعر على المنتج «${pname(pr)}».`:"";
+      if(pr.ready_id){ const rd=ready_(pr.ready_id);
+        if(rd){ const rp={price:patch.unit_price, currency:patch.currency};
+          await sb.from("trip_samples").update(rp).eq("id",rd.id); Object.assign(rd,rp);
+          note+=isAr()?"\nوعلى قطعته في دفتر العينات.":""; } }
+      cacheDB();
+    }
+  }
+  await logIt("edit","purchases",id, `${patch.buy_qty} ${patch.buy_unit} · ${patch.unit_price}`);
+  closeSheet(); render();
+  if(note) toast(isAr()?"انحفظ."+note:"Saved.", 6000);
 }
 /* الاستلام: توزيعة الطلب تنفكّ حركات مخزون لكل مقاس ولون */
 function readyReceive(id){
@@ -4228,25 +4254,93 @@ async function poPaySupDel(id, gidEnc){
   await sb.from("supplier_payments").delete().eq("id",id);
   DB.supplier_payments=(DB.supplier_payments||[]).filter(x=>x.id!==id); cacheDB(); render(); closeSheet(); poPaySup(gidEnc);
 }
+/* العينة المربوطة بأمر الشراء — بالمعرّف أو بالخام اللي هو نفسه عينة */
+function poSampleOf(po){
+  if(!po) return null;
+  if(po.sample_id){ const s=(DB.samples||[]).find(x=>x.id===po.sample_id && !isReadySmp(x)); if(s) return s; }
+  if(po.material_id){ const s=(DB.samples||[]).find(x=>x.id===po.material_id && !isReadySmp(x)); if(s) return s; }
+  return null;
+}
+/* تحويل سعر وحدة الشراء إلى وحدة تسعير العينة */
+function priceToSampleUnit(price, buyUnit, smp){
+  const to=samplePrice(smp).unit || (smpByCount(smp)?"count":"meter");
+  let p=Number(price); if(!isFinite(p)) return null;
+  if(buyUnit==="yard" && to==="meter") p=p/YARD;
+  else if(buyUnit==="meter" && to==="yard") p=p*YARD;
+  else if(buyUnit!==to && !(buyUnit==="count"&&to==="count")) return null;   /* وحدات ما تتقارن */
+  if((smp.kind||"")==="accessory"){ const per=Number(smp.per_count)||1; p=p*per; }  /* السعر مسجّل للدرزن */
+  return Math.round(p*10000)/10000;
+}
 function poEditQty(id){
   const x=(DB.purchases||[]).find(pp=>pp.id===id); if(!x) return;
   const q=poQtyUnit(x);
+  const smp=poSampleOf(x);
+  const mat=x.material_id? (DB.materials||[]).find(m=>m.id===x.material_id) : null;
+  const linkTo=[smp?(isAr()?"العينة":"sample"):"", (mat||smp)?(isAr()?"سعر الخام":"material price"):""].filter(Boolean).join(" + ");
   openSheet(`<div class="title">${isAr()?"تعديل الكمية والسعر":"Edit qty & price"} — ${esc(x.fabric_name||"")}</div>
     <div class="muted" style="font-size:12px">${isAr()?"عدّل لو المورد سلّم كمية مختلفة أو تغيّر السعر (يعدّل المبلغ المستحق).":"Adjust if delivered qty or price changed."}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
       <div><label>${isAr()?"الكمية":"Qty"} (${unitAr(q.unit)})</label><input id="eq_qty" inputmode="decimal" value="${q.qty}"></div>
       <div><label>${isAr()?"سعر الوحدة":"Unit price"} (${esc(x.currency||"KWD")})</label><input id="eq_price" inputmode="decimal" value="${x.unit_price||0}"></div>
     </div>
+    ${(smp||mat)?`<div class="extbar on" id="eqSyncBar" style="margin-top:10px">
+      <label class="sw"><input type="checkbox" id="eq_sync" checked onchange="el('eqSyncBar').classList.toggle('on',this.checked)"><span class="track"><span class="knob"></span></span></label>
+      <div style="flex:1"><b>${isAr()?"نزّل السعر على "+linkTo:"Push price to "+linkTo}</b>
+        <div class="muted" style="font-size:11px">${isAr()
+          ?"عشان دفتر العينات وحسبة الإنتاج يمشون على نفس السعر — مو سعرين."
+          :"Keeps the samples book and costing on one price."}</div></div>
+    </div>`:`<div class="muted" style="font-size:11px;margin-top:8px">${isAr()
+      ?"هذا الأمر مو مربوط بعينة ولا خام مسجّل — التعديل يبقى على الأمر بس."
+      :"Not linked to a sample — the edit stays on this order."}</div>`}
+    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()
+      ?"الكمية تبقى على هذا الأمر وحده — لأنها تشمل الزيادة والتقريب، والكمية المخططة في التصميم ما تتغير."
+      :"Quantity stays on this order only."}</div>
     <button class="btn btn-ink btn-big" onclick="poEditQtySave('${id}')">${t("save")}</button>`);
 }
 async function poEditQtySave(id){
   const x=(DB.purchases||[]).find(pp=>pp.id===id); if(!x) return;
-  const qty=parseFloat(el("eq_qty").value)||0; const price=parseFloat(el("eq_price").value);
+  const qty=parseFloat(toAsciiDigits(el("eq_qty").value))||0;
+  const price=parseFloat(toAsciiDigits(el("eq_price").value));
   const upd={unit_price:isNaN(price)?x.unit_price:price};
-  if((x.buy_unit||"")==="count"){ upd.buy_qty=qty; upd.plan_qty=qty; } else { upd.buy_qty=qty; upd.qty_yd=qty; }
+  if((x.buy_unit||"")==="count"){ upd.buy_qty=qty; upd.plan_qty=qty; }
+  else if((x.buy_unit||"")==="carton"){ upd.buy_qty=qty; const p=product(x.product_id); upd.plan_qty=qty*(packOf(p)||1); }
+  else { upd.buy_qty=qty; upd.qty_yd=qty; }
   upd.qty_manual=true;   /* عدّلتها بيدك — ما نرجع نطابقها مع الخطة تلقائياً */
   await sb.from("purchases").update(upd).eq("id",id);
-  Object.assign(x,upd); cacheDB(); closeSheet(); render();
+  Object.assign(x,upd); cacheDB();
+  /* السعر ينزل على العينة والخام — عشان ما يصير سعرين لنفس البند */
+  let note="";
+  const sync=!!(el("eq_sync")&&el("eq_sync").checked);
+  if(sync && !isNaN(price)){
+    const smp=poSampleOf(x);
+    if(smp){
+      const np=priceToSampleUnit(price, x.buy_unit||"meter", smp);
+      if(np!=null && Number(smp.price)!==np){
+        const pt={price:np, currency:x.currency||smp.currency};
+        await sb.from("trip_samples").update(pt).eq("id",smp.id);
+        Object.assign(smp,pt);
+        note=isAr()?`\n\nونزل السعر على العينة «${smp.fabric_type||""}».`:"";
+        try{ await syncSamplePrice(smp); }catch(e){}
+      }
+    }
+    const mat=x.material_id? (DB.materials||[]).find(m=>m.id===x.material_id) : null;
+    if(mat){
+      const from=x.buy_unit||"meter";
+      let mp=price, to=matPriceUnit(mat);
+      if(from==="yard" && to==="meter") mp=price/YARD;
+      else if(from==="meter" && to==="yard") mp=price*YARD;
+      mp=Math.round(mp*10000)/10000;
+      if(Number(mat.price)!==mp){
+        await sb.from("materials").update({price:mp, price_unit:to}).eq("id",mat.id);
+        mat.price=mp; mat.price_unit=to;
+        note+=isAr()?`\nوسعر الخام «${mat.name||""}» صار ${mp} لكل ${unitAr(to)}.`:"";
+      }
+    }
+    cacheDB();
+  }
+  await logIt("edit","purchases",id, `${qty} · ${isNaN(price)?"":price}${sync?" (sync)":""}`);
+  closeSheet(); render();
+  if(note) toast(isAr()?"انحفظ."+note:"Saved.", 6000);
 }
 
 async function poStatus(id,st){ await sb.from("purchases").update({status:st}).eq("id",id); const r=(DB.purchases||[]).find(x=>x.id===id); if(r)r.status=st; render(); }
@@ -4663,7 +4757,7 @@ async function poSend(gidEnc, lang){
   if(name) info.push(`<b style="font-size:15px">${esc(name)}</b>`);
   /* كل البيانات المتوفرة (عدا الملاحظات) عشان يسهل الوصول للمورد */
   const line2=[shopNo?`${L.shopno}: ${esc(shopNo)}`:"", sup.market?`${L.mkt}: ${esc(sup.market)}`:"", sup.plaza?`${L.mall}: ${esc(sup.plaza)}`:"", sup.floor?`${L.floor}: ${esc(sup.floor)}`:"", sup.city?`${L.city}: ${esc(sup.city)}`:""].filter(Boolean).join(" · ");
-  const line3=[sup.wechat?`${L.wechat}: ${esc(sup.wechat)}`:"", sup.phone?`${L.tel}: ${esc(String(sup.phone))}`:"", sup.contact_person?`${L.staff}: ${esc(sup.contact_person)}`:""].filter(Boolean).join(" · ");
+  const line3=[sup.wechat?`${L.wechat}: ${esc(sup.wechat)}`:"", sup.phone?`${L.tel}: ${esc(phoneStr(sup.phone))}`:"", sup.contact_person?`${L.staff}: ${esc(sup.contact_person)}`:""].filter(Boolean).join(" · ");
   const line4= sup.address? `${L.addr}: ${esc(sup.address)}` : "";
   const qrData = sup.wechat_qr? await imgToDataURI(sup.wechat_qr, 260) : null;
   const NL=String.fromCharCode(10);
@@ -4675,7 +4769,7 @@ async function poSend(gidEnc, lang){
     return `${i+1}) ${x.fabric_name||""} — ${q.qty} ${manUnit(q.unit,lang)}${x.plan_meters?` (${x.plan_meters}m)`:""}`; });
   const msg=`${L.po}`+NL+`${L.shop}: ${name||"—"}${shopNo?` (${shopNo})`:""}`+NL+`----------`+NL+tlines.join(NL);
   window._sendMsgText=msg;
-  const ph2=String(sup.phone||"").replace(/[^0-9]/g,"");
+  const ph2=phoneStr(sup.phone).split("·")[0].replace(/[^0-9]/g,"");
   const wa = ph2? `https://wa.me/${ph2}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
   const rowsHtml = (await Promise.all(rows.map(async(x)=>{
     const rdy=poIsReady(x); const pr=rdy?(product(x.product_id)||{}):null;
@@ -4771,10 +4865,73 @@ const FAB_GLOSSARY=[
 function fabTr(name){ const n=(name||"").trim(); if(!n) return null; const low=n.toLowerCase();
   for(const g of FAB_GLOSSARY){ if(g.ar.some(a=>n.indexOf(a)>=0) || (g.en&&low.indexOf(g.en.toLowerCase())>=0)) return g; }
   return null; }
+/* صور البند: عينته (وكل صورها) أو صور المنتج للجاهز */
+function poPhotos(po){
+  if(poIsReady(po)){ const pr=product(po.product_id)||{}; return (pr.images||[]).filter(Boolean); }
+  const smp=po.sample_id? (DB.samples||[]).find(x=>x.id===po.sample_id) : null;
+  if(smp && (smp.photos||[]).length) return smp.photos.filter(Boolean);
+  const bySku=(DB.samples||[]).find(x=>x.id===po.material_id);
+  return (bySku && (bySku.photos||[]).length)? bySku.photos.filter(Boolean) : [];
+}
+/* اختيار البنود قبل الطباعة — ما كل مرة تبي كل شي */
 function purchaseReq(){
-  const isChina=chChannel==="china";
   const pos=(DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel);
   if(!pos.length) return alert(isAr()?"ما في أوامر شراء لهذه القناة":"No purchase orders");
+  if(!(window._prSel instanceof Set) || !window._prSelCh || window._prSelCh!==chChannel){
+    window._prSel=new Set(pos.map(p=>p.id)); window._prSelCh=chChannel;
+  }
+  const gs={};
+  pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—";
+    (gs[k]=gs[k]||{name:po.supplier_name||"—", rows:[]}).rows.push(po); });
+  const stgChip=(po)=> poIsReady(po)? `<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span>`
+    : poIsSample(po)? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
+    : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"prod"}</span>`;
+  openSheet(`<div class="title">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
+      ?"اختر البنود اللي تبيها تطلع بالورقة."
+      :"Pick the items to include."}</div>
+    <div class="pillrow" style="margin-bottom:8px">
+      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prAll(true)">${isAr()?"اختر الكل":"All"}</button>
+      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prAll(false)">${isAr()?"ولا واحد":"None"}</button>
+      <button class="btn btn-ghost" style="padding:4px 12px;font-size:12px" onclick="prOnly('unreceived')">${isAr()?"اللي ما استلمته":"Not received"}</button>
+    </div>
+    <div id="prList">${Object.values(gs).map(g=>`
+      <div class="sechead" style="font-size:13px;display:flex;align-items:center;gap:8px">
+        <span style="flex:1">${esc(g.name)}</span>
+        <button type="button" class="btn btn-ghost" style="width:auto;padding:2px 9px;font-size:11px" onclick="prGroup('${esc(encodeURIComponent(g.rows.map(r=>r.id).join(",")))}')">${isAr()?"قلب":"toggle"}</button>
+      </div>
+      ${g.rows.map(po=>{ const q=poQtyUnit(po); const n=poPhotos(po).length;
+        return `<label class="lineitem" style="cursor:pointer;align-items:center">
+          <input type="checkbox" class="prChk" data-id="${po.id}" ${window._prSel.has(po.id)?"checked":""}
+            onchange="prToggle('${po.id}',this.checked)" style="width:20px;height:20px;flex:none">
+          <div style="flex:1;min-width:0;padding-inline-start:8px">
+            <b style="font-size:13px">${esc(po.fabric_name||"—")}</b> ${stgChip(po)}
+            <div class="muted" style="font-size:12px">${fmtN(q.qty)} ${unitAr(q.unit)}${po.unit_price?` · ${po.unit_price} ${esc(po.currency||"")}`:""}${n?` · ${n} ${isAr()?"صورة":"photos"}`:` · <span style="color:var(--wine)">${isAr()?"بلا صورة":"no photo"}</span>`}</div>
+          </div></label>`;}).join("")}`).join("")}</div>
+    <div class="lineitem" style="font-weight:800"><div>${isAr()?"المختار":"Selected"}</div><div id="prCount">${window._prSel.size}</div></div>
+    <button class="btn btn-ink btn-big" onclick="purchaseReqPrint()">${I.print} ${isAr()?"اعرض الورقة":"Build sheet"}</button>`);
+}
+function prToggle(id,on){ if(on) window._prSel.add(id); else window._prSel.delete(id); const c=el("prCount"); if(c) c.textContent=window._prSel.size; }
+function prAll(on){
+  document.querySelectorAll("#prList .prChk").forEach(c=>{ c.checked=on; prToggle(c.dataset.id,on); });
+}
+function prGroup(idsEnc){
+  const ids=decodeURIComponent(idsEnc).split(",").filter(Boolean);
+  const anyOff=ids.some(i=>!window._prSel.has(i));
+  ids.forEach(i=>{ const c=document.querySelector(`#prList .prChk[data-id="${i}"]`); if(c){ c.checked=anyOff; prToggle(i,anyOff); } });
+}
+function prOnly(mode){
+  document.querySelectorAll("#prList .prChk").forEach(c=>{
+    const po=(DB.purchases||[]).find(x=>x.id===c.dataset.id);
+    const on = mode==="unreceived"? !(po&&po.received_at) : true;
+    c.checked=on; prToggle(c.dataset.id,on);
+  });
+}
+function purchaseReqPrint(){
+  const isChina=chChannel==="china";
+  const sel=window._prSel||new Set();
+  const pos=(DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel && sel.has(po.id));
+  if(!pos.length) return alert(isAr()?"ما اخترت أي بند":"Nothing selected");
   const H=(en,ar,zh)=> isChina? `${en} / ${zh}` : `${ar} / ${en}`;
   const uLbl=(u)=> isChina? manUnit(u,"en") : unitAr(u);
   const groups={};
@@ -4783,10 +4940,9 @@ function purchaseReq(){
     groups[k].rows.push(po); });
   const cards=Object.values(groups).map(g=>{
     const su=g.sup||{};
-    const info=[su.shop_no?`${H("Shop","محل","店号")} ${esc(su.shop_no)}`:"", su.plaza?esc(su.plaza):"", su.floor?`${H("Floor","دور","楼层")} ${esc(su.floor)}`:"", su.wechat?("WeChat: "+esc(su.wechat)):"", su.phone?esc(String(su.phone)):""].filter(Boolean).join(" · ");
+    const info=[su.shop_no?`${H("Shop","محل","店号")} ${esc(su.shop_no)}`:"", su.plaza?esc(su.plaza):"", su.floor?`${H("Floor","دور","楼层")} ${esc(su.floor)}`:"", su.wechat?("WeChat: "+esc(su.wechat)):"", su.phone?esc(phoneStr(su.phone)):""].filter(Boolean).join(" · ");
     const rows=g.rows.map(po=>{
-      const smp=po.sample_id?(DB.samples||[]).find(x=>x.id===po.sample_id):null;
-      const ph=smp&&(smp.photos||[])[0];
+      const phs=poPhotos(po).slice(0,4);
       const q=poQtyUnit(po);
       const gl=fabTr(po.fabric_name);
       let itemHtml;
@@ -4794,9 +4950,13 @@ function purchaseReq(){
         itemHtml=`<b>${esc(en)}</b>${zh?` · <b>${esc(zh)}</b>`:""}${po.fabric_name&&(gl)?`<div style="color:#999;font-size:11px">${esc(po.fabric_name)}</div>`:""}`;
       } else { const ar=po.fabric_name||""; const en=gl?gl.en:"";
         itemHtml=`<b>${esc(ar)}</b>${en?`<div style="color:#666;font-size:12px">${esc(en)}</div>`:""}`; }
+      const phCell = phs.length
+        ? (phs.length===1
+            ? `<img crossorigin="anonymous" src="${esc(phs[0])}" style="width:104px;height:104px;object-fit:cover;border-radius:6px">`
+            : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;width:104px">${phs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:100%;height:50px;object-fit:cover;border-radius:5px">`).join("")}</div>`)
+        : "—";
       return `<tr>
-        <td style="width:66px;text-align:center">${ph?`<img crossorigin="anonymous" src="${esc(ph)}" style="width:58px;height:58px;object-fit:cover;border-radius:6px">`:"—"}</td>
-        <td style="width:120px;height:110px;background:#fafafa;border:1px dashed #c9c2b6;text-align:center;color:#b7b0a4;font-size:10px;vertical-align:middle">${H("swatch","قصاصة","样布")}</td>
+        <td style="width:112px;text-align:center">${phCell}</td>
         <td>${itemHtml}</td>
         <td style="text-align:center;font-weight:700;white-space:nowrap">${q.qty} ${uLbl(q.unit)}${po.plan_meters?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}</td>
         <td style="text-align:center;white-space:nowrap">${po.unit_price?`${po.unit_price} ${esc(po.currency||"")}`:""}</td>
@@ -4804,7 +4964,7 @@ function purchaseReq(){
     }).join("");
     return `<div style="margin-top:16px;page-break-inside:avoid">
       <div style="background:#1C1B1A;color:#fff;padding:8px 12px;border-radius:8px 8px 0 0;font-weight:700">${esc(su.name||"Supplier")}${info?`<div style="font-weight:400;font-size:12px;opacity:.85">${info}</div>`:""}</div>
-      <table><tr><th style="width:66px">${H("Photo","صورة","图片")}</th><th style="width:120px">${H("Swatch","القصاصة","样布")}</th><th>${H("Item","الصنف","品名")}</th><th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}</table>
+      <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th><th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}</table>
     </div>`;
   }).join("");
   const dir = isChina? "ltr" : "rtl";
