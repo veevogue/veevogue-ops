@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.90:APPV-->
+<!--APPV:2026-08-12.91:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -488,6 +488,11 @@ function readyItems(cid){
 function ready_(id){ return (DB.samples||[]).find(x=>x.id===id && isReadySmp(x))||null; }
 function csvList(v){ return String(v||"").split(/[,\u060C]/).map(x=>x.trim()).filter(Boolean); }
 /* قراءة الكارت ترجّع أحياناً أكثر من رقم — نطبعها نص نظيف مو مصفوفة خام */
+/* المورّد يُقرأ من سجله لحظة العرض — الاسم المحفوظ على العينة/الأمر احتياط
+   للمورّد اللي ما هو مسجّل. كذا أي تعديل على المورّد يبين فوراً بكل مكان. */
+function supOf(row){ return (row && row.supplier_id)? ((DB.suppliers||[]).find(s=>s.id===row.supplier_id)||null) : null; }
+function supNameOf(row){ const s=supOf(row); return (s&&s.name) || (row&&row.supplier_name) || "—"; }
+function supShopOf(row){ const s=supOf(row); return (s&&s.shop_no) || (row&&row.shop_no) || ""; }
 function phoneStr(v){
   if(v==null) return "";
   if(Array.isArray(v)) return v.filter(Boolean).join(" · ");
@@ -1257,7 +1262,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.90";
+const APP_VERSION="2026-08-12.91";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2164,9 +2169,16 @@ async function photoAudit(){
     if(!o.length) return isAr()?"غير معروف":"unknown";
     return [...new Set(o.map(x=>`${x.where}: ${x.name}`))].join(" · ");
   };
-  const box=(items,color)=>items.map(p=>`<div class="lineitem" style="padding:5px 0">
-      <div style="min-width:0"><b style="font-size:13px;color:${color}">${esc(label(p))}</b>
+  const pk=(p)=>encodeURIComponent(p);
+  const box=(items,color,mode)=>items.map(p=>`<div class="lineitem" style="padding:6px 0;align-items:center">
+      <div style="flex:1;min-width:0"><b style="font-size:13px;color:${color}">${esc(label(p))}</b>
         <div class="muted" style="font-size:10px;font-family:Arial;direction:ltr;text-align:left">${esc(p)}</div></div>
+      ${mode==="pend"
+        ? `<button type="button" class="btn btn-ok" style="width:auto;padding:4px 11px;font-size:12px" onclick="photoPushOne('${pk(p)}',this)">${isAr()?"ارفعها":"Upload"}</button>`
+        : `<label class="btn btn-line" style="width:auto;padding:4px 11px;font-size:12px;margin:0;cursor:pointer">
+             ${isAr()?"ارفق صورة":"Attach"}
+             <input type="file" accept="image/*" hidden onchange="photoReplace('${pk(p)}',this.files&&this.files[0],this)">
+           </label>`}
     </div>`).join("");
   openSheet(`<div class="title">${isAr()?"فحص الصور":"Photo check"}</div>
     <div class="note-box" style="${gone.length?"background:var(--wine-lt);color:var(--wine-dk)":"background:var(--green-lt);color:var(--green-dk)"}">
@@ -2175,12 +2187,61 @@ async function photoAudit(){
       ${(!gone.length&&!pend.length)?`<div style="margin-top:4px">✓ ${isAr()?"كل الصور سليمة":"all good"}</div>`:""}
     </div>
     ${pend.length?`<div class="sechead" style="font-size:11px">${isAr()?"معلّقة على الجهاز — تحتاج رفع":"PENDING UPLOAD"}</div>
-      ${box(pend,"#8a6d1f")}
-      <button class="btn btn-ink btn-big" onclick="closeSheet();syncPhotosNow()">${isAr()?"ارفعها الآن":"Upload now"}</button>`:""}
+      ${box(pend,"#8a6d1f","pend")}
+      <button class="btn btn-ink btn-big" onclick="closeSheet();syncPhotosNow()">${isAr()?"ارفعها كلها":"Upload all"}</button>`:""}
     ${gone.length?`<div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"مفقودة — الملف ما هو على السيرفر":"MISSING ON SERVER"}</div>
-      ${box(gone,"var(--wine-dk)")}
-      <div class="muted" style="font-size:12px;margin-top:6px">${isAr()?"هذي روابط لصور ما وصلت السيرفر. امسح الروابط عشان تختفي المربعات المكسورة، وأعد تصوير اللي تحتاجه.":"These links point to files that never reached the server."}</div>
+      ${box(gone,"var(--wine-dk)","gone")}
+      <div class="muted" style="font-size:12px;margin-top:6px">${isAr()
+        ?"نسخة هذي الصور راحت من الجهاز وما وصلت السيرفر. لو الصورة عندك في الاستوديو اضغط «ارفق صورة» — تنرفع بنفس الرابط فتتصلح في كل مكان مربوطة فيه دفعة وحدة. واللي ما لقيته امسح رابطه."
+        :"Attach the photo from your gallery — it uploads to the same link and fixes every place at once."}</div>
       <button class="btn btn-line btn-big" style="margin-top:6px" onclick="photoPurgeGone()">${I.trash} ${isAr()?`امسح الـ ${gone.length} رابط المكسور`:`Delete ${gone.length} broken links`}</button>`:""}`);
+}
+/* صورة معلّقة واحدة: نرفعها الحين بدل ما ننتظر الدفعة */
+async function photoPushOne(pEnc, btn){
+  const path=decodeURIComponent(pEnc||"");
+  if(!path) return;
+  if(!NETOK || !AUTHED || !sb) return alert(isAr()?"يحتاج إنترنت":"Needs internet");
+  const old=btn?btn.textContent:""; if(btn){ btn.disabled=true; btn.textContent="…"; }
+  let blob=null; try{ blob=await idbGet(path); }catch(e){}
+  if(!blob){ if(btn){btn.disabled=false;btn.textContent=old;}
+    return alert(isAr()?"النسخة راحت من الجهاز — استخدم «ارفق صورة» بدلها":"Local copy is gone — use Attach"); }
+  let error=null;
+  try{ ({error}=await sb.storage.from("files").upload(path, blob, {upsert:true, contentType:"image/jpeg"})); }
+  catch(e){ error=e; }
+  if(error && !/exists|duplicate/i.test(error.message||"")){
+    if(btn){btn.disabled=false;btn.textContent=old;}
+    return alert((isAr()?"ما انرفعت: ":"Upload failed: ")+(error.message||error));
+  }
+  await pendDrop(path);
+  await refreshPendCount();
+  toast(isAr()?"انرفعت ✓":"Uploaded ✓");
+  closeSheet(); photoAudit();
+}
+/* الصورة موجودة عندك بالاستوديو بس ما وصلت السيرفر:
+   نرفعها على نفس المسار — فكل رابط يشير لها يتصلح مرة وحدة. */
+async function photoReplace(pEnc, file, node){
+  const path=decodeURIComponent(pEnc||"");
+  if(!path || !file) return;
+  if(!NETOK || !AUTHED || !sb) return alert(isAr()?"يحتاج إنترنت":"Needs internet");
+  const lbl=node&&node.parentElement;
+  const txt=lbl?lbl.firstChild:null;
+  if(txt) txt.textContent="… ";
+  try{
+    const f=await compressImage(file, 1280, 0.72);
+    let error=null;
+    try{ ({error}=await sb.storage.from("files").upload(path, f, {upsert:true, contentType:"image/jpeg"})); }
+    catch(e){ error=e; }
+    if(error && !/exists|duplicate/i.test(error.message||"")) throw error;
+    /* شيلناها من سجل الضائعة ومن نسخ الجهاز — صارت على السيرفر */
+    try{ const a=lostGet().filter(z=>z!==path); localStorage.setItem(LOSTK, JSON.stringify(a)); }catch(e){}
+    await pendDrop(path);
+    await refreshPendCount();
+    toast(isAr()?"انرفعت وتصلّحت بكل مكان ✓":"Uploaded ✓");
+    closeSheet(); await refresh(); photoAudit();
+  }catch(e){
+    if(txt) txt.textContent=(isAr()?"ارفق صورة":"Attach")+" ";
+    alert((isAr()?"ما انرفعت: ":"Failed: ")+((e&&e.message)||e));
+  }
 }
 /* يمسح روابط الصور المفقودة اللي طلعت بآخر فحص */
 async function photoPurgeGone(){
@@ -2459,7 +2520,7 @@ function sampleCard(x){
       ${(()=>{ const _d=x.design_id?design_(x.design_id):null;
                const _ci=_d&&x.checklist_item_id?((_d.checklist||[]).find(c=>c.id===x.checklist_item_id)):null;
                return (_ci&&_ci.qty!=null)?`<div style="font-size:11px;color:var(--wine-dk);margin-top:1px">${isAr()?"المطلوب":"needed"}: <b>${esc(String(_ci.qty))} ${esc(_ci.unit||"متر")}</b></div>`:""; })()}
-      <div class="muted" style="font-size:12px;margin-top:1px">${esc(x.supplier_name||(isAr()?"—":"—"))}</div>
+      <div class="muted" style="font-size:12px;margin-top:1px">${esc(supNameOf(x))}</div>
       <div style="font-size:13px;margin-top:3px">${x.price!=null?`<b>${x.price} ${esc(x.currency||"CNY")}</b>/${perLbl}`:""}${kd!=null?`<div class="muted" style="font-size:11px">≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</div>`:""}</div>
       ${x.note?`<div class="muted" style="font-size:12px;margin-top:3px">📝 ${esc(x.note)}</div>`:""}
     </div>
@@ -3427,7 +3488,7 @@ function readyCard(x){
         <div class="title" style="font-size:15px">${esc(x.fabric_type||"—")} ${chip}
           <span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span></div>
         <div class="muted" style="font-size:12px">
-          ${x.sku?`<b style="font-family:Arial">${esc(x.sku)}</b> · `:""}${esc(x.supplier_name||"—")}${x.supplier_model?` · <span style="font-family:Arial">${esc(x.supplier_model)}</span>`:""}
+          ${x.sku?`<b style="font-family:Arial">${esc(x.sku)}</b> · `:""}${esc(supNameOf(x))}${x.supplier_model?` · <span style="font-family:Arial">${esc(x.supplier_model)}</span>`:""}
         </div>
         <div class="muted" style="font-size:12px">
           ${x.price!=null
@@ -3660,12 +3721,19 @@ async function supSave(){
     const prev=(DB.suppliers||[]).find(x=>x.id===window._supEdit)||{};
     ({error}=await sb.from("suppliers").update(row).eq("id",window._supEdit));
     const i=(DB.suppliers||[]).findIndex(x=>x.id===window._supEdit); if(i>=0) DB.suppliers[i]={...DB.suppliers[i],...row};
+    /* النسخ المحفوظة على العينات وأوامر الشراء والدفعات تتحدّث فوراً كمان،
+       عشان حتى التقارير القديمة والطباعة يمشون على نفس البيانات */
+    const id=window._supEdit;
     if(row.name && prev.name!==row.name){
-      /* الاسم يتغيّر فوراً في أوامر الشراء والعينات المربوطة بنفس المورد */
-      await sb.from("purchases").update({supplier_name:row.name}).eq("supplier_id",window._supEdit);
-      (DB.purchases||[]).forEach(p=>{ if(p.supplier_id===window._supEdit) p.supplier_name=row.name; });
-      await sb.from("trip_samples").update({supplier_name:row.name}).eq("supplier_id",window._supEdit);
-      (DB.samples||[]).forEach(sm=>{ if(sm.supplier_id===window._supEdit) sm.supplier_name=row.name; });
+      await sb.from("purchases").update({supplier_name:row.name}).eq("supplier_id",id);
+      (DB.purchases||[]).forEach(p=>{ if(p.supplier_id===id) p.supplier_name=row.name; });
+      await sb.from("supplier_payments").update({supplier_name:row.name}).eq("supplier_id",id);
+      (DB.supplier_payments||[]).forEach(p=>{ if(p.supplier_id===id) p.supplier_name=row.name; });
+    }
+    if((row.name && prev.name!==row.name) || (prev.shop_no||"")!==(row.shop_no||"")){
+      const patch={}; if(row.name) patch.supplier_name=row.name; patch.shop_no=row.shop_no||null;
+      await sb.from("trip_samples").update(patch).eq("supplier_id",id);
+      (DB.samples||[]).forEach(sm=>{ if(sm.supplier_id===id) Object.assign(sm,patch); });
     }
   } else { row.id=newId(); row.channel=chChannel; row.status="approved"; ({error}=await sb.from("suppliers").insert(row));
     if(!(DB.suppliers||[]).some(x=>x.id===row.id)) DB.suppliers.unshift(row); }
@@ -3798,7 +3866,7 @@ function chPurch(){
     <button class="btn btn-ink btn-big" onclick="poSheet()">＋ ${isAr()?"أمر شراء جديد":"New purchase order"}</button>`; return; }
   const groups={};
   arr.forEach(po=>{ const k=po.supplier_id||("name:"+(po.supplier_name||"—"));
-    if(!groups[k]) groups[k]={key:k, name:po.supplier_name||"—", sup:po.supplier_id?((DB.suppliers||[]).find(sp=>sp.id===po.supplier_id)||null):null, rows:[]};
+    if(!groups[k]) groups[k]={key:k, name:supNameOf(po), sup:supOf(po), rows:[]};
     groups[k].rows.push(po); });
   el("chBody").innerHTML = pills + Object.values(groups).map(g=>{
     const sup=g.sup||{}; const nm=(g.sup&&g.sup.name)||g.name||"—";
@@ -4471,14 +4539,14 @@ function tabFinance(){
   pos.forEach(po=>{ if(poIsSample(po)) return;
     const t=poTotals(po); mProd+=t.total;
     if(poIsReady(po)) mReady+=t.total; else mTailor+=t.total;
-    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].total+=t.total;
+    const sk=supNameOf(po); (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].total+=t.total;
     const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
   let mPaid=0, mProdPaid=0, mSmpPaid=0;
   (DB.supplier_payments||[]).forEach(pp=>{
     const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
     const smp=(pp.stage||"production")==="sample";
     if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
-    const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0});
+    const sk=supNameOf(pp); (bySup[sk]=bySup[sk]||{total:0,paid:0});
     bySup[sk].paid+=kk; if(smp) bySup[sk].total+=kk;
     const tk=pp.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); if(smp) byTrip[tk].pur+=kk;
   });
@@ -4605,7 +4673,7 @@ function chFin(){
   pos.forEach(po=>{ if(poIsSample(po)) return;
     const t=poTotals(po); mProd+=t.total;
     if(poIsReady(po)) mReady+=t.total; else mTailor+=t.total;
-    const sk=po.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0}); bySup[sk].total+=t.total;
+    const sk=supNameOf(po); (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0}); bySup[sk].total+=t.total;
     let dk = po.design_id? ((DB.designs||[]).find(d=>d.id===po.design_id)||{}).name : (po.product_id? pname(product(po.product_id)) : null);
     dk = dk || (isAr()?"غير مخصص":"unassigned"); (byDesign[dk]=byDesign[dk]||0); byDesign[dk]+=t.raw;
   });
@@ -4613,7 +4681,7 @@ function chFin(){
   pays.forEach(pp=>{ const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
     const smp=(pp.stage||"production")==="sample";
     if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
-    const sk=pp.supplier_name||"—"; (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0});
+    const sk=supNameOf(pp); (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0});
     bySup[sk].paid+=kk; if(smp) bySup[sk].total+=kk;
   });
   Object.values(bySup).forEach(v=>{ v.rem=Math.max(0,(v.total||0)-(v.paid||0)); });
@@ -4696,7 +4764,7 @@ function poPay(id){
   const po=(DB.purchases||[]).find(x=>x.id===id); if(!po) return;
   const t=poTotals(po); const log=Array.isArray(po.pay_log)?po.pay_log:[];
   window._payReceipt=null;
-  openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(po.supplier_name||po.fabric_name||"")}</div>
+  openSheet(`<div class="title">${isAr()?"الدفع":"Payment"} — ${esc(supNameOf(po)!=="—"?supNameOf(po):(po.fabric_name||""))}</div>
     <div class="note-box">${isAr()?"الإجمالي":"total"}: <b>${fmtKD(t.total)}</b> · ${isAr()?"مدفوع":"paid"}: ${fmtKD(t.paid)} · ${isAr()?"باقي":"due"}: <b style="color:var(--wine)">${fmtKD(t.remaining)}</b></div>
     ${log.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${log.map((pp,i)=>`<div class="lineitem"><div style="min-width:0"><b>${pp.amount} ${esc(pp.currency||"KWD")}</b> <span class="muted" style="font-size:12px">${esc(pp.date||"")}${pp.note?" · "+esc(pp.note):""}</span>${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div><button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="poPayDel('${id}',${i})">✕</button></div>`).join("")}`:""}
     <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة (عربون أو تسديد)":"NEW PAYMENT"}</div>
@@ -4939,7 +5007,7 @@ function purchaseReq(){
   }
   const gs={};
   pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—";
-    (gs[k]=gs[k]||{name:po.supplier_name||"—", rows:[]}).rows.push(po); });
+    (gs[k]=gs[k]||{name:supNameOf(po), rows:[]}).rows.push(po); });
   const stgChip=(po)=> poIsReady(po)? `<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"جاهز":"ready"}</span>`
     : poIsSample(po)? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
     : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"prod"}</span>`;
@@ -4993,7 +5061,7 @@ function purchaseReqPrint(){
   const uLbl=(u)=> isChina? manUnit(u,"en") : unitAr(u);
   const groups={};
   pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—"; (groups[k]=groups[k]||{sup:null,rows:[]});
-    groups[k].sup = (DB.suppliers||[]).find(s=>s.id===po.supplier_id) || {name:po.supplier_name};
+    groups[k].sup = supOf(po) || {name:po.supplier_name};
     groups[k].rows.push(po); });
   const cards=Object.values(groups).map(g=>{
     const su=g.sup||{};
@@ -6164,7 +6232,7 @@ function readyPickSheet(){
         ${ph?`<img class="thumb" src="${esc(ph)}" style="width:46px;height:46px">`:`<div class="thumb" style="width:46px;height:46px;display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.pack}</div>`}
         <div style="flex:1;min-width:0;padding-inline-start:8px">
           <b>${esc(x.fabric_type||"—")}</b> <span class="muted" style="font-family:Arial;font-size:11px">${esc(x.sku||"")}</span>
-          <div class="muted" style="font-size:12px">${itemTypeLabel(x.item_type)} · ${audLabel(x.audience)} · ${esc(x.supplier_name||"")}${x.price!=null?` · ${x.price} ${esc(x.currency||"")}${x.price_per==="carton"?(isAr()?"/كرتون":"/ctn"):""}`:""}${sizes.length?` · ${sizes.length} ${isAr()?"مقاس":"sizes"}`:""}</div>
+          <div class="muted" style="font-size:12px">${itemTypeLabel(x.item_type)} · ${audLabel(x.audience)} · ${esc(supNameOf(x))}${x.price!=null?` · ${x.price} ${esc(x.currency||"")}${x.price_per==="carton"?(isAr()?"/كرتون":"/ctn"):""}`:""}${sizes.length?` · ${sizes.length} ${isAr()?"مقاس":"sizes"}`:""}</div>
         </div><div class="muted" style="font-size:18px">←</div></div>`;}).join("")
       : `<div class="empty">${isAr()
           ? (taken? "كل القطع المعتمدة صارت منتجات." : "ما فيه قطع جاهزة معتمدة. سجّلها بدفتر العينات واعتمدها أول.")
@@ -6206,7 +6274,7 @@ function readyHistory(pid){
     ${pos.length? pos.map(x=>{
       const sl=Array.isArray(x.size_lines)?x.size_lines:[];
       return `<div class="card" style="padding:10px">
-        <div style="font-weight:700;font-size:13px">${esc(String(x.created_at||"").slice(0,10))} · ${esc(x.supplier_name||"")}</div>
+        <div style="font-weight:700;font-size:13px">${esc(String(x.created_at||"").slice(0,10))} · ${esc(supNameOf(x))}</div>
         <div style="font-size:13px">${fmtN(x.buy_qty||0)} ${unitAr(x.buy_unit||"count")} × ${x.unit_price||0} ${esc(x.currency||"")} = <b>${fmtN((x.buy_qty||0)*(x.unit_price||0))} ${esc(x.currency||"")}</b>${x.buy_unit==="carton"?` <span class="muted">(${fmtN(x.plan_qty||0)} ${isAr()?"حبة":"pcs"})</span>`:""}</div>
         ${sl.length?`<div class="muted" style="font-size:11px;margin-top:3px">${sl.map(r=>`${esc(r.size||"—")}${r.color?"/"+esc(r.color):""}: ${r.qty}`).join(" · ")}</div>`:""}
         <div class="muted" style="font-size:11px">${x.received_at?`📦 ${isAr()?"استُلم":"received"} ${esc(String(x.received_at).slice(0,10))}`:(isAr()?"ما استُلم بعد":"not received")}</div>
@@ -7243,7 +7311,7 @@ function checklistBlock(d){
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
           <b>${esc(x.name||"")}</b>
           <div class="muted" style="font-size:12px">${kindLbl}${x.qty?` · ${x.qty} ${esc(x.unit||"")}`:""}</div>
-          ${rep?`<div class="muted" style="font-size:11px">${esc(rep.supplier_name||"")}${rep.price!=null?` · ${rep.price} ${esc(rep.currency||"")}`:""}</div>`:`<div class="muted" style="font-size:11px">${isAr()?"لا عينة بعد":"no sample yet"}</div>`}
+          ${rep?`<div class="muted" style="font-size:11px">${esc(supNameOf(rep))}${rep.price!=null?` · ${rep.price} ${esc(rep.currency||"")}`:""}</div>`:`<div class="muted" style="font-size:11px">${isAr()?"لا عينة بعد":"no sample yet"}</div>`}
         </div>
         ${photos.length?`<div style="flex:2;min-width:0;position:relative"><img src="${esc(photos[0])}" onclick="viewSamplePhotos('${rep.id}')" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;cursor:zoom-in">${photos.length>1?`<span style="position:absolute;bottom:6px;inset-inline-end:6px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px">📷 ${photos.length}</span>`:""}</div>`
         :`<div style="flex:2;min-width:0;aspect-ratio:1/1;border-radius:12px;background:var(--soft);display:flex;align-items:center;justify-content:center;color:#c8c2b8">${I.pack}</div>`}
@@ -7332,7 +7400,7 @@ function designSamplesRecap(d){
     return `<div class="lineitem">
       ${ph?`<img class="thumb" src="${esc(ph)}" onclick="viewImg('${esc(ph)}')">`:""}
       <div style="flex:1"><b>${esc(x.fabric_type||kindLabel(x.kind))}</b>
-        <div class="muted" style="font-size:12px">${esc((sup&&sup.name)||x.supplier_name||"—")}${x.shop_no?` · ${esc(x.shop_no)}`:""}${x.width?` · ${esc(x.width)}`:""}
+        <div class="muted" style="font-size:12px">${esc(supNameOf(x))}${supShopOf(x)?` · ${esc(supShopOf(x))}`:""}${x.width?` · ${esc(x.width)}`:""}
         ${x.price?` · ${x.price} ${esc(x.currency||"CNY")}/${esc(x.per||"yard")}`:""}</div></div>
       <span class="chip ${bought?"sage":""}" style="font-size:11px">${bought?(isAr()?"مشتراة":"bought"):(isAr()?"مرشّحة":"candidate")}</span></div>`;
   };
@@ -7984,7 +8052,7 @@ async function printSampleJob(id){
         <td style="width:78px">${ph?`<img crossorigin="anonymous" src="${esc(ph)}" style="width:66px;height:66px;object-fit:cover;border-radius:8px">`:"—"}</td>
         <td style="font-family:Arial;font-weight:700">${esc(x.sku||(mt&&mt.sku)||"—")}</td>
         <td><b>${esc(x.fabric_type||kindLabel(x.kind))}</b>
-          <div style="color:#666;font-size:12px">${esc((sp&&sp.name)||x.supplier_name||"")}${x.width?` · العرض ${esc(x.width)}`:""}</div></td>
+          <div style="color:#666;font-size:12px">${esc(supNameOf(x))}${x.width?` · العرض ${esc(x.width)}`:""}</div></td>
         <td style="text-align:center">${kindLabel(x.kind)}</td></tr>`;}).join("")
     : chk.map(c=>`<tr><td>—</td><td>—</td><td><b>${esc(c.name||"")}</b></td>
         <td style="text-align:center">${c.qty?`${esc(String(c.qty))} ${esc(c.unit||"")}`:"—"}</td></tr>`).join("");
@@ -8750,7 +8818,7 @@ async function wDone(lineId, partId){
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
-    "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
+    "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
     "receiveAllForOrder","mfgReceive",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
