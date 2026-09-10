@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.96:APPV-->
+<!--APPV:2026-08-12.97:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1290,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.96";
+const APP_VERSION="2026-08-12.97";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5090,8 +5090,8 @@ function prSheet(){
       const ids=g.rows.map(r=>r.id);
       return `<label class="lineitem" style="cursor:pointer;align-items:center;background:var(--paper);border-radius:8px;padding:7px 8px;margin-top:8px">
         <input type="checkbox" class="vvchk sq prGrp" data-ids="${esc(ids.join(","))}" onchange="prGroup(this)">
-        <b style="flex:1;padding-inline-start:10px;font-size:13px">${esc(g.name)}</b>
-        <span class="muted" style="font-size:11px">${g.rows.length}</span>
+        <b style="flex:1;padding-inline-start:10px;font-size:18px;font-weight:800;letter-spacing:.2px">${esc(g.name)}</b>
+        <span class="muted" style="font-size:12px">${g.rows.length}</span>
       </label>
       ${g.rows.map(po=>{ const q=poQtyUnit(po); const n=poPhotos(po).length;
         return `<label class="lineitem" style="cursor:pointer;align-items:center;padding-inline-start:16px">
