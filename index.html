@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.94:APPV-->
+<!--APPV:2026-08-12.95:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1290,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.94";
+const APP_VERSION="2026-08-12.95";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4903,7 +4903,7 @@ async function imgToDataURI(url, max){
   }catch(e){ return null; }
 }
 async function poSend(gidEnc, lang){
-  lang = lang || (chChannel==="local"?"ar":"zh");   /* الموردين الصينيين: الافتراضي صيني */
+  lang = lang || reqLangDefault();
   window._manLang = lang; window._manGid = gidEnc;
   const gid=decodeURIComponent(gidEnc); let rows, sup=null, name;
   if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
@@ -4929,53 +4929,39 @@ async function poSend(gidEnc, lang){
     });
     return out;
   })(rows);
-  const L=manT(lang);
   const smpOf=(po)=> po.sample_id? (DB.samples||[]).find(s=>s.id===po.sample_id) : null;
   sup = sup || {};
   const shopNo = sup.shop_no || (rows.map(smpOf).map(s=>s&&s.shop_no).find(Boolean)||"");
-  const info=[];
-  if(name) info.push(`<b style="font-size:15px">${esc(name)}</b>`);
-  /* كل البيانات المتوفرة (عدا الملاحظات) عشان يسهل الوصول للمورد */
-  const line2=[shopNo?`${L.shopno}: ${esc(shopNo)}`:"", sup.market?`${L.mkt}: ${esc(sup.market)}`:"", sup.plaza?`${L.mall}: ${esc(sup.plaza)}`:"", sup.floor?`${L.floor}: ${esc(sup.floor)}`:"", sup.city?`${L.city}: ${esc(sup.city)}`:""].filter(Boolean).join(" · ");
-  const line3=[sup.wechat?`${L.wechat}: ${esc(sup.wechat)}`:"", sup.phone?`${L.tel}: ${esc(phoneStr(sup.phone))}`:"", sup.contact_person?`${L.staff}: ${esc(sup.contact_person)}`:""].filter(Boolean).join(" · ");
-  const line4= sup.address? `${L.addr}: ${esc(sup.address)}` : "";
+  const su = Object.assign({}, sup, {name: (sup.name||name||""), shop_no: shopNo});
+  /* نضمّن الصور والكود داخل الورقة عشان الحفظ كصورة يطلع كامل */
   const qrData = sup.wechat_qr? await imgToDataURI(sup.wechat_qr, 260) : null;
+  const srcMap={};
+  await Promise.all(rows.flatMap(x=>poPhotos(x).slice(0,4)).map(async(u)=>{
+    if(srcMap[u]!==undefined) return;
+    srcMap[u]=null;
+    try{ srcMap[u]=await imgToDataURI(u, 360); }catch(e){ srcMap[u]=null; }
+  }));
+  const html=reqDocHTML([{sup:su, rows}], lang, {id:"poManifest", qr:qrData,
+    img:(u)=>srcMap[u]||null, sub:(su.name||"")});
+  /* نص مختصر للوي تشات/واتساب */
   const NL=String.fromCharCode(10);
+  const uLbl=(u)=> lang==="ar"? unitAr(u) : manUnit(u,lang);
   const rdyBreak=(x)=>{ const sl=Array.isArray(x.size_lines)?x.size_lines:[];
     return sl.length? sl.map(r=>`${r.size||"-"}${r.color?"/"+r.color:""}×${r.qty}`).join("  ") : ""; };
   const tlines=rows.map((x,i)=>{ const q=poQtyUnit(x);
     if(poIsReady(x)){ const p=product(x.product_id)||{}; const br=rdyBreak(x);
-      return `${i+1}) ${x.fabric_name||""}${p.supplier_model?` [${p.supplier_model}]`:""} — ${q.qty} ${manUnit("count",lang)}`+(br?NL+`   ${br}`:""); }
-    return `${i+1}) ${x.fabric_name||""} — ${q.qty} ${manUnit(q.unit,lang)}${x.plan_meters?` (${x.plan_meters}m)`:""}`; });
-  const msg=`${L.po}`+NL+`${L.shop}: ${name||"—"}${shopNo?` (${shopNo})`:""}`+NL+`----------`+NL+tlines.join(NL);
+      return `${i+1}) ${x.fabric_name||""}${p.supplier_model?` [${p.supplier_model}]`:""} — ${fmtN(q.qty)} ${uLbl(q.unit)}`+(br?NL+`   ${br}`:""); }
+    return `${i+1}) ${x.fabric_name||""} — ${fmtN(q.qty)} ${uLbl(q.unit)}${x.plan_meters?` (${x.plan_meters}m)`:""}`; });
+  const L=manT(lang);
+  const msg=`${L.po}`+NL+`${L.shop}: ${su.name||"—"}${shopNo?` (${shopNo})`:""}`+NL+`----------`+NL+tlines.join(NL);
   window._sendMsgText=msg;
   const ph2=phoneStr(sup.phone).split("·")[0].replace(/[^0-9]/g,"");
   const wa = ph2? `https://wa.me/${ph2}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  const rowsHtml = (await Promise.all(rows.map(async(x)=>{
-    const rdy=poIsReady(x); const pr=rdy?(product(x.product_id)||{}):null;
-    const s=smpOf(x);
-    const raw = rdy? ((pr.images||[])[0]||null) : (s&&(s.photos||[])[0]);
-    const im= raw? await imgToDataURI(raw, 360) : null; const q=poQtyUnit(x);
-    const br= rdy? rdyBreak(x) : "";
-    return `<tr><td style="text-align:center;width:104px">${im?`<img src="${im}" style="width:92px;height:92px;object-fit:cover;border-radius:8px">`:"—"}</td><td dir="${lang==='ar'?'rtl':'ltr'}"><b>${esc(x.fabric_name||"")}</b>${rdy&&pr.supplier_model?`<div style="font-family:Arial;font-size:12px">${esc(pr.supplier_model)}</div>`:""}${br?`<div class="muted" style="font-size:11px;font-family:Arial">${esc(br)}</div>`:""}</td><td style="text-align:center;white-space:nowrap"><b>${q.qty} ${manUnit(rdy?"count":q.unit,lang)}</b>${x.plan_meters?`<div class="muted" style="font-size:11px">${x.plan_meters}m</div>`:""}</td></tr>`; }))).join("");
   const langBtn=(code,label)=>`<button class="btn ${lang===code?'btn-ink':'btn-ghost'}" style="padding:5px 12px;font-size:12px" onclick="poSend('${gidEnc}','${code}')">${label}</button>`;
-  openSheet(`<div class="title">${isAr()?"طلب المورد — للوجستيك":"Supplier order"}</div>
-    <div class="pillrow" style="margin-bottom:8px">${chChannel==="local"?langBtn("ar","عربي")+langBtn("en","English"):langBtn("zh","中文")+langBtn("en","English")}</div>
-    <div id="poManifest" dir="${lang==='ar'?'rtl':'ltr'}" style="text-align:${lang==='ar'?'right':'left'}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>${L.po}</b><span class="muted" style="font-size:12px">${L.date}: ${today()}</span></div>
-      <div class="note-box" style="font-size:13px">
-        ${info.join("")}
-        ${line2?`<div>${line2}</div>`:""}
-        ${line3?`<div>${line3}</div>`:""}
-        ${line4?`<div>${line4}</div>`:""}
-        ${qrData?`<div style="margin-top:8px"><span class="muted">${L.wechat}:</span><br><img src="${qrData}" style="width:120px;height:120px;border-radius:8px"></div>`:""}
-      </div>
-      <table style="width:100%;border-collapse:collapse;margin-top:6px">
-        <tr><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px">${L.photo}</th><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px;text-align:${lang==='ar'?'right':'left'}">${L.item}</th><th style="font-size:11px;border-bottom:1px solid var(--line);padding:6px">${L.qty}</th></tr>
-        ${rowsHtml}
-      </table>
-    </div>
-    <button class="btn btn-ink btn-big" onclick="poManifestSaveImg(this)">${isAr()?"⤓ حفظ صورة (جودة عالية)":"Save image"}</button>
+  openSheet(`<div class="title">${isAr()?"طلب المورد":"Supplier order"}</div>
+    <div class="pillrow" style="margin-bottom:8px">${langBtn("ar","عربي")}${langBtn("zh","中文")}${langBtn("en","English")}</div>
+    ${html}
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poManifestSaveImg(this)">${isAr()?"⤓ حفظ صورة (جودة عالية)":"Save image"}</button>
     <button class="btn btn-line btn-big" onclick="poManifestPrint()">${isAr()?"طباعة / حفظ PDF":"Print / Save PDF"}</button>
     <button class="btn btn-line btn-big" onclick="poCopyMsg2()">${isAr()?"نسخ النص (لوي تشات)":"Copy text"}</button>
     <a class="btn btn-ok btn-big" style="text-align:center;display:block;text-decoration:none" href="${wa}" target="_blank" rel="noopener">${isAr()?"إرسال عبر واتساب":"WhatsApp"}</a>`);
@@ -5155,29 +5141,32 @@ function prGroup(box){
     if(on) window._prSel.add(i); else window._prSel.delete(i); });
   prPaint();
 }
-function purchaseReqPrint(){
-  const isChina=chChannel==="china";
-  const sel=window._prSel||new Set();
-  const pos=prVisible().filter(po=>sel.has(po.id));
-  if(!pos.length) return alert(isAr()?"ما اخترت أي بند":"Nothing selected");
-  const H=(en,ar,zh)=> isChina? `${en} / ${zh}` : `${ar} / ${en}`;
-  const uLbl=(u)=> isChina? manUnit(u,"en") : unitAr(u);
-  const groups={};
-  pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—"; (groups[k]=groups[k]||{sup:null,rows:[]});
-    groups[k].sup = supOf(po) || {name:po.supplier_name};
-    groups[k].rows.push(po); });
-  const cards=Object.values(groups).map(g=>{
+/* ===== قالب طلب المشتريات — واحد للطباعة وللإرسال للمورّد ===== */
+function reqDocHTML(groups, lang, opts){
+  opts=opts||{};
+  const H=(en,ar,zh)=> lang==="zh"? `${en} / ${zh}` : lang==="en"? en : `${ar} / ${en}`;
+  const uLbl=(u)=> lang==="ar"? unitAr(u) : manUnit(u,lang);
+  const dir = lang==="ar"? "rtl" : "ltr";
+  const align = lang==="ar"? "right" : "left";
+  const img = opts.img || ((u)=>u);
+  const cards=groups.map(g=>{
     const su=g.sup||{};
-    const info=[su.shop_no?`${H("Shop","محل","店号")} ${esc(su.shop_no)}`:"", su.plaza?esc(su.plaza):"", su.floor?`${H("Floor","دور","楼层")} ${esc(su.floor)}`:"", su.wechat?("WeChat: "+esc(su.wechat)):"", su.phone?esc(phoneStr(su.phone)):""].filter(Boolean).join(" · ");
+    const info=[su.shop_no?`${H("Shop","محل","店号")} ${esc(su.shop_no)}`:"", su.plaza?esc(su.plaza):"",
+      su.floor?`${H("Floor","دور","楼层")} ${esc(su.floor)}`:"", su.wechat?("WeChat: "+esc(su.wechat)):"",
+      su.phone?esc(phoneStr(su.phone)):""].filter(Boolean).join(" · ");
     const rows=g.rows.map(po=>{
-      const phs=poPhotos(po).slice(0,4);
+      const phs=poPhotos(po).slice(0,4).map(img).filter(Boolean);
       const q=poQtyUnit(po);
       const gl=fabTr(po.fabric_name);
+      const rdy=poIsReady(po); const pr=rdy?(product(po.product_id)||{}):null;
       let itemHtml;
-      if(isChina){ const en=gl?gl.en:(po.fabric_name||""); const zh=gl?gl.zh:"";
-        itemHtml=`<b>${esc(en)}</b>${zh?` · <b>${esc(zh)}</b>`:""}${po.fabric_name&&(gl)?`<div style="color:#999;font-size:11px">${esc(po.fabric_name)}</div>`:""}`;
+      if(lang!=="ar"){ const en=gl?gl.en:(po.fabric_name||""); const zh=(lang==="zh"&&gl)?gl.zh:"";
+        itemHtml=`<b>${esc(en)}</b>${zh?` · <b>${esc(zh)}</b>`:""}${(po.fabric_name&&gl)?`<div style="color:#999;font-size:11px">${esc(po.fabric_name)}</div>`:""}`;
       } else { const ar=po.fabric_name||""; const en=gl?gl.en:"";
         itemHtml=`<b>${esc(ar)}</b>${en?`<div style="color:#666;font-size:12px">${esc(en)}</div>`:""}`; }
+      if(rdy && pr.supplier_model) itemHtml+=`<div style="font-family:Arial;font-size:12px">${esc(pr.supplier_model)}</div>`;
+      if(rdy){ const sl=Array.isArray(po.size_lines)?po.size_lines:[];
+        if(sl.length) itemHtml+=`<div style="color:#666;font-size:11px;font-family:Arial">${esc(sl.map(r=>`${r.size||"-"}${r.color?"/"+r.color:""}×${r.qty}`).join("  "))}</div>`; }
       const phCell = phs.length
         ? (phs.length===1
             ? `<img crossorigin="anonymous" src="${esc(phs[0])}" style="width:104px;height:104px;object-fit:cover;border-radius:6px">`
@@ -5186,24 +5175,42 @@ function purchaseReqPrint(){
       return `<tr>
         <td style="width:112px;text-align:center">${phCell}</td>
         <td>${itemHtml}</td>
-        <td style="text-align:center;font-weight:700;white-space:nowrap">${q.qty} ${uLbl(q.unit)}${po.plan_meters?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}</td>
+        <td style="text-align:center;font-weight:700;white-space:nowrap">${fmtN(q.qty)} ${uLbl(q.unit)}${po.plan_meters?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}${(po.buy_unit==="carton"&&po.plan_qty)?`<div style="color:#999;font-size:11px">${fmtN(po.plan_qty)} ${uLbl("count")}</div>`:""}</td>
         <td style="text-align:center;white-space:nowrap">${po.unit_price?`${po.unit_price} ${esc(po.currency||"")}`:""}</td>
       </tr>`;
     }).join("");
     return `<div style="margin-top:16px;page-break-inside:avoid">
       <div style="background:#1C1B1A;color:#fff;padding:8px 12px;border-radius:8px 8px 0 0;font-weight:700">${esc(su.name||"Supplier")}${info?`<div style="font-weight:400;font-size:12px;opacity:.85">${info}</div>`:""}</div>
       <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th><th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}</table>
+      ${opts.qr?`<div style="margin-top:8px;text-align:${align}"><span style="color:#666;font-size:12px">WeChat</span><br><img src="${opts.qr}" style="width:120px;height:120px;border-radius:8px"></div>`:""}
     </div>`;
   }).join("");
-  const dir = isChina? "ltr" : "rtl";
-  const content=`<div id="joSheet" dir="${dir}" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,'Noto Sans SC',Arial,sans-serif">
-    <style>#joSheet table{width:100%;border-collapse:collapse;margin-top:6px}#joSheet td,#joSheet th{border:1px solid #E6E1D8;padding:8px;text-align:${isChina?'left':'right'}}</style>
+  const id=opts.id||"joSheet";
+  return `<div id="${id}" dir="${dir}" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,'Noto Sans SC',Arial,sans-serif">
+    <style>#${id} table{width:100%;border-collapse:collapse;margin-top:6px}#${id} td,#${id} th{border:1px solid #E6E1D8;padding:8px;text-align:${align}}</style>
     <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px">
       <div style="font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px">VEEVOGUE</div>
-      <div style="text-align:${isChina?'right':'left'}"><b>${H("PURCHASE REQUEST","طلب مشتريات","采购订单")}</b><br><span style="font-size:12px;color:#666">${esc(chanLabel(chChannel))}</span></div>
+      <div style="text-align:${lang==="ar"?"left":"right"}"><b>${H("PURCHASE REQUEST","طلب مشتريات","采购订单")}</b>
+        <br><span style="font-size:12px;color:#666">${esc(opts.sub||chanLabel(chChannel))} · ${today()}</span></div>
     </div>
     ${cards}</div>`;
-  jobShow(content);
+}
+function reqLangDefault(){ return chChannel==="china" ? "zh" : "ar"; }
+function purchaseReqPrint(){
+  const sel=window._prSel||new Set();
+  const pos=prVisible().filter(po=>sel.has(po.id));
+  if(!pos.length) return alert(isAr()?"ما اخترت أي بند":"Nothing selected");
+  const lang=window._reqLang||reqLangDefault();
+  const groups={};
+  pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—"; (groups[k]=groups[k]||{sup:null,rows:[]});
+    groups[k].sup = supOf(po) || {name:po.supplier_name};
+    groups[k].rows.push(po); });
+  jobShow(reqDocHTML(Object.values(groups), lang, {}));
+  /* نفس مبدّل اللغة اللي بالإرسال — الورقة وحدة والقالب واحد */
+  const row=el("joLangRow");
+  if(row){ row.style.display="inline-flex";
+    row.innerHTML=[["ar","عربي"],["zh","中文"],["en","English"]].map(([c,l])=>
+      `<button class="btn ${lang===c?'btn-ink':'btn-ghost'}" style="padding:5px 12px;font-size:12px" onclick="window._reqLang='${c}';closeJob();purchaseReqPrint()">${l}</button>`).join(""); }
 }
 /* ================= أوراق منبثقة ================= */
 function openSheet(html){
@@ -8211,6 +8218,7 @@ function jobShow(html){
       <button class="btn btn-ghost" onclick="closeJob()">‹ ${isAr()?"رجوع":"Back"}</button>
       <button class="btn btn-ink" onclick="jobSaveImg(this)">${isAr()?"⤓ حفظ صورة":"Save image"}</button>
       <button class="btn btn-ghost" onclick="jobPrint()">${isAr()?"طباعة":"Print"}</button>
+      <span id="joLangRow" style="display:none;gap:6px"></span>
     </div>
     <div style="overflow:auto;padding:10px;background:#f0f0ee">${html}</div>
   </div>`;
