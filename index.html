@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.01:APPV-->
+<!--APPV:2026-08-13.02:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1332,7 +1332,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.01";
+const APP_VERSION="2026-08-13.02";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8004,7 +8004,10 @@ function tabExternal(){
   const embPool=DB.parts.filter(x=>x.stage==="emb" && x.status!=="done" && x.status!=="sent"
     && DB.lines.some(l=>l.id===x.line_id && activeLine(l)));
   const extPool=DB.lines.filter(l=>l.stage==="ext"&&l.stage_status!=="sent"&&activeLine(l));
-  const openJobs=DB.jobs.filter(j=>j.status==="sent");
+  const jobShown=(window._extAll? (DB.jobs||[]) : (DB.jobs||[]).filter(j=>j.status==="sent"))
+    .slice().sort((a,b)=>String(b.sent_at||"").localeCompare(String(a.sent_at||"")));
+  const openJobs=jobShown;
+  const nAll=(DB.jobs||[]).length, nOpen=(DB.jobs||[]).filter(j=>j.status==="sent").length;
   const embRow=x=>{const l=DB.lines.find(y=>y.id===x.line_id)||{}; const p=product(l.product_id),o=order(l.order_id);
     return `<div class="checkrow"><input type="checkbox" class="embchk" value="${x.id}"> ${thumb(p)}
     <div style="flex:1"><b>${esc(pname(p))}</b> — <b style="color:var(--wine)">${esc(isAr()?x.part_ar:(x.part_en||x.part_ar))}</b>
@@ -8034,21 +8037,46 @@ function tabExternal(){
         <button class="btn btn-ink btn-big" style="margin-top:6px" onclick="makeJob('ext')">${I.shipped} ${isAr()?"أرسل واطبع الجوب أوردرات":"Send & print"}</button>`
       : `<div class="muted">—</div>`}
     </div>
+    ${nAll?`<div class="pillrow" style="margin:10px 0">
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px;${!window._extAll?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._extAll=false;render()">${isAr()?"المفتوحة":"Open"} (${nOpen})</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px;${window._extAll?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._extAll=true;render()">${isAr()?"الكل":"All"} (${nAll})</button>
+    </div>`:""}
     ${openJobs.map(j=>{
       const days=Math.round((new Date()-new Date(j.sent_at))/86400000);
       const n=(j.part_ids||[]).length||(j.line_ids||[]).length;
       return `<div class="card">
-        <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b>${j.is_fix?` <span class="chip wine">${I.fix} ${isAr()?"إرجاع تصليح":"fix"}</span>`:""} — ${esc(j.vendor||"—")} <span class="muted">${days} ${isAr()?"يوم":"days"} · ${n}</span></div></div>
+        <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b>${j.is_fix?` <span class="chip wine">${I.fix} ${isAr()?"إرجاع تصليح":"fix"}</span>`:""}
+          ${j.status!=="sent"?`<span class="chip sage" style="font-size:10px">${isAr()?"مقفول":"closed"}</span>`:""}
+          — ${esc((supFind(j.supplier_id,j.vendor)||{}).name||j.vendor||"—")} <span class="muted">${days} ${isAr()?"يوم":"days"} · ${n}</span></div></div>
         <div class="pillrow"><button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print}</button>
         <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button>
         ${rowMenu(esc(j.kind)+" — "+esc(j.vendor||""),[
-          {label:isAr()?"إلغاء الإرسالية (ترجع القطع للسلة)":"Cancel job", icon:I.fix, danger:true, fn:async()=>{
-            for(const id of (j.part_ids||[])) await sb.from("line_parts").update({status:"waiting"}).eq("id",id);
-            for(const id of (j.line_ids||[])) await sb.from("order_lines").update({stage_status:"waiting"}).eq("id",id);
-            await logIt("del","ext_jobs",j.id,esc(j.kind)+" — "+esc(j.vendor||""));
-            await sb.from("ext_jobs").delete().eq("id",j.id); await refresh();}}
+          {label:isAr()?"إلغاء الإرسالية (ترجع القطع للسلة)":"Cancel job", icon:I.fix, danger:true, fn:()=>extJobDel(j.id,true)},
+          {label:isAr()?"حذف الأمر نهائياً":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id,false)}
         ])}</div>
       </div>`;}).join("")}`;
+}
+/* حذف أمر خارجي — مع إرجاع القطع للسلة أو بدونه */
+async function extJobDel(id, restore){
+  const j=(DB.jobs||[]).find(x=>x.id===id); if(!j) return;
+  const n=(j.part_ids||[]).length||(j.line_ids||[]).length;
+  const nm=((supFind(j.supplier_id,j.vendor)||{}).name)||j.vendor||"—";
+  if(!confirm(isAr()
+    ? (restore? `إلغاء الإرسالية «${j.kind}» — ${nm}؟\n\n${n} قطعة ترجع للسلة.`
+              : `حذف الأمر «${j.kind}» — ${nm} نهائياً؟\n\nالقطع تبقى على وضعها الحالي.`)
+    : "Delete?")) return;
+  if(restore){
+    for(const pid of (j.part_ids||[])) await sb.from("line_parts").update({status:"waiting"}).eq("id",pid);
+    for(const lid of (j.line_ids||[])) await sb.from("order_lines").update({stage_status:"waiting"}).eq("id",lid);
+    (DB.parts||[]).forEach(x=>{ if((j.part_ids||[]).indexOf(x.id)>=0) x.status="waiting"; });
+    (DB.lines||[]).forEach(x=>{ if((j.line_ids||[]).indexOf(x.id)>=0) x.stage_status="waiting"; });
+  }
+  await logIt("del","ext_jobs",id, `${j.kind||""} — ${nm}`);
+  const {error}=await sb.from("ext_jobs").delete().eq("id",id);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  DB.jobs=(DB.jobs||[]).filter(x=>x.id!==id); cacheDB();
+  closeSheet(); render();
+  toast(isAr()?"انحذف الأمر":"Deleted");
 }
 /* المصانع والمشاغل — مع وحدة القياس عشان تبين وأنت تختار */
 function vendorOpts(){
@@ -8076,6 +8104,10 @@ async function makeJob(mode){
   }else{
     const ids=[...document.querySelectorAll(".extchk:checked")].map(c=>c.value);
     if(!ids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
+    /* بدون مشغل ما نعرف يتعامل بالسم ولا بالإنش، فالورقة تطلع بوحدة غلط */
+    if(!supplier_id && !vendor) return alert(isAr()
+      ? "اختر مشغل الملابس أول — بدونه ما نعرف نطبع القياسات بالسم ولا بالإنش."
+      : "Pick the garment vendor first.");
     /* ١ — جوب أوردر الملابس (أو إرجاع تصليح لو القطع راجعة من الجودة) */
     const isFix=ids.every(id=>{const l=DB.lines.find(x=>x.id===id); return l&&l.fix_reason;});
     const jid=newId();
@@ -8187,6 +8219,14 @@ function jobMats(pids){
   });
   return out;
 }
+/* صورة الخام = صورة عينته */
+function matPhoto(mid){
+  const s2=(DB.samples||[]).find(x=>x.id===mid);
+  if(s2 && (s2.photos||[])[0]) return s2.photos[0];
+  const m=(DB.materials||[]).find(x=>x.id===mid);
+  if(m && m.sku){ const s3=(DB.samples||[]).find(x=>x.sku===m.sku && (x.photos||[]).length); if(s3) return s3.photos[0]; }
+  return null;
+}
 function jobEmb(pids){
   const out=[];
   pids.forEach(pid=>{ const p=product(pid);
@@ -8212,106 +8252,142 @@ async function printJobExt(j, lang){
   const pids=[...new Set(lines.map(l=>l.product_id))];
   const total=lines.reduce((a,l)=>a+(Number(l.qty)||0),0);
   const price=Number(j.unit_price)||0, cur=j.currency||"CNY";
+
   /* نضمّن كل الصور عشان حفظ الصورة يطلع كامل */
-  const srcs={};
   const want=[];
-  pids.forEach(pid=>{ const p=product(pid); (p.images||[]).forEach(u=>want.push(u)); });
-  pids.forEach(pid=>{ const d=designOfProduct(product(pid)); if(d) (d.refs||[]).forEach(u=>want.push(u)); });
+  pids.forEach(pid=>{ const p=product(pid);
+    (p.images||[]).forEach(u=>want.push(u));
+    const d=designOfProduct(p); if(d) (d.refs||[]).forEach(u=>want.push(u));
+    allBom(p).forEach(b=>{ const u=matPhoto(b.material_id); if(u) want.push(u); });
+  });
   jobEmb(pids).forEach(x=>{ if(x.e.artwork) want.push(x.e.artwork); });
+  lines.forEach(l=>{ if(l.fix_image) want.push(l.fix_image); });
+  const srcs={};
   await Promise.all([...new Set(want.filter(Boolean))].map(async u=>{
     try{ srcs[u]=await imgToDataURI(u, 420); }catch(e){ srcs[u]=null; } }));
   const SRC=(u)=>srcs[u]||u;
+
+  const gal=(list,title)=>{ const im=(list||[]).filter(Boolean); if(!im.length) return "";
+    return `<div class="jsec">${title}</div><div class="jgal">${im.map(u=>`<img crossorigin="anonymous" src="${esc(SRC(u))}">`).join("")}</div>`; };
+
+  /* كتلة كل منتج */
+  const blocks=pids.map(pid=>{
+    const p=product(pid), d=designOfProduct(p);
+    const mine=lines.filter(l=>l.product_id===pid);
+    const qtyBy={}; mine.forEach(l=>{ const k=l.size||"—"; qtyBy[k]=(qtyBy[k]||0)+(Number(l.qty)||1); });
+    const sub=mine.reduce((a,l)=>a+(Number(l.qty)||0),0);
+
+    /* جدول القياسات بوحدة المصنع + عمود العدد — العناوين فوق أرقامها مباشرة */
+    const cf=chartFor(p, sup||chChannel);
+    const chart=cf.chart||{};
+    const rws=productRows(p).filter(m=>Object.keys(chart).some(a2=>chart[a2]&&chart[a2][m[0]]));
+    const ages=[...new Set([...Object.keys(chart), ...Object.keys(qtyBy)])].filter(a2=>a2!=="—");
+    const chartTable = ages.length? `
+      <div class="jsec">${T("جدول القياسات","SIZE CHART","尺码表")} <span style="letter-spacing:0;font-weight:400;color:#8a8172">· ${unitLbl(cf.unit)}${cf.from!==cf.unit?` — ${T("محوّلة من","converted from","换算自")} ${unitLbl(cf.from)}`:""}</span></div>
+      <table class="jchart">
+        <tr><th>${T("العمر","AGE","年龄")}</th><th class="qh">${T("العدد","QTY","数量")}</th>
+          ${rws.map(m=>`<th>${esc((m[2]||m[1]).toUpperCase())}</th>`).join("")}</tr>
+        ${ages.map(a2=>`<tr><td class="ag">${esc(a2)}</td>
+          <td class="qty">${qtyBy[a2]?qtyBy[a2]:"—"}</td>
+          ${rws.map(m=>`<td>${esc((chart[a2]||{})[m[0]]||"—")}</td>`).join("")}</tr>`).join("")}
+        <tr class="tot"><td>${T("الإجمالي","TOTAL","合计")}</td><td class="qty">${sub}</td>
+          ${rws.map(()=>"<td></td>").join("")}</tr>
+      </table>` : "";
+
+    /* القطع ومواد كل قطعة */
+    const comps=(p.components||[]);
+    const bp=(p.bom_parts||{});
+    const partKeys = comps.length? comps.map(c=>c.ar) : Object.keys(bp);
+    const matRow=(b)=>{ const m=material(b.material_id)||{}; const ph=matPhoto(b.material_id);
+      return `<tr>
+        <td style="width:74px;text-align:center">${ph?`<img crossorigin="anonymous" src="${esc(SRC(ph))}" style="width:66px;height:66px;object-fit:cover;border-radius:6px">`:"—"}</td>
+        <td><b>${esc(m.name||"—")}</b>${m.color?` <span style="color:#777">· ${esc(m.color)}</span>`:""}</td>
+        <td style="font-family:Arial;font-weight:700;text-align:center">${esc(m.sku||"—")}</td></tr>`; };
+    const partsBlock = partKeys.length? `
+      <div class="jsec">${T("القطع والمواد","PARTS & MATERIALS","部件与材料")}</div>
+      ${partKeys.map(pk=>{ const c=comps.find(x=>x.ar===pk)||{ar:pk,en:pk};
+        const arr=(bp[pk]||[]);
+        return `<div class="jpart">
+          <div class="jpart-h">${esc(lang==="ar"? c.ar : (c.en||c.ar))}${lang!=="ar"&&c.ar!==c.en?` <span style="opacity:.6;font-weight:400">${esc(c.ar)}</span>`:""}</div>
+          ${arr.length? `<table class="jmat"><tr><th>${H("Photo","الصورة","图片")}</th><th>${H("Material","الخام","材料")}</th><th style="text-align:center">${H("Code","الكود","编号")}</th></tr>
+            ${arr.map(matRow).join("")}</table>`
+          : `<div class="muted" style="font-size:12px;padding:6px 2px">${T("ما فيه مواد محدّدة لهذي القطعة","No materials set","未设定材料")}</div>`}
+        </div>`;}).join("")}`
+      : (allBom(p).length? `<div class="jsec">${T("المواد","MATERIALS","材料")}</div>
+          <table class="jmat"><tr><th>${H("Photo","الصورة","图片")}</th><th>${H("Material","الخام","材料")}</th><th style="text-align:center">${H("Code","الكود","编号")}</th></tr>
+          ${allBom(p).map(matRow).join("")}</table>` : "");
+
+    /* تطريز وطباعة هذا المنتج */
+    const embs=jobEmb([pid]);
+    const embBlock = embs.length? `
+      <div class="jsec">${T("التطريز والطباعة","EMBROIDERY / PRINT","刺绣 / 印花")}</div>
+      ${embs.map(({part,e})=>`<div class="jemb">
+        <div style="font-weight:800;font-size:14px">${esc(e.kind||"")} — ${esc(part)}</div>
+        ${e.color?`<div style="margin-top:4px"><b>${T("اللون","Colour","颜色")}:</b> <span style="font-weight:700">${esc(e.color)}</span></div>`:
+          `<div style="margin-top:4px;color:#8C2F3E">${T("اللون غير محدّد","Colour not set","未指定颜色")}</div>`}
+        <div style="margin-top:2px"><b>${T("متى","When","时间")}:</b> ${e.when==="after_cut"?T("بعد القص","after cut","裁剪后"):T("بعد الخياطة","after sew","缝制后")}</div>
+        ${e.note?`<div style="margin-top:4px;white-space:pre-wrap">${esc(e.note)}</div>`:""}
+        ${e.artwork?`<div style="margin-top:8px"><img crossorigin="anonymous" src="${esc(SRC(e.artwork))}" style="max-width:260px;border:1px solid #E6E1D8;border-radius:8px"></div>
+          ${(function(){const f=fileNameOf(e.artwork); return f?`<div style="font-size:11px;color:#777;margin-top:3px">${T("ملف الرسمة","artwork file","图案文件")}: <span style="font-family:Arial;direction:ltr;display:inline-block">${esc(f)}</span></div>`:"";})()}`:""}
+      </div>`).join("")}`:"";
+
+    const pats=(p.patterns||[]).filter(Boolean);
+    const patBlock = pats.length? `<div class="jsec">${T("الباترونات","PATTERNS","纸样")}</div>
+      <div style="font-size:13px">${pats.map(x=>`<div>• <span style="font-family:Arial;direction:ltr;display:inline-block">${esc(x.name||"")}</span></div>`).join("")}</div>`:"";
+
+    const fixes=mine.filter(l=>j.is_fix&&l.fix_reason);
+    const fixBlock = fixes.length? `<div class="jsec">${T("المطلوب تصليحه","TO FIX","返修要求")}</div>
+      ${fixes.map(l=>`<div class="jemb"><b>${esc(l.size||"")}</b> — ${esc(l.fix_reason)}
+        ${l.fix_image?`<div style="margin-top:6px"><img crossorigin="anonymous" src="${esc(SRC(l.fix_image))}" style="max-width:240px;border-radius:8px"></div>`:""}</div>`).join("")}`:"";
+
+    return `<div class="jprod">
+      <div class="jbar">
+        <div style="font-weight:800;font-size:21px;line-height:1.25">${esc(p.name||"")}</div>
+        <div style="font-size:13px;opacity:.9;margin-top:2px">
+          ${p.name_en?`${esc(p.name_en)}`:""}${p.sku?`${p.name_en?" · ":""}<span style="font-family:Arial;font-weight:700">${esc(p.sku)}</span>`:""}
+          · ${sub} ${T("قطعة","pcs","件")}</div>
+      </div>
+      ${gal(p.images, T("صور المنتج","PRODUCT PHOTOS","产品图片"))}
+      ${gal(d&&d.refs, T("صور الأمثلة","REFERENCE PHOTOS","参考图片"))}
+      ${chartTable}
+      ${partsBlock}
+      ${embBlock}
+      ${patBlock}
+      ${fixBlock}
+    </div>`;
+  }).join("");
 
   const info=[ sup&&sup.shop_no?`${H("Shop","محل","店号")} ${esc(sup.shop_no)}`:"",
     sup&&sup.plaza?esc(sup.plaza):"", sup&&sup.floor?`${H("Floor","دور","楼层")} ${esc(sup.floor)}`:"",
     sup&&sup.city?esc(sup.city):"", sup&&sup.wechat?("WeChat: "+esc(sup.wechat)):"",
     sup&&sup.phone?esc(phoneStr(sup.phone)):""].filter(Boolean).join(" · ");
-
-  /* ١) جدول القطع */
-  const rows=lines.map(l=>{ const p=product(l.product_id), o=order(l.order_id);
-    const cs=(p.components||[]);
-    const im=(p.images||[])[0];
-    return `<tr>
-      <td style="width:92px;text-align:center">${im?`<img crossorigin="anonymous" src="${esc(SRC(im))}" style="width:84px;height:84px;object-fit:cover;border-radius:6px">`:"—"}</td>
-      <td><b style="font-size:15px">${esc(p.name||"")}</b>${p.name_en?`<div style="color:#777;font-size:12px">${esc(p.name_en)}</div>`:""}
-        ${p.sku?`<div style="font-family:Arial;font-size:12px;font-weight:700">${esc(p.sku)}</div>`:""}
-        ${cs.length?`<div style="margin-top:3px;color:#8C2F3E;font-weight:700;font-size:12px">${cs.length} ${T("قطع","pcs","件")}: ${cs.map(c=>esc(lang==="ar"?c.ar:(c.en||c.ar))).join(" + ")}</div>`:""}</td>
-      <td style="text-align:center;font-size:18px;font-weight:800">${esc(l.size||"—")}</td>
-      <td style="text-align:center;font-size:18px;font-weight:800">${l.qty}</td>
-      <td style="text-align:center;white-space:nowrap">${price?`${price} ${esc(cur)}`:""}</td>
-      <td style="text-align:center;white-space:nowrap;font-weight:700">${price?`${fmtN(price*(Number(l.qty)||0))} ${esc(cur)}`:""}</td></tr>
-      ${j.is_fix&&l.fix_reason?`<tr><td></td><td colspan="5" style="background:#FBEEF0;color:#8C2F3E;font-weight:700">
-        ${T("المطلوب تصليحه","To fix","需返修")}: ${esc(l.fix_reason)}
-        ${l.fix_image?`<div><img crossorigin="anonymous" src="${esc(l.fix_image)}" style="max-width:240px;border-radius:8px;margin-top:6px"></div>`:""}</td></tr>`:""}`;
-  }).join("");
-
-  /* ٢) المواد المستخدمة بأكوادها */
-  const mats=jobMats(pids);
-  const matTable = mats.length? `
-    <div class="jsec">${T("المواد المستخدمة","MATERIALS","使用材料")}</div>
-    <table><tr><th>${H("Material","الخام","材料")}</th><th>${H("Code","الكود","编号")}</th>
-      <th>${H("Part","القطعة","部件")}</th><th style="text-align:center">${H("Per piece","للقطعة","单件用量")}</th></tr>
-    ${mats.map(m=>`<tr><td><b>${esc(m.name)}</b>${m.color?` <span style="color:#777">· ${esc(m.color)}</span>`:""}</td>
-      <td style="font-family:Arial;font-weight:700">${esc(m.sku||"—")}</td>
-      <td>${esc(m.part||"—")}</td>
-      <td style="text-align:center">${m.qty?`${m.qty} ${esc(m.unit||"")}`:"—"}</td></tr>`).join("")}</table>`:"";
-
-  /* ٣) جدول القياسات بوحدة المصنع — نفس كرت النشر بخلفية بيضاء */
-  const charts=pids.map(pid=>{ const p=product(pid);
-    const cf=chartFor(p, sup||"local"); const chart=cf.chart; const ages=Object.keys(chart);
-    if(!ages.length) return "";
-    return `<div style="margin-top:16px;page-break-inside:avoid;display:flex;justify-content:center">
-      ${scCard({cls:"on-white", eyebrow:"SIZE GUIDE", title:(p.name_en||p.name||""),
-        sub:`${T("جدول القياسات","size chart","尺码表")} · ${unitLbl(cf.unit)}`,
-        badge:`MEASUREMENTS IN ${cf.unit==="cm"?"CM":"INCH"}${cf.from!==cf.unit?` · ${T("محوّلة من","converted from","换算自")} ${unitLbl(cf.from)}`:""}`,
-        ageLabel:T("العمر","AGE","年龄"), rows:productRows(p), ages, chart, img:SRC((p.images||[])[0]||"")})}
-    </div>`;}).join("");
-
-  /* ٤) صور المنتج كلها */
-  const gal=pids.map(pid=>{ const p=product(pid); const im=(p.images||[]).filter(Boolean);
-    if(!im.length) return "";
-    return `<div class="jsec">${T("صور المنتج","PRODUCT PHOTOS","产品图片")} — ${esc(p.name||"")}</div>
-      <div class="jgal">${im.map(u=>`<img crossorigin="anonymous" src="${esc(SRC(u))}">`).join("")}</div>`;}).join("");
-
-  /* ٥) صور الأمثلة من التصميم */
-  const refs=pids.map(pid=>{ const d=designOfProduct(product(pid)); const im=((d&&d.refs)||[]).filter(Boolean);
-    if(!im.length) return "";
-    return `<div class="jsec">${T("صور الأمثلة","REFERENCE PHOTOS","参考图片")}</div>
-      <div class="jgal">${im.map(u=>`<img crossorigin="anonymous" src="${esc(SRC(u))}">`).join("")}</div>`;}).join("");
-
-  /* ٦) التطريز والطباعة — قسم مستقل باللون والملفات */
-  const embs=jobEmb(pids);
-  const embBlock = embs.length? `
-    <div class="jsec">${T("التطريز والطباعة","EMBROIDERY / PRINT","刺绣 / 印花")}</div>
-    ${embs.map(({pid,part,e})=>{ const p=product(pid);
-      return `<div class="jemb">
-        <div style="font-weight:800;font-size:14px">${esc(e.kind||"")} — ${esc(part)}
-          <span style="color:#777;font-weight:400;font-size:12px">· ${esc(p.name||"")}</span></div>
-        ${e.color?`<div style="margin-top:4px"><b>${T("اللون","Colour","颜色")}:</b> <span style="font-weight:700">${esc(e.color)}</span></div>`:
-          `<div style="margin-top:4px;color:#8C2F3E">${T("اللون غير محدّد","Colour not set","未指定颜色")}</div>`}
-        <div style="margin-top:2px"><b>${T("متى","When","时间")}:</b> ${e.when==="after_cut"?T("بعد القص","after cut","裁剪后"):T("بعد الخياطة","after sew","缝制后")}</div>
-        ${e.note?`<div style="margin-top:4px;white-space:pre-wrap">${esc(e.note)}</div>`:""}
-        ${e.artwork?`<div style="margin-top:8px"><img crossorigin="anonymous" src="${esc(SRC(e.artwork))}" style="max-width:280px;border:1px solid #E6E1D8;border-radius:8px"></div>
-          ${(function(){ const f=fileNameOf(e.artwork);
-            return f? `<div style="font-size:11px;color:#777;margin-top:3px">${T("ملف الرسمة","artwork file","图案文件")}: <span style="font-family:Arial;direction:ltr;display:inline-block">${esc(f)}</span></div>` : ""; })()}`:""}
-      </div>`;}).join("")}`:"";
-
-  /* ٧) ملفات الباترون */
-  const pats=pids.flatMap(pid=>((product(pid).patterns)||[]).map(x=>({p:product(pid),x})));
-  const patBlock = pats.length? `<div class="jsec">${T("الباترونات","PATTERNS","纸样")}</div>
-    <div style="font-size:13px">${pats.map(({p,x})=>`<div>• ${esc(p.name||"")} — <span style="font-family:Arial;direction:ltr;display:inline-block">${esc(x.name||"")}</span></div>`).join("")}</div>`:"";
-
+  const vend=(sup&&sup.name)||j.vendor||"";
   const ord=[...new Set(lines.map(l=>order(l.order_id).order_no).filter(Boolean))].join(" · ");
+
   const content=`<div id="joSheet" dir="${dir}" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,'Noto Sans SC',Arial,sans-serif">
   <style>
-    #joSheet table{width:100%;border-collapse:collapse;margin-top:6px}
+    #joSheet table{width:100%;border-collapse:collapse}
     #joSheet td,#joSheet th{border:1px solid #E6E1D8;padding:8px;text-align:${align}}
     #joSheet th{font-size:11px;color:#555;background:#FAF9F7}
-    #joSheet .jsec{margin-top:18px;font-family:Arial;font-size:11px;font-weight:700;letter-spacing:2px;
+    #joSheet .jsec{margin-top:16px;font-family:Arial;font-size:11px;font-weight:700;letter-spacing:2px;
       color:#6e6558;border-bottom:1px solid #E6E1D8;padding-bottom:5px}
     #joSheet .jgal{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-    #joSheet .jgal img{width:130px;height:130px;object-fit:cover;border-radius:8px;border:1px solid #E6E1D8}
+    #joSheet .jgal img{width:132px;height:132px;object-fit:cover;border-radius:8px;border:1px solid #E6E1D8}
+    #joSheet .jprod{margin-top:20px;page-break-inside:auto}
+    #joSheet .jbar{background:#1C1B1A;color:#fff;padding:10px 14px;border-radius:8px}
+    #joSheet .jpart{margin-top:10px;page-break-inside:avoid}
+    #joSheet .jpart-h{font-weight:800;font-size:15px;color:#8C2F3E;margin-bottom:4px}
+    #joSheet .jmat td,#joSheet .jmat th{padding:6px 8px}
     #joSheet .jemb{margin-top:10px;padding:10px 12px;border:1px solid #E6E1D8;border-radius:8px;page-break-inside:avoid}
+    /* size chart: header sits exactly above its numbers */
+    #joSheet .jchart{margin-top:10px}
+    #joSheet .jchart th{font-family:Arial;font-size:10px;letter-spacing:1.5px;font-weight:700;color:#6e6558;
+      text-transform:uppercase;padding:9px 4px;border:0;border-bottom:1.5px solid #201c18;text-align:center;background:transparent}
+    #joSheet .jchart th.qh{color:#201c18}
+    #joSheet .jchart td{font-size:14px;text-align:center;padding:8px 4px;border:0;border-bottom:1px solid #efece4;color:#3a342c}
+    #joSheet .jchart td.ag{font-weight:800;color:#201c18}
+    #joSheet .jchart td.qty{font-weight:800;color:#201c18;background:#FAF9F7}
+    #joSheet .jchart tr.tot td{border-bottom:0;border-top:1.5px solid #201c18;font-weight:800;color:#201c18}
   </style>
   <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px">
     <div style="font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px">VEEVOGUE</div>
@@ -8321,10 +8397,8 @@ async function printJobExt(j, lang){
   </div>
   ${j.is_fix?`<div style="background:#FBEEF0;color:#8C2F3E;border:1px solid #E8D4D8;border-radius:8px;padding:10px 14px;margin-top:12px;font-weight:700">
     ${T("هذي القطع مرجَّعة للتصليح — مو طلب جديد.","Returned for fix — not a new order.","这些是返修件，不是新订单。")}</div>`:""}
-  <div style="margin-top:14px;background:#1C1B1A;color:#fff;padding:10px 12px;border-radius:8px">
-    <div style="font-weight:800;font-size:20px;line-height:1.25">${esc((sup&&sup.name)||j.vendor||"—")}</div>
-    ${info?`<div style="font-weight:400;font-size:12px;opacity:.85;margin-top:3px">${info}</div>`:""}
-  </div>
+  ${vend?`<div style="margin-top:12px;font-size:13px"><b style="font-size:15px">${esc(vend)}</b>${info?`<span style="color:#666"> · ${info}</span>`:""}</div>`
+        :`<div style="margin-top:12px;font-size:13px;color:#8C2F3E">${T("ما انحدد المصنع لهذا الأمر","No factory set","未指定工厂")}</div>`}
   <table style="margin-top:10px"><tr>
     <th>${H("Order","الأمر","订单")}</th><th>${H("Sent","الإرسال","发出")}</th>
     <th>${H("Delivery","التسليم","交期")}</th><th>${H("Pieces","عدد القطع","件数")}</th>
@@ -8335,17 +8409,7 @@ async function printJobExt(j, lang){
       <td style="text-align:center;font-weight:800;font-size:17px">${total}</td>
       <td style="text-align:center">${price?`${price} ${esc(cur)}`:"—"}</td>
       <td style="text-align:center;font-weight:800">${price?`${fmtN(price*total)} ${esc(cur)}`:"—"}</td></tr></table>
-
-  <div class="jsec">${T("القطع المطلوبة","ITEMS","生产明细")}</div>
-  <table><tr><th style="width:92px">${H("Photo","صورة","图片")}</th><th>${H("Product","المنتج","产品")}</th>
-    <th style="text-align:center">${H("Size","العمر","尺码")}</th><th style="text-align:center">${H("Qty","العدد","数量")}</th>
-    <th style="text-align:center">${H("Price","السعر","单价")}</th><th style="text-align:center">${H("Total","الإجمالي","小计")}</th></tr>${rows}</table>
-  ${matTable}
-  ${charts}
-  ${gal}
-  ${refs}
-  ${embBlock}
-  ${patBlock}
+  ${blocks}
   ${j.notes?`<div class="jsec">${T("ملاحظات","NOTES","备注")}</div><div style="font-size:13px;white-space:pre-wrap">${esc(j.notes)}</div>`:""}
   </div>`;
   jobShow(await signHtml(content), [["ar","عربي"],["zh","中文"],["en","English"]].map(([c,l])=>
@@ -9168,7 +9232,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive","stockMoveDel",
+    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
