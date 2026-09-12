@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.05:APPV-->
+<!--APPV:2026-08-13.06:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -432,6 +432,55 @@ function chartFor(owner, who){
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الحوض","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
 const MEAS_ZH={chest:"胸围",waist:"腰围",hips:"臀围",shoulder:"肩宽",length:"衣长",sleeve:"袖长",
   corsage:"胸衣",top_len:"上衣长",skirt_len:"裙长",pants_len:"裤长",short_len:"短裤长",width:"宽度"};
+/* قاموس كلمات المواد والألوان — الورقة اللي تروح للمصنع لازم يقراها */
+const AR_TR={
+  /* أقمشة */
+  "خام":["Fabric","面料"],"قماش":["Fabric","面料"],"لينين":["Linen","亚麻"],"كتان":["Linen","亚麻"],
+  "شامواه":["Suede","麂皮"],"مخمل":["Velvet","天鹅绒"],"شيفون":["Chiffon","雪纺"],"جلد":["Leather","皮革"],
+  "قطن":["Cotton","棉布"],"حرير":["Silk","真丝"],"تول":["Tulle","网纱"],"دانتيل":["Lace","蕾丝"],
+  "ساتان":["Satin","缎面"],"ساتين":["Satin","缎面"],"جيرسي":["Jersey","针织布"],"صوف":["Wool","羊毛"],
+  "بوليستر":["Polyester","涤纶"],"كريب":["Crepe","绉布"],"اورجانزا":["Organza","欧根纱"],
+  "جوخ":["Felt","毛毡"],"تفتا":["Taffeta","塔夫绸"],"شبك":["Mesh","网布"],"بطانه":["Lining","里布"],
+  "كانفاس":["Canvas","帆布"],"جنفاص":["Canvas","帆布"],"دنيم":["Denim","牛仔布"],"جينز":["Denim","牛仔布"],
+  /* إكسسوار وكلف */
+  "زرارات":["Buttons","纽扣"],"ازرار":["Buttons","纽扣"],"زرار":["Button","纽扣"],"زر":["Button","纽扣"],
+  "سحاب":["Zipper","拉链"],"هدب":["Fringe","流苏"],"لولو":["Pearls","珍珠"],"لؤلؤ":["Pearls","珍珠"],
+  "كلف":["Trim","花边"],"خيوط":["Thread","缝纫线"],"خيط":["Thread","缝纫线"],
+  "شريطه":["Ribbon","丝带"],"شريط":["Ribbon","丝带"],"استك":["Elastic","松紧带"],"مطاط":["Elastic","松紧带"],
+  "كبسون":["Snap","按扣"],"ابزيم":["Buckle","扣环"],"حجار":["Stones","水钻"],"حجر":["Stone","水钻"],
+  "ترتر":["Sequins","亮片"],"لاصق":["Interlining","粘合衬"],"حزام":["Belt","腰带"],
+  "جنطه":["Bag","包"],"حقيبه":["Bag","包"],"كيس":["Bag","袋"],
+  /* ألوان */
+  "احمر":["Red","红色"],"ازرق":["Blue","蓝色"],"اخضر":["Green","绿色"],"اصفر":["Yellow","黄色"],
+  "اسود":["Black","黑色"],"ابيض":["White","白色"],"بيج":["Beige","米色"],"وردي":["Pink","粉色"],
+  "زهري":["Pink","粉色"],"بنفسجي":["Purple","紫色"],"ذهبي":["Gold","金色"],"فضي":["Silver","银色"],
+  "رمادي":["Grey","灰色"],"بني":["Brown","棕色"],"عنابي":["Maroon","酒红色"],"كحلي":["Navy","藏青色"],
+  "برتقالي":["Orange","橙色"],"تركوازي":["Turquoise","青绿色"],"لؤلؤي":["Pearl","珍珠白"],
+  "شفاف":["Clear","透明"],"مطفي":["Matte","哑光"],"لامع":["Shiny","亮面"]
+};
+const KIND_TR={fabric:["Fabric","面料"],trim:["Trim","辅料"],accessory:["Accessory","配件"]};
+function arNorm(w){ return String(w||"").replace(/[\u064B-\u0652\u0670\u0640]/g,"")
+  .replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/[ةه]$/,"ه").trim(); }
+function trWord(w){ const k=arNorm(w); if(!k) return null;
+  const try_=(x)=> x? (AR_TR[x] || (x.slice(0,2)==="ال"? AR_TR[x.slice(2)] : null)) : null;
+  /* المؤنّث والجمع: «وردية» ← «وردي» ، «حمراء» تبقى مثل ما هي */
+  return try_(k) || (k.slice(-1)==="ه"? try_(k.slice(0,-1)) : null) || null; }
+/* يرجع {hit, en, zh}: الكلمات اللي ما نعرفها تبقى مثل ما هي */
+function trName(name){
+  const ws=String(name||"").trim().split(/\s+/).filter(Boolean);
+  let hit=0; const en=[], zh=[];
+  ws.forEach(w=>{ const t=trWord(w); if(t){ hit++; en.push(t[0]); zh.push(t[1]); } else { en.push(w); zh.push(w); } });
+  return {hit, en:en.join(" "), zh:zh.join(" ")};
+}
+/* اسم الخام بلغة الورقة: المترجم فوق والأصل تحته */
+function matLabel(m, lang){
+  const nm=(m&&m.name)||"";
+  if(lang==="ar" || !nm) return {main:nm||"—", sub:""};
+  const t=trName(nm);
+  const kd=KIND_TR[(m&&m.kind)||""]||null;
+  if(!t.hit) return {main:nm, sub: kd? (lang==="zh"? kd[0]+" / "+kd[1] : kd[0]) : ""};
+  return {main: lang==="zh"? (t.en+" / "+t.zh) : t.en, sub: nm};
+}
 const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["بنطرون","شورت"];
 /* قياسات إضافية للقياسات الخاصة */
 const MEAS2 = [["corsage","الكورساج","Corsage"],["top_len","طول التوب","Top length"],
@@ -1334,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.05";
+const APP_VERSION="2026-08-13.06";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -7062,6 +7111,8 @@ async function saveProduct(){
   }
   if(editProductId) await sb.from("products").update(row).eq("id",editProductId);
   else await sb.from("products").insert(row);
+  if(editProductId){ const pr=(DB.products||[]).find(x=>x.id===editProductId); if(pr) Object.assign(pr,row);
+    await syncProductToDesign(editProductId); }
   window._pReady=false;
   closeSheet(); await refresh();
 }
@@ -7285,6 +7336,26 @@ async function renameDesign(id, val){
   await syncDesignToProduct(id);
 }
 
+/* الجدول تعبّيه مرّة — بالتصميم أو ببطاقة المنتج — ويبقى محفوظ على الاثنين.
+   بدونها: ترجع التصميم للتعديل، منتجه ينحذف، وجدول القياسات يروح معه. */
+async function syncProductToDesign(pid){
+  const pr=(DB.products||[]).find(x=>x.id===pid); if(!pr) return;
+  const d=(DB.designs||[]).find(x=>x.product_id===pid)
+       || (pr.sku? (DB.designs||[]).find(x=>x.sku===pr.sku) : null);
+  if(!d) return;
+  const ch=pr.size_chart||{};
+  if(!Object.keys(ch).length) return;
+  /* مين أحدث؟ اللي فيه أرقام أكثر — عشان ما نمسح جدول عبّيته بالتصميم */
+  const weight=(c)=>Object.keys(c||{}).reduce((a,sz)=>a+Object.keys(c[sz]||{})
+    .filter(k=>String((c[sz]||{})[k]||"").trim()!=="").length, 0);
+  if(weight(ch) <= weight(d.size_chart)) return;
+  const patch={};
+  if(JSON.stringify(ch)!==JSON.stringify(d.size_chart||{})) patch.size_chart=ch;
+  if(chartUnitOf(pr)!==chartUnitOf(d)) patch.chart_unit=chartUnitOf(pr);
+  if(!Object.keys(patch).length) return;
+  try{ await sb.from("design_projects").update(patch).eq("id",d.id); }catch(e){}
+  Object.assign(d,patch); cacheDB();
+}
 /* التصميم هو المصدر: أي تعديل عليه بعد الاعتماد ينزل على منتجه،
    ومن المنتج يكمل تلقائياً لأوامر الإنتاج والتصنيع الخارجي لأنها تشير له ولا تنسخه. */
 async function syncDesignToProduct(id){
@@ -7895,16 +7966,21 @@ function designHistory(d){
 }
 function approveSample(id){
   const d=design_(id);
-  window._dchart=JSON.parse(JSON.stringify(d.size_chart||{}));
-  window._dUnit=chartUnitOf(d);
+  /* رجّعته للتعديل وتعتمده من جديد؟ الجدول اللي عبّيته يرجع معك */
+  const pr0=(d.product_id && (DB.products||[]).find(x=>x.id===d.product_id))
+         || (d.sku && (DB.products||[]).find(x=>x.sku===d.sku)) || null;
+  const keep=(d.size_chart && Object.keys(d.size_chart).length)? d.size_chart
+           : ((pr0 && pr0.size_chart && Object.keys(pr0.size_chart).length)? pr0.size_chart : {});
+  window._dchart=JSON.parse(JSON.stringify(keep));
+  window._dUnit=(d.size_chart&&Object.keys(d.size_chart).length)? chartUnitOf(d) : (pr0? chartUnitOf(pr0) : chartUnitOf(d));
   openSheet(`<div class="title">${isAr()?"اعتماد العينة":"Approve sample"}</div>
     <label>${isAr()?"الاسم النهائي (عربي)":"Final name (AR)"}</label><input id="ap_name" value="${esc(d.final_name||d.name||"")}">
     <label>${isAr()?"الاسم النهائي (إنجليزي)":"Final name (EN)"}</label><input id="ap_name_en" dir="ltr" value="${esc(d.final_name_en||"")}">
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
-      <div><label>${isAr()?"الأعمار":"Ages"}</label><input id="d_sizes" dir="ltr" value="${esc(Object.keys(d.size_chart||{}).join(","))}" onchange="captureDChart();redrawDChart()"></div>
+      <div><label>${isAr()?"الأعمار":"Ages"}</label><input id="d_sizes" dir="ltr" value="${esc(Object.keys(keep).join(","))}" onchange="captureDChart();redrawDChart()"></div>
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="d_unit" onchange="dUnitSwitch()">
-        <option value="inch" ${chartUnitOf(d)==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
-        <option value="cm" ${chartUnitOf(d)==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option></select></div>
+        <option value="inch" ${window._dUnit==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+        <option value="cm" ${window._dUnit==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option></select></div>
     </div>
     <div id="dChartGrid"></div>
     <button class="btn btn-ok btn-big" onclick="finishApprove('${id}')">${I.done} ${isAr()?"اعتماد وتحويل لمنتج":"Approve → product"}</button>`);
@@ -7931,6 +8007,7 @@ function bomFromDesign(d){
 async function unpublishProduct(designId){
   const d=design_(designId); if(!d || !d.product_id) return false;
   const pid=d.product_id;
+  await syncProductToDesign(pid);   /* الجدول يرجع للتصميم قبل ما يروح المنتج */
   const used=(DB.lines||[]).some(l=>l.product_id===pid)
           || (DB.moves||[]).some(m=>m.item_kind==="product" && m.product_id===pid);
   if(used){
@@ -7968,8 +8045,12 @@ async function finishApprove(id){
             || (d.sku && (DB.products||[]).find(x=>x.sku===d.sku));
   const existing = !!target;
   if(existing){
-    ({error}=await sb.from("products").update({...fields, active:true}).eq("id",target.id));
-    Object.assign(target, fields, {active:true});
+    /* ما نمسح جدول قياسات موجود بجدول فاضي */
+    const f2={...fields};
+    if(!Object.keys(chart).length && target.size_chart && Object.keys(target.size_chart).length){
+      delete f2.size_chart; delete f2.chart_unit; }
+    ({error}=await sb.from("products").update({...f2, active:true}).eq("id",target.id));
+    Object.assign(target, f2, {active:true});
     p={id:target.id};
   } else {
     /* نولّد الرقم بأنفسنا: لو انحفظت العملية بالطابور دون إنترنت، الرد يرجع بلا بيانات
@@ -8054,6 +8135,12 @@ function tabExternal(){
           <option value="">${isAr()?"— اختر مشغل الملابس —":"— pick garment vendor —"}</option>${vendorOpts()}</select>
         <input id="x_vendor" placeholder="${isAr()?"أو اكتب اسم مشغل الملابس":"Or type garment vendor"}" style="margin-top:6px">
         <input id="x_vendor2" placeholder="${isAr()?"مشغل التطريز/الطباعة (لو مختلف)":"Embroidery vendor (if different)"}" style="margin-top:6px">
+        <div class="grid2" style="margin-top:6px">
+          <div><label>${isAr()?"سعر القطعة":"Unit price"}</label>
+            <div style="display:flex;gap:6px"><input id="x_price" inputmode="decimal" placeholder="${isAr()?"اختياري":"optional"}">
+            <select id="x_cur" style="max-width:92px">${["CNY","KWD","USD"].map(c=>`<option ${c===(chan(chChannel).currency||"CNY")?"selected":""}>${c}</option>`).join("")}</select></div></div>
+          <div><label>${isAr()?"موعد التسليم":"Delivery date"}</label><input id="x_deliv" type="date"></div>
+        </div>
         <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"اختيار المشغل من القائمة يخلي أمر التنفيذ يطلع بوحدة القياس اللي يتعامل فيها (سم أو إنش).":"Picking from the list prints the chart in that vendor's unit."}</div>
         <button class="btn btn-ink btn-big" style="margin-top:6px" onclick="makeJob('ext')">${I.shipped} ${isAr()?"أرسل واطبع الجوب أوردرات":"Send & print"}</button>`
       : `<div class="muted">—</div>`}
@@ -8072,10 +8159,36 @@ function tabExternal(){
         <div class="pillrow"><button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print}</button>
         <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button>
         ${rowMenu(esc(j.kind)+" — "+esc(j.vendor||""),[
+          {label:isAr()?"السعر وموعد التسليم":"Price & delivery", icon:I.price, fn:()=>extPriceSheet(j.id)},
           {label:isAr()?"إلغاء الإرسالية (ترجع القطع للسلة)":"Cancel job", icon:I.fix, danger:true, fn:()=>extJobDel(j.id,true)},
           {label:isAr()?"حذف الأمر نهائياً":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id,false)}
         ])}</div>
       </div>`;}).join("")}`;
+}
+/* السعر وموعد التسليم — نحطهم عند الإنشاء ونقدر نعدّلهم بعد التفاوض */
+function extPriceSheet(jobId){
+  const j=(DB.jobs||[]).find(x=>x.id===jobId); if(!j) return;
+  openSheet(`<div class="title">${isAr()?"السعر وموعد التسليم":"Price & delivery"}</div>
+    <div class="muted" style="font-size:12px">${esc((supFind(j.supplier_id,j.vendor)||{}).name||j.vendor||"—")} · ${j.qty||0} ${isAr()?"قطعة":"pcs"}</div>
+    <label>${isAr()?"سعر القطعة":"Unit price"}</label>
+    <div style="display:flex;gap:6px"><input id="xp_price" inputmode="decimal" value="${j.unit_price!=null?esc(String(j.unit_price)):""}">
+      <select id="xp_cur" style="max-width:92px">${["CNY","KWD","USD"].map(c=>`<option ${c===(j.currency||chan(chChannel).currency||"CNY")?"selected":""}>${c}</option>`).join("")}</select></div>
+    <label>${isAr()?"موعد التسليم":"Delivery date"}</label><input id="xp_due" type="date" value="${esc(j.delivery_date||"")}">
+    <label>${isAr()?"ملاحظة التفاوض":"Note"}</label><input id="xp_note" value="${esc(j.note_price||"")}">
+    <button class="btn btn-ok btn-big" style="margin-top:10px" onclick="extPriceSave('${jobId}')">${t("save")}</button>`);
+}
+async function extPriceSave(jobId){
+  const j=(DB.jobs||[]).find(x=>x.id===jobId); if(!j) return;
+  const up=parseFloat(toAsciiDigits(el("xp_price").value));
+  const patch={unit_price:isFinite(up)&&up>0? up : null,
+    currency:(isFinite(up)&&up>0)? el("xp_cur").value : null,
+    delivery_date:el("xp_due").value||null, note_price:el("xp_note").value||null};
+  const {error}=await sb.from("ext_jobs").update(patch).eq("id",jobId);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  Object.assign(j,patch); cacheDB();
+  await logIt("edit","ext_jobs",jobId,`${patch.unit_price||"—"} ${patch.currency||""}`);
+  closeSheet(); render();
+  toast(isAr()?"انحفظ":"Saved");
 }
 /* حذف بنود من الأمر — اللي دخلت بالغلط أو بالتجربة */
 async function extLinesDel(idsEnc){
@@ -8169,8 +8282,13 @@ async function makeJob(mode){
     /* ١ — جوب أوردر الملابس (أو إرجاع تصليح لو القطع راجعة من الجودة) */
     const isFix=ids.every(id=>{const l=DB.lines.find(x=>x.id===id); return l&&l.fix_reason;});
     const jid=newId();
-    const {error}=await sb.from("ext_jobs").insert({id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix});
-    const j={id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
+    const qty=ids.reduce((a,id)=>{const l=DB.lines.find(x=>x.id===id); return a+((l&&Number(l.qty))||0);},0);
+    const up=parseFloat(toAsciiDigits((el("x_price")&&el("x_price").value)||""))||null;
+    const cur=(el("x_cur")&&el("x_cur").value)||chan(chChannel).currency||"CNY";
+    const due=(el("x_deliv")&&el("x_deliv").value)||null;
+    const money={qty, unit_price:up, currency:up?cur:null, delivery_date:due};
+    const {error}=await sb.from("ext_jobs").insert({id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix,...money});
+    const j={id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today(),...money};
     if(error) return alert(error.message);
     for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
     await logIt("ext_send","ext_jobs",j.id,`${isFix?(isAr()?"إرجاع تصليح":"fix return"):(isAr()?"تنفيذ خارجي":"external")} · ${ids.length}`);
@@ -8354,7 +8472,9 @@ async function printJobExt(j, lang){
     const matRow=(mid)=>{ const m=material(mid)||{}; const ph=matPhoto(mid);
       return `<tr>
         <td style="width:74px;text-align:center">${ph?`<img crossorigin="anonymous" src="${esc(SRC(ph))}" style="width:66px;height:66px;object-fit:cover;border-radius:6px">`:"—"}</td>
-        <td><b>${esc(m.name||"—")}</b>${m.color?` <span style="color:#777">· ${esc(m.color)}</span>`:""}</td>
+        <td>${(function(){const L=matLabel(m,lang);
+          return `<b>${esc(L.main)}</b>${L.sub?`<div style="opacity:.6;font-size:12px">${esc(L.sub)}</div>`:""}`;})()}${
+          m.color?` <span style="color:#777">· ${esc(m.color)}</span>`:""}</td>
         <td class="sku">${esc(m.sku||"—")}</td></tr>`; };
     const matsBlock = mats.length? `
       <div class="jsec">${H("MATERIALS","جدول المواد","材料")}</div>
@@ -8371,10 +8491,12 @@ async function printJobExt(j, lang){
       <div class="jsec">${H("PARTS & MATERIALS","القطع والمواد","部件与材料")}</div>
       <table class="jmat"><tr><th>${H("Part","القطعة","部件")}</th><th>${H("Materials used","المواد المستخدمة","所用材料")}</th></tr>
       ${usable.map(pk=>{ const c=comps.find(x=>x.ar===pk)||{ar:pk,en:pk};
-        return `<tr><td style="width:32%"><b style="color:#8C2F3E">${esc(lang==="ar"? c.ar : (c.en||c.ar))}</b>${
-          lang!=="ar"&&c.ar!==c.en?`<div style="opacity:.6;font-size:12px">${esc(c.ar)}</div>`:""}</td>
-        <td>${(bp[pk]||[]).map(b=>{ const m=material(b.material_id)||{};
-          return `<div style="padding:2px 0">${esc(m.name||"—")} <span class="sku" style="padding:0 6px">${esc(m.sku||"—")}</span></div>`;}).join("")}</td></tr>`;
+        const cn=(lang==="ar")? c.ar : (c.en || trName(c.ar).en || c.ar);
+        return `<tr><td style="width:32%"><b style="color:#8C2F3E">${esc(cn)}</b>${
+          lang!=="ar"&&c.ar!==cn?`<div style="opacity:.6;font-size:12px">${esc(c.ar)}</div>`:""}</td>
+        <td>${(bp[pk]||[]).map(b=>{ const m=material(b.material_id)||{}; const L=matLabel(m,lang);
+          return `<div style="padding:2px 0">${esc(L.main)} <span class="sku" style="padding:0 6px">${esc(m.sku||"—")}</span>${
+            L.sub?` <span style="opacity:.55;font-size:12px">${esc(L.sub)}</span>`:""}</div>`;}).join("")}</td></tr>`;
       }).join("")}</table>` : "";
 
     /* ٣ — جدول القياسات بوحدة المصنع + عمود العدد — العناوين فوق أرقامها مباشرة */
@@ -9310,7 +9432,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel",
+    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel","extPriceSave",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
