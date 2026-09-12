@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.04:APPV-->
+<!--APPV:2026-08-13.05:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -445,7 +445,7 @@ const GARMENT_TYPES = {
   bottom:   ["بنطرون · شورت · تنورة","BOTTOM", ["waist","hips","pants_len","short_len","skirt_len"]],
   full:     ["فستان · أوفرول (قياسات كاملة)","FULL", ["chest","waist","hips","shoulder","length","sleeve","corsage"]],
   belt:     ["حزام","BELT", ["length","width"]],
-  accessory:["إكسسوار · كيس قرقيعان","ACCESSORY", ["length","width"]]
+  accessory:["إكسسوار · حقيبة","ACCESSORY", ["length","width"]]
 };
 function defaultRows(gt){return (GARMENT_TYPES[gt]||GARMENT_TYPES.full)[2];}
 function productRows(p){
@@ -454,7 +454,7 @@ function productRows(p){
 }
 /* قطع التصميم الجاهزة */
 const PARTS_PRESET = [["توب","TOP"],["بنطرون","PANTS"],["تنورة","SKIRT"],["شورت","SHORTS"],
-  ["فستان","DRESS"],["جاكيت","JACKET"],["كيس قرقيعان","GERGEAN BAG"],["حزام","BELT"],["إكسسوار","ACCESSORY"]];
+  ["فستان","DRESS"],["جاكيت","JACKET"],["حقيبة","BAG"],["حزام","BELT"],["إكسسوار","ACCESSORY"]];
 const AGES_PRESET = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 
 let sb=null;
@@ -1334,7 +1334,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.04";
+const APP_VERSION="2026-08-13.05";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8383,7 +8383,7 @@ async function printJobExt(j, lang){
     const rws=productRows(p).filter(m=>Object.keys(chart).some(a2=>chart[a2]&&chart[a2][m[0]]));
     const ages=[...new Set([...Object.keys(chart), ...Object.keys(qtyBy)])].filter(a2=>a2!=="—");
     const chartTable = ages.length? `
-      <div class="jsec">${H("SIZE CHART","جدول القياسات","尺码表")} <span style="letter-spacing:0;font-weight:400;color:#8a8172">· ${UL(cf.unit)}${cf.from!==cf.unit?` — ${H("converted from","محوّلة من","换算自")} ${UL(cf.from)}`:""}</span></div>
+      <div class="jsec">${H("SIZE CHART","جدول القياسات","尺码表")} <span style="letter-spacing:0;font-weight:400;color:#8a8172">· ${UL(cf.unit)}</span></div>
       <table class="jchart">
         <tr><th>${H("AGE","العمر","年龄")}</th><th class="qh">${H("QTY","العدد","数量")}</th>
           ${rws.map(m=>`<th>${esc(H((m[2]||m[1]).toUpperCase(), m[1], MEAS_ZH[m[0]]||m[2]||m[1]))}</th>`).join("")}</tr>
