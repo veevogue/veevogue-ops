@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.98:APPV-->
+<!--APPV:2026-08-12.99:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1290,7 +1290,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.98";
+const APP_VERSION="2026-08-12.99";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -7653,8 +7653,18 @@ function openDesign(id){
         : `${I.user} ${esc(wname(worker(d.sample_worker_id)))} — ${running? (isAr()?"شغال الحين":"working")+` (${workedMins(d.sample_started_at)} ${t("minutes")})` : (isAr()?"بانتظار البدء":"waiting")}`}</div>
       ${d.sample_external?`<button class="btn btn-ink btn-big" onclick="printSampleJob('${id}')">${I.print} ${isAr()?"أمر التنفيذ — اطبعه للمشغل":"Sample order"}</button>
       <button class="btn btn-ok btn-big" style="margin-top:6px" onclick="sampleReceivedExt('${id}')">${I.done} ${isAr()?"استلمت العينة":"Sample received"}</button>`:""}
-      ${rev?`<div class="note-box"><b>${isAr()?"الملاحظات المرسلة له:":"Notes sent:"}</b>
-        ${(d.sample_notes||[]).map((n,i)=>`<div>${i+1}. ${esc(n.t)}</div>`).join("")}</div>`:""}
+      ${(d.sample_notes||[]).length?`<div class="note-box">
+        <div style="display:flex;align-items:center;gap:8px">
+          <b style="flex:1">${isAr()?"الملاحظات المرسلة له:":"Notes sent:"}</b>
+          ${(d.sample_notes||[]).length>1?`<button class="btn btn-ghost" style="width:auto;padding:3px 10px;font-size:11px;color:var(--wine)" onclick="clearDesignNotes('${id}','sample_notes')">${isAr()?"امسح الكل":"Clear all"}</button>`:""}
+        </div>
+        ${(d.sample_notes||[]).map((n,i)=>`<div style="display:flex;align-items:flex-start;gap:8px;margin-top:4px">
+          <div style="flex:1;min-width:0">${i+1}. ${esc(n.t)}${n.img?`<div><img class="thumb" src="${esc(n.img)}" style="width:46px;height:46px" onclick="viewImg('${esc(n.img)}')"></div>`:""}</div>
+          <b style="cursor:pointer;color:var(--wine)" onclick="rmDesignNote('${id}','sample_notes',${i})">✕</b></div>`).join("")}
+        <div class="muted" style="font-size:11px;margin-top:6px">${isAr()
+          ?"الملاحظات تبقى هني لين تمسحها — وسجل الجولات محفوظ بالأسفل على كل حال."
+          :"Notes stay until you delete them; the revision log keeps them anyway."}</div>
+      </div>`:""}
       ${imgs(d.sketches)}
       ${d.materials?`<div class="note-box">${esc(d.materials)}</div>`:""}
       ${designSamplesRecap(d)}
@@ -7736,6 +7746,15 @@ async function addDesignNote(id, field){
 async function rmDesignNote(id, field, idx){
   const d=design_(id); const arr=[...(d[field]||[])]; arr.splice(idx,1);
   await sb.from("design_projects").update({[field]:arr}).eq("id",id);
+  if(d) d[field]=arr; cacheDB();          /* الشاشة تعكس الحذف فوراً بلا انتظار الشبكة */
+  await refresh(); reopenDesign(id);
+}
+async function clearDesignNotes(id, field){
+  const d=design_(id); if(!d || !(d[field]||[]).length) return;
+  const n=(d[field]||[]).length;
+  if(!confirm(isAr()?`مسح ${n} ملاحظة؟ سجل الجولات يبقى محفوظ.`:`Delete ${n} notes?`)) return;
+  await sb.from("design_projects").update({[field]:[]}).eq("id",id);
+  d[field]=[]; cacheDB();
   await refresh(); reopenDesign(id);
 }
 async function setDStage(id, st){
@@ -8930,6 +8949,7 @@ async function wDone(lineId, partId){
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
     "sampleReject","sampleRestore","sampleDelete","sampleStart","sampleDone","sampleReceivedExt",
+    "rmDesignNote","clearDesignNotes",
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
