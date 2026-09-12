@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.09:APPV-->
+<!--APPV:2026-08-13.10:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.09";
+const APP_VERSION="2026-08-13.10";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6426,8 +6426,12 @@ async function saveOrder(){
     if(l.stage==="cut") await genParts(l.id,l,ty,"cut");
   }
   await logIt("order_new","orders",o.id, `#${o.order_no||""} · ${ty} · ${rows.length} ${isAr()?"سطر":"lines"}`);
+  const _wasEdit=!!window._editOrderId;
   newLines=[];customModels=[];window._otype="إنتاج كمي";window._oext=false;window._editOrderId=null;mTab="board";localStorage.setItem("vv2_tab","board");
   await refresh();
+  /* الأمر الجديد يولّد أوامر شراء الإنتاج على طول — ما ننتظرك تدوّر الزر.
+     التصليح ما يشتري خامات. */
+  if(!_wasEdit && ty!=="تصليح"){ try{ await createPOsFromOrder(o.id); }catch(e){} }
   } finally { _savingOrder=false; }
 }
 
