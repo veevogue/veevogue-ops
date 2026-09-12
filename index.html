@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.06:APPV-->
+<!--APPV:2026-08-13.07:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.06";
+const APP_VERSION="2026-08-13.07";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4549,71 +4549,79 @@ function poEditQty(id){
   const q=poQtyUnit(x);
   const smp=poSampleOf(x);
   const mat=x.material_id? (DB.materials||[]).find(m=>m.id===x.material_id) : null;
-  const linkTo=[smp?(isAr()?"العينة":"sample"):"", (mat||smp)?(isAr()?"سعر الخام":"material price"):""].filter(Boolean).join(" + ");
+  const it=chkOf(x);
+  const where=[smp?(isAr()?"العينة":"the sample"):"", (mat||smp)?(isAr()?"سعر الخام":"material price"):"",
+               it?(isAr()?"خطة التصميم":"design plan"):""].filter(Boolean).join(" · ");
   openSheet(`<div class="title">${isAr()?"تعديل الكمية والسعر":"Edit qty & price"} — ${esc(x.fabric_name||"")}</div>
-    <div class="muted" style="font-size:12px">${isAr()?"عدّل لو المورد سلّم كمية مختلفة أو تغيّر السعر (يعدّل المبلغ المستحق).":"Adjust if delivered qty or price changed."}</div>
+    <div class="muted" style="font-size:12px">${isAr()?"اللي تكتبه هنا هو الرقم المعتمد — ينزل بكل مكان مرة وحدة.":"What you type here is the number everywhere."}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
       <div><label>${isAr()?"الكمية":"Qty"} (${unitAr(q.unit)})</label><input id="eq_qty" inputmode="decimal" value="${q.qty}"></div>
       <div><label>${isAr()?"سعر الوحدة":"Unit price"} (${esc(x.currency||"KWD")})</label><input id="eq_price" inputmode="decimal" value="${x.unit_price||0}"></div>
     </div>
-    ${(smp||mat)?`<div class="extbar on" id="eqSyncBar" style="margin-top:10px">
-      <label class="sw"><input type="checkbox" id="eq_sync" checked onchange="el('eqSyncBar').classList.toggle('on',this.checked)"><span class="track"><span class="knob"></span></span></label>
-      <div style="flex:1"><b>${isAr()?"نزّل السعر على "+linkTo:"Push price to "+linkTo}</b>
-        <div class="muted" style="font-size:11px">${isAr()
-          ?"عشان دفتر العينات وحسبة الإنتاج يمشون على نفس السعر — مو سعرين."
-          :"Keeps the samples book and costing on one price."}</div></div>
-    </div>`:`<div class="muted" style="font-size:11px;margin-top:8px">${isAr()
-      ?"هذا الأمر مو مربوط بعينة ولا خام مسجّل — التعديل يبقى على الأمر بس."
-      :"Not linked to a sample — the edit stays on this order."}</div>`}
-    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()
-      ?"الكمية تبقى على هذا الأمر وحده — لأنها تشمل الزيادة والتقريب، والكمية المخططة في التصميم ما تتغير."
-      :"Quantity stays on this order only."}</div>
-    <button class="btn btn-ink btn-big" onclick="poEditQtySave('${id}')">${t("save")}</button>`);
+    ${where?`<div class="muted" style="font-size:11px;margin-top:8px">${isAr()?"ينزل على":"Goes to"}: ${esc(where)}</div>`:""}
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="poEditQtySave('${id}')">${t("save")}</button>`);
 }
 async function poEditQtySave(id){
   const x=(DB.purchases||[]).find(pp=>pp.id===id); if(!x) return;
   const qty=parseFloat(toAsciiDigits(el("eq_qty").value))||0;
   const price=parseFloat(toAsciiDigits(el("eq_price").value));
-  const upd={unit_price:isNaN(price)?x.unit_price:price};
-  if((x.buy_unit||"")==="count"){ upd.buy_qty=qty; upd.plan_qty=qty; }
-  else if((x.buy_unit||"")==="carton"){ upd.buy_qty=qty; const p=product(x.product_id); upd.plan_qty=qty*(packOf(p)||1); }
-  else { upd.buy_qty=qty; upd.qty_yd=qty; }
-  upd.qty_manual=true;   /* عدّلتها بيدك — ما نرجع نطابقها مع الخطة تلقائياً */
+  const bu=x.buy_unit||"meter";
+  /* كل الأرقام المشتقّة تتحدّث مع بعض — لا يبقى رقم قديم يطلع بمكان ثاني */
+  const upd={unit_price:isNaN(price)?x.unit_price:price, buy_qty:qty, unit:bu, qty_manual:true};
+  if(bu==="count"){ upd.plan_qty=qty; upd.plan_meters=null; upd.qty_yd=null; }
+  else if(bu==="carton"){ const pr=product(x.product_id); upd.plan_qty=qty*(packOf(pr)||1); upd.plan_meters=null; upd.qty_yd=null; }
+  else if(bu==="yard"){ upd.qty_yd=qty; upd.plan_meters=Math.round(qty*YARD*100)/100; }
+  else { upd.qty_yd=Math.round((qty/YARD)*10000)/10000; upd.plan_meters=Math.round(qty*100)/100; }
   await sb.from("purchases").update(upd).eq("id",id);
   Object.assign(x,upd); cacheDB();
-  /* السعر ينزل على العينة والخام — عشان ما يصير سعرين لنفس البند */
-  let note="";
-  const sync=!!(el("eq_sync")&&el("eq_sync").checked);
-  if(sync && !isNaN(price)){
+  const note=[];
+  /* ١ — الكمية تنزل على خطة التصميم: ما نرجّعك تعدّل بمكانين ولا يطلع تنبيه فرق */
+  const it=chkOf(x);
+  if(it && qty>0){
+    const d=design_(x.design_id);
+    if(d){
+      const iu=it.unit||"متر";
+      let cq=qty;
+      if(bu==="meter" && (iu==="يارد"||iu==="yard")) cq=Math.round((qty/YARD)*100)/100;
+      else if(bu==="yard" && !(iu==="يارد"||iu==="yard") && iu!=="عدد" && iu!=="count") cq=Math.round(qty*YARD*100)/100;
+      if(Number(it.qty)!==cq){
+        const arr=(d.checklist||[]).map(c=>c.id===it.id? {...c, qty:cq} : c);
+        await sb.from("design_projects").update({checklist:arr}).eq("id",d.id);
+        d.checklist=arr;
+        note.push(isAr()?`خطة «${it.name||""}» صارت ${cq} ${iu}.`:"");
+      }
+    }
+  }
+  /* ٢ — السعر ينزل على العينة والخام دايماً: سعر واحد للبند مو سعرين */
+  if(!isNaN(price)){
     const smp=poSampleOf(x);
     if(smp){
-      const np=priceToSampleUnit(price, x.buy_unit||"meter", smp);
+      const np=priceToSampleUnit(price, bu, smp);
       if(np!=null && Number(smp.price)!==np){
         const pt={price:np, currency:x.currency||smp.currency};
         await sb.from("trip_samples").update(pt).eq("id",smp.id);
         Object.assign(smp,pt);
-        note=isAr()?`\n\nونزل السعر على العينة «${smp.fabric_type||""}».`:"";
+        note.push(isAr()?`سعر العينة «${smp.fabric_type||""}» صار ${np}.`:"");
         try{ await syncSamplePrice(smp); }catch(e){}
       }
     }
     const mat=x.material_id? (DB.materials||[]).find(m=>m.id===x.material_id) : null;
     if(mat){
-      const from=x.buy_unit||"meter";
       let mp=price, to=matPriceUnit(mat);
-      if(from==="yard" && to==="meter") mp=price/YARD;
-      else if(from==="meter" && to==="yard") mp=price*YARD;
+      if(bu==="yard" && to==="meter") mp=price/YARD;
+      else if(bu==="meter" && to==="yard") mp=price*YARD;
       mp=Math.round(mp*10000)/10000;
       if(Number(mat.price)!==mp){
         await sb.from("materials").update({price:mp, price_unit:to}).eq("id",mat.id);
         mat.price=mp; mat.price_unit=to;
-        note+=isAr()?`\nوسعر الخام «${mat.name||""}» صار ${mp} لكل ${unitAr(to)}.`:"";
+        note.push(isAr()?`سعر الخام «${mat.name||""}» صار ${mp} لكل ${unitAr(to)}.`:"");
       }
     }
-    cacheDB();
   }
-  await logIt("edit","purchases",id, `${qty} · ${isNaN(price)?"":price}${sync?" (sync)":""}`);
+  cacheDB();
+  await logIt("edit","purchases",id, `${qty} ${bu} · ${isNaN(price)?"":price}`);
   closeSheet(); render();
-  if(note) toast(isAr()?"انحفظ."+note:"Saved.", 6000);
+  toast(note.length? (isAr()?"انحفظ — "+note.filter(Boolean).join(" "):"Saved.") : (isAr()?"انحفظ":"Saved"), note.length?5000:2500);
 }
 
 async function poStatus(id,st){ await sb.from("purchases").update({status:st}).eq("id",id); const r=(DB.purchases||[]).find(x=>x.id===id); if(r)r.status=st; render(); }
