@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.10:APPV-->
+<!--APPV:2026-08-13.11:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.10";
+const APP_VERSION="2026-08-13.11";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5154,7 +5154,16 @@ function poPayKey(po){ const t=poDealTotals(po);
 function poPayLabel(k){ const f=PAY_KEYS.find(x=>x[0]===k); return f?(isAr()?f[1]:f[2]):k; }
 
 /* اختيار البنود قبل الطباعة — ما كل مرة تبي كل شي */
-function prPool(){ return (DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel); }
+/* الطباعة تطلع نفس اللي قدامك بالشاشة: نفس القناة ونفس المرحلة ونفس الفلتر */
+function prStage(){ return window._poFilter||"all"; }
+function prPool(){
+  const st=prStage();
+  return (DB.purchases||[]).filter(po=>(po.channel||"local")===chChannel).filter(poFPass)
+    .filter(po=> st==="all"? true : (st==="ready"? poIsReady(po) : ((po.stage||"sample")===st && !poIsReady(po))));
+}
+function prStageLabel(){ const st=prStage();
+  return st==="sample"? (isAr()?"عينات":"Samples") : st==="production"? (isAr()?"إنتاج":"Production")
+       : st==="ready"? (isAr()?"جاهز":"Ready") : (isAr()?"الكل":"All"); }
 function prVisible(){
   const d=window._prDlv;
   const pool=prPool();
@@ -5176,7 +5185,11 @@ function prSheet(){
     : poIsSample(po)? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
     : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"prod"}</span>`;
   const cnt=(k)=>prPool().filter(po=>poDlvKey(po)===k).length;
-  openSheet(`<div class="title">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}</div>
+  openSheet(`<div class="title">${isAr()?"طباعة طلب المشتريات":"Print purchase request"}
+      <span class="chip sage" style="font-size:11px;vertical-align:middle">${esc(prStageLabel())}</span></div>
+    <div class="muted" style="font-size:11px;margin-bottom:6px">${isAr()
+      ?"نفس اللي قدامك بالشاشة — لو تبي مرحلة ثانية بدّلها من فوق وارجع اطبع."
+      :"Mirrors the list on screen."}</div>
     <label>${isAr()?"حالة التسليم":"Delivery status"}</label>
     <div class="pillrow" id="prDlv">${DLV_KEYS.map(([k])=>{ const n=cnt(k); if(!n) return "";
       const on=(window._prDlv||[]).indexOf(k)>=0;
@@ -5479,6 +5492,29 @@ async function delLinked(kind, id, label, after){
 }
 
 /* حذف عام لأي صف */
+/* حذف الأمر: السيرفر يشيل بنوده وأوامر شرائه وإرسالياته،
+   ونشيلها من الذاكرة فوراً عشان ما تبقى ظاهرة قدامك. */
+async function delOrder(id){
+  const o=order(id)||{};
+  const pos=(DB.purchases||[]).filter(x=>x.order_id===id);
+  const locked=pos.filter(poLocked);
+  if(locked.length && !confirm(isAr()
+    ? `الأمر #${o.order_no||""} عليه ${locked.length} أمر شراء مدفوع أو مُرسل.\n\nالحذف يشيلها كلها. تكمل؟`
+    : `${locked.length} POs are paid or sent. Delete anyway?`)) return;
+  const {error}=await sb.from("orders").delete().eq("id",id);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  const lids=(DB.lines||[]).filter(l=>l.order_id===id).map(l=>l.id);
+  DB.orders=(DB.orders||[]).filter(x=>x.id!==id);
+  DB.lines=(DB.lines||[]).filter(l=>l.order_id!==id);
+  DB.parts=(DB.parts||[]).filter(x=>lids.indexOf(x.line_id)<0);
+  DB.purchases=(DB.purchases||[]).filter(x=>x.order_id!==id);
+  DB.jobs=(DB.jobs||[]).filter(x=>x.order_id!==id);
+  cacheDB();
+  await logIt("order_del","orders",id, `#${o.order_no||""} · ${pos.length} ${isAr()?"أمر شراء":"POs"}`);
+  render();
+  toast(isAr()?`انحذف الأمر${pos.length?` و${pos.length} أمر شراء`:""}`:"Deleted", pos.length?4500:2500);
+  await refresh();
+}
 async function delRow(table, id, after){
   const {error}=await sb.from(table).delete().eq("id",id);
   if(error) return alert(error.message);
@@ -5778,7 +5814,7 @@ function orderCard(o){
         {label:isAr()?"قائمة الشراء":"Purchase list", icon:I.pack, fn:()=>showPurchase(o.id)},
         {label:isAr()?"التصنيع الخارجي":"External manufacturing", icon:I.ext, fn:()=>mfgSheet(o.id)},
         {label:isAr()?"إلغاء الأمر":"Cancel order", icon:I.fix, fn:()=>cancelOrder(o.id)},
-        {label:isAr()?"حذف الأمر نهائياً":"Delete order", icon:I.trash, danger:true, fn:()=>delRow("orders",o.id)}
+        {label:isAr()?"حذف الأمر نهائياً":"Delete order", icon:I.trash, danger:true, fn:()=>delOrder(o.id)}
       ]):""}
     </div>
     ${isOpen?`
@@ -5915,7 +5951,25 @@ function poIsReady(x){ return !!x && ((x.stage||"")==="ready"); }
 function posOfOrder(orderId){ return (DB.purchases||[]).filter(x=>x.order_id===orderId && x.stage==="production"); }
 
 /* تحويل القائمة التقديرية إلى أوامر شراء فعلية — مجمّعة حسب المورّد */
-async function createPOsFromOrder(orderId){
+/* أمر شراء ما انمسّ: لا مدفوع ولا مُرسل ولا مستلم */
+function poLocked(x){
+  if(!x) return true;
+  if((x.status||"planned")!=="planned") return true;
+  if(Array.isArray(x.pay_log) && x.pay_log.length) return true;
+  if(x.deliver_status && x.deliver_status!=="ordered") return true;
+  return !!x.received_at;
+}
+/* راح الشغل اللي انطلبت له ← تروح معه. المدفوع والمُرسل يبقى. */
+async function dropPlannedPOs(orderId){
+  const kill=(DB.purchases||[]).filter(x=>x.order_id===orderId && !poLocked(x));
+  for(const x of kill){ try{ await sb.from("purchases").delete().eq("id",x.id); }catch(e){} }
+  if(kill.length){ DB.purchases=(DB.purchases||[]).filter(x=>!kill.some(k=>k.id===x.id)); cacheDB(); }
+  return kill.length;
+}
+async function createPOsFromOrder(orderId, opts){
+  const _quiet=!!(opts&&opts.quiet);
+  const say=(m)=>{ if(!_quiet) alert(m); };
+  const ask=(m)=>_quiet? true : confirm(m);
   const o=order(orderId); if(!o) return;
   const allLines=DB.lines.filter(l=>l.order_id===orderId);
   /* الأمر ينقسم لحاله: التفصال يحسب خاماته، والجاهز يشوف مخزون القطعة نفسها */
@@ -5924,11 +5978,11 @@ async function createPOsFromOrder(orderId){
   const _need=purchaseFor(lines)||{};
   if(!rdyLines.length){
     if(!Object.keys(_need).length)
-      return alert(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked");
+      { say(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked"); return; }
     if(!Object.values(_need).some(v=>Number(v)>0))
-      return alert(isAr()
+      { say(isAr()
         ? "الخامات مربوطة بس استهلاكها صفر.\n\nافتح بطاقة المنتج واكتب كم يستهلك كل خام للقطعة الوحدة — للأعمار كلها أو لكل عمر على حدة."
-        : "Materials linked but consumption is zero — set it on the product card first.");
+        : "Materials linked but consumption is zero — set it on the product card first."); return; }
   }
   /* نفصل الاحتياج حسب الكولكشن — كل تكلفة تُنسب لمركزها */
   const needByCol={};
@@ -5946,7 +6000,7 @@ async function createPOsFromOrder(orderId){
     const msg=isAr()
       ? `فيه ${existing.length} أمر شراء مولّد لهذا الأمر.\n${locked.length?`${locked.length} منها مدفوع أو مُرسل — ما راح تنمس.\n`:""}نعيد توليد ${replaceable.length}؟`
       : `${existing.length} POs exist. Regenerate ${replaceable.length}?`;
-    if(!confirm(msg)) return;
+    if(!ask(msg)) return;
   }
 
   const tr=activeTrip();
@@ -6017,25 +6071,25 @@ async function createPOsFromOrder(orderId){
     });
   }
 
-  if(!rows.length) return alert(isAr()
+  if(!rows.length){ say(isAr()
     ? ((covered||rdyCovered) && !skipped && !rdySkipped
         ? `ما احتجنا أوامر شراء — المخزون يغطّي كل بنود هذا الأمر (${covered+rdyCovered} بند).`
         : `ما قدرنا ننشئ أوامر${skipped?` — ${skipped} خامة بدون مورّد.`:""}${rdySkipped?` — ${rdySkipped} قطعة جاهزة بدون مورّد. حدّده من بطاقة المنتج.`:""}${(!skipped&&!rdySkipped)?".":""}`)
-    : "No POs needed.");
+    : "No POs needed."); return; }
 
   for(const x of replaceable){
     await sb.from("purchases").delete().eq("id",x.id);
     DB.purchases=(DB.purchases||[]).filter(z=>z.id!==x.id);
   }
   const {error}=await sb.from("purchases").insert(rows);
-  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  if(error && !/queued/i.test(error.message||"")){ say(error.message); return; }
   rows.forEach(r=>{ if(!(DB.purchases||[]).some(z=>z.id===r.id)) DB.purchases.unshift(r); });
   cacheDB();
   await logIt("po_gen","orders",orderId, `${rows.length} ${isAr()?"أمر شراء":"POs"}`);
   const sups=[...new Set(rows.map(r=>r.supplier_name))].length;
   const cols=[...new Set(rows.map(r=>r.collection_id).filter(Boolean))].length;
   const nTail=rows.length-rdyRows;
-  alert(isAr()
+  say(isAr()
     ? `تم إنشاء ${rows.length} أمر شراء على ${sups} مورّد`
       + (cols>1? ` — موزّعة على ${cols} كولكشن.` : ".")
       + ((nTail&&rdyRows)? `\n\n🧵 تفصال (خامات): ${nTail}\n📦 جاهز (قطع): ${rdyRows}` : (rdyRows?`\n\n📦 كلها أوامر جاهز.`:""))
@@ -6047,7 +6101,8 @@ async function createPOsFromOrder(orderId){
       + (moqWarn.length? `\n\n⚠️ انتبه:\n${moqWarn.join("\n")}`:"")
       + (noCol? `\n\n⚠️ ${noCol} بند ما انحدد له كولكشن — تكلفته ما راح تتحمّل على أي كولكشن.`:"")
     : `Created ${rows.length} POs.`);
-  closeSheet(); await refresh();
+  if(!_quiet) closeSheet();
+  await refresh();
 }
 
 function showPurchase(orderId){
@@ -8263,8 +8318,14 @@ async function extLinesDel(idsEnc){
   DB.parts=(DB.parts||[]).filter(x=>ids.indexOf(x.line_id)<0);
   cacheDB();
   await logIt("del","order_lines",ids[0], `${pname(p)} · ${ls.length} ${isAr()?"بند":"lines"}`);
+  /* الشغل انحذف ← أوامر شرائه المخطّطة تنشال، واللي باقي يتولّد بالكميات الجديدة */
+  const _oid=o.id, _gone=await dropPlannedPOs(_oid);
+  const _left=(DB.lines||[]).filter(l=>l.order_id===_oid).length;
+  if(_left) await createPOsFromOrder(_oid, {quiet:true});
   closeSheet(); render();
-  toast(isAr()?`انحذفت ${ls.length} بند`:`Deleted ${ls.length}`);
+  toast(isAr()
+    ? `انحذفت ${ls.length} بند${_gone?` · وانشالت ${_gone} أمر شراء${_left?" وانعاد توليدها بالكميات الجديدة":""}`:""}`
+    : `Deleted ${ls.length}`, _gone?5000:2500);
 }
 /* حذف قطع تطريز من السلة */
 async function embPartsDel(idsEnc){
@@ -9521,7 +9582,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel","extPriceSave",
+    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel","extPriceSave","delOrder",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
