@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-12.99:APPV-->
+<!--APPV:2026-08-13.00:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1020,10 +1020,49 @@ function stockHistory(kind,id,size,color){
       ? (x.item_kind==="product" && x.product_id===id && (x.size||"")===(size||"") && (x.color||"")===(color||""))
       : (x.item_kind!=="product" && x.material_id===id)).slice(0,25);
   if(!list.length) return "";
+  const mgr=session&&session.role==="manager";
   return `<div class="sechead" style="margin-top:16px">${isAr()?"آخر الحركات":"History"}</div>
-    ${list.map(x=>`<div class="lineitem"><div><b style="color:${x.qty>0?"var(--green)":"var(--wine)"}">${x.qty>0?"+":""}${Math.round(x.qty*100)/100}</b>
+    ${list.map(x=>`<div class="lineitem"><div style="flex:1;min-width:0"><b style="color:${x.qty>0?"var(--green)":"var(--wine)"}">${x.qty>0?"+":""}${Math.round(x.qty*100)/100}</b>
       <span class="muted"> · ${esc(STOCK_REASON[x.reason]||x.reason)}${x.note?` · ${esc(x.note)}`:""}</span></div>
-      <div class="muted" style="font-size:11px">${esc(String(x.at||"").slice(0,10))}</div></div>`).join("")}`;
+      <div class="muted" style="font-size:11px">${esc(String(x.at||"").slice(0,10))}</div>
+      ${mgr?`<button class="btn btn-ghost" title="${isAr()?"حذف الحركة":"delete"}" style="width:auto;padding:3px 9px;font-size:12px;color:var(--wine)" onclick="stockMoveDel('${x.id}')">${I.trash}</button>`:""}</div>`).join("")}
+    ${mgr?`<div class="muted" style="font-size:11px;margin-top:6px">${isAr()
+      ?"حركة انسجّلت بالغلط أو بالتجربة؟ امسحها — الرصيد يتصحّح فوراً."
+      :"Delete a wrong entry — the balance corrects itself."}</div>`:""}`;
+}
+/* حذف حركة مخزون — للمدير فقط. لو كانت استلام أمر شراء نفتح الأمر للاستلام من جديد */
+async function stockMoveDel(mid){
+  if(!(session&&session.role==="manager")) return;
+  const m=(DB.moves||[]).find(x=>x.id===mid); if(!m) return;
+  const isProd=m.item_kind==="product";
+  const nm=isProd? pname(product(m.product_id)) : (material(m.material_id)||{}).name||"—";
+  const before=isProd? prodBalance(m.product_id,m.size,m.color) : matBalance(m.material_id);
+  const after=Math.round((before-(Number(m.qty)||0))*100)/100;
+  const po=(m.ref_table==="purchases"&&m.ref_id)? (DB.purchases||[]).find(p=>p.id===m.ref_id) : null;
+  const msg=isAr()
+    ? `حذف الحركة؟\n\n${nm}${isProd&&m.size?` · ${m.size}${m.color?" / "+m.color:""}`:""}\n`
+      + `${STOCK_REASON[m.reason]||m.reason}: ${m.qty>0?"+":""}${Math.round(m.qty*100)/100}\n\n`
+      + `الرصيد: ${Math.round(before*100)/100} ← ${after}`
+      + (po? `\n\nوأمر الشراء «${po.fabric_name||""}» يرجع «ما استُلم» عشان تقدر تستلمه من جديد.` : "")
+    : `Delete this movement?`;
+  if(!confirm(msg)) return;
+  const {error}=await sb.from("stock_moves").delete().eq("id",mid);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  DB.moves=(DB.moves||[]).filter(x=>x.id!==mid);
+  if(po){
+    /* ما بقت له حركات استلام؟ يرجع قابل للاستلام */
+    const left=(DB.moves||[]).filter(x=>x.ref_table==="purchases" && x.ref_id===po.id && x.reason==="receive");
+    const sum=left.reduce((a,x)=>a+(Number(x.qty)||0),0);
+    const patch = left.length
+      ? {received_qty:Math.round(sum*100)/100}
+      : {received_at:null, received_qty:null, deliver_status:"ordered"};
+    await sb.from("purchases").update(patch).eq("id",po.id);
+    Object.assign(po,patch);
+  }
+  cacheDB();
+  await logIt("del","stock_moves",mid, `${nm} · ${m.qty}`);
+  closeSheet(); render();
+  toast(isAr()?`انحذفت الحركة — الرصيد صار ${after}`:`Deleted — balance ${after}`, 5000);
 }
 
 /* ---- شاشة المخزون ---- */
@@ -1290,7 +1329,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-12.99";
+const APP_VERSION="2026-08-13.00";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8953,7 +8992,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive",
+    "receiveAllForOrder","mfgReceive","stockMoveDel",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
