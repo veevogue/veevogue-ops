@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.02:APPV-->
+<!--APPV:2026-08-13.03:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1332,7 +1332,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.02";
+const APP_VERSION="2026-08-13.03";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8008,24 +8008,43 @@ function tabExternal(){
     .slice().sort((a,b)=>String(b.sent_at||"").localeCompare(String(a.sent_at||"")));
   const openJobs=jobShown;
   const nAll=(DB.jobs||[]).length, nOpen=(DB.jobs||[]).filter(j=>j.status==="sent").length;
-  const embRow=x=>{const l=DB.lines.find(y=>y.id===x.line_id)||{}; const p=product(l.product_id),o=order(l.order_id);
-    return `<div class="checkrow"><input type="checkbox" class="embchk" value="${x.id}"> ${thumb(p)}
-    <div style="flex:1"><b>${esc(pname(p))}</b> — <b style="color:var(--wine)">${esc(isAr()?x.part_ar:(x.part_en||x.part_ar))}</b>
-    <span class="muted">${x.emb_kind?" · "+esc(x.emb_kind):""} · #${o.order_no} — ${esc(l.size||"")} × ${l.qty||1}</span>
-    ${x.is_fix?`<div class="chip wine" style="margin-top:4px">${I.fix} ${isAr()?"إعادة تنفيذ":"redo"}</div>`:""}</div></div>`;};
-  const extRow=l=>{const p=product(l.product_id),o=order(l.order_id);
-    return `<div class="checkrow"><input type="checkbox" class="extchk" value="${l.id}"> ${thumb(p)}
-    <div style="flex:1"><b>${esc(pname(p))}</b> <span class="muted">#${o.order_no} — ${esc(l.size||"")} × ${l.qty}</span>
-    ${l.fix_reason?`<div class="chip wine" style="margin-top:4px">${I.fix} ${isAr()?"إرجاع تصليح":"return"} ${l.ext_fix_count>1?"("+l.ext_fix_count+")":""} — ${esc(l.fix_reason)}</div>`:""}</div></div>`;};
+  const mgr=session&&session.role==="manager";
+  /* المقاسات تتجمّع تحت أمرها ومنتجها — صف واحد بدل صف لكل مقاس */
+  const groupBy=(arr, keyOf)=>{ const g={}; arr.forEach(x=>{ const k=keyOf(x); (g[k]=g[k]||[]).push(x); }); return g; };
+  const sizeBits=(ls)=>ls.map(l=>`${esc(l.size||"—")}×${l.qty||1}`).join(" · ");
+  const extGroups=Object.values(groupBy(extPool, l=>l.order_id+"|"+l.product_id));
+  const embGroups=Object.values(groupBy(embPool, x=>{ const l=DB.lines.find(y=>y.id===x.line_id)||{};
+    return l.order_id+"|"+l.product_id+"|"+x.part_ar+"|"+(x.emb_kind||""); }));
+  const embRow=g=>{ const first=g[0]; const l=DB.lines.find(y=>y.id===first.line_id)||{};
+    const p=product(l.product_id), o=order(l.order_id);
+    const ls=g.map(x=>DB.lines.find(y=>y.id===x.line_id)).filter(Boolean);
+    const tot=ls.reduce((a,x)=>a+(Number(x.qty)||1),0);
+    const ids=g.map(x=>x.id).join(",");
+    return `<div class="checkrow"><input type="checkbox" class="embchk" value="${esc(ids)}"> ${thumb(p)}
+    <div style="flex:1;min-width:0"><b>${esc(pname(p))}</b> — <b style="color:var(--wine)">${esc(isAr()?first.part_ar:(first.part_en||first.part_ar))}</b>
+      <span class="muted">${first.emb_kind?" · "+esc(first.emb_kind):""} · #${o.order_no}</span>
+      <div class="muted" style="font-size:12px">${tot} ${isAr()?"قطعة":"pcs"} · ${sizeBits(ls)}</div>
+      ${g.some(x=>x.is_fix)?`<div class="chip wine" style="margin-top:4px">${I.fix} ${isAr()?"إعادة تنفيذ":"redo"}</div>`:""}</div>
+    ${mgr?rowMenu(esc(pname(p)),[{label:isAr()?"احذف هذي القطع":"Delete these", icon:I.trash, danger:true,
+      fn:()=>embPartsDel(encodeURIComponent(ids))}]):""}</div>`;};
+  const extRow=g=>{ const l0=g[0]; const p=product(l0.product_id), o=order(l0.order_id);
+    const tot=g.reduce((a,x)=>a+(Number(x.qty)||0),0);
+    const ids=g.map(x=>x.id).join(",");
+    return `<div class="checkrow"><input type="checkbox" class="extchk" value="${esc(ids)}"> ${thumb(p)}
+    <div style="flex:1;min-width:0"><b>${esc(pname(p))}</b> <span class="muted">#${o.order_no}</span>
+      <div class="muted" style="font-size:12px">${tot} ${isAr()?"قطعة":"pcs"} · ${sizeBits(g)}</div>
+      ${g.filter(x=>x.fix_reason).map(x=>`<div class="chip wine" style="margin-top:4px">${I.fix} ${esc(x.size||"")} — ${esc(x.fix_reason)}</div>`).join("")}</div>
+    ${mgr?rowMenu(esc(pname(p))+" #"+esc(String(o.order_no||"")),[{label:isAr()?"احذف هذي القطع من الأمر":"Delete these", icon:I.trash, danger:true,
+      fn:()=>extLinesDel(encodeURIComponent(ids))}]):""}</div>`;};
   el("tabbody").innerHTML=`
     <div class="card"><div class="title">${I.emb} ${t("emb")} (${embPool.length})</div>
-      ${embPool.length? embPool.map(embRow).join("")+`<div class="grid2" style="margin-top:8px"><select id="j_vendor_sel" onchange="if(this.value)el('j_vendor').value=this.options[this.selectedIndex].text.split(' · ')[0]">
+      ${embPool.length? embGroups.map(embRow).join("")+`<div class="grid2" style="margin-top:8px"><select id="j_vendor_sel" onchange="if(this.value)el('j_vendor').value=this.options[this.selectedIndex].text.split(' · ')[0]">
         <option value="">${isAr()?"— اختر المشغل —":"— pick —"}</option>${vendorOpts()}</select>
         <input id="j_vendor" placeholder="${isAr()?"أو اكتب الاسم":"Or type name"}"><button class="btn btn-ink" onclick="makeJob('emb')">${I.shipped}</button></div>`
       : `<div class="muted">—</div>`}
     </div>
     <div class="card"><div class="title">${I.ext} ${t("ext")} (${extPool.length})</div>
-      ${extPool.length? extPool.map(extRow).join("")+`
+      ${extPool.length? extGroups.map(extRow).join("")+`
         <div class="note-box" style="margin-top:8px">${isAr()
           ?"لو في تطريز أو طباعة على أي قطعة، يطلع لك <b>جوب أوردرين</b>: واحد للملابس وواحد للتطريز. اكتب مشغل التطريز لو كان مكاناً ثانياً، وإلا اتركه فاضي."
           :"If any part needs embroidery you get two separate job orders."}</div>
@@ -8055,6 +8074,43 @@ function tabExternal(){
           {label:isAr()?"حذف الأمر نهائياً":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id,false)}
         ])}</div>
       </div>`;}).join("")}`;
+}
+/* حذف بنود من الأمر — اللي دخلت بالغلط أو بالتجربة */
+async function extLinesDel(idsEnc){
+  if(!(session&&session.role==="manager")) return;
+  const ids=decodeURIComponent(idsEnc||"").split(",").filter(Boolean);
+  if(!ids.length) return;
+  const ls=ids.map(id=>DB.lines.find(l=>l.id===id)).filter(Boolean);
+  if(!ls.length) return;
+  const p=product(ls[0].product_id), o=order(ls[0].order_id);
+  const tot=ls.reduce((a,l)=>a+(Number(l.qty)||0),0);
+  if(!confirm(isAr()
+    ? `حذف ${ls.length} بند من الأمر #${o.order_no||""}؟\n\n${pname(p)} — ${tot} قطعة\n${ls.map(l=>`${l.size||"—"}×${l.qty||1}`).join(" · ")}\n\nالحذف نهائي.`
+    : `Delete ${ls.length} lines?`)) return;
+  for(const id of ids){
+    try{ await sb.from("stage_events").delete().eq("line_id",id); }catch(e){}
+    try{ await sb.from("line_parts").delete().eq("line_id",id); }catch(e){}
+    await sb.from("order_lines").delete().eq("id",id);
+  }
+  DB.lines=(DB.lines||[]).filter(l=>ids.indexOf(l.id)<0);
+  DB.parts=(DB.parts||[]).filter(x=>ids.indexOf(x.line_id)<0);
+  cacheDB();
+  await logIt("del","order_lines",ids[0], `${pname(p)} · ${ls.length} ${isAr()?"بند":"lines"}`);
+  closeSheet(); render();
+  toast(isAr()?`انحذفت ${ls.length} بند`:`Deleted ${ls.length}`);
+}
+/* حذف قطع تطريز من السلة */
+async function embPartsDel(idsEnc){
+  if(!(session&&session.role==="manager")) return;
+  const ids=decodeURIComponent(idsEnc||"").split(",").filter(Boolean);
+  if(!ids.length) return;
+  if(!confirm(isAr()?`حذف ${ids.length} قطعة تطريز من السلة؟`:`Delete ${ids.length} parts?`)) return;
+  for(const id of ids) await sb.from("line_parts").delete().eq("id",id);
+  DB.parts=(DB.parts||[]).filter(x=>ids.indexOf(x.id)<0);
+  cacheDB();
+  await logIt("del","line_parts",ids[0], `${ids.length}`);
+  closeSheet(); render();
+  toast(isAr()?`انحذفت ${ids.length} قطعة`:`Deleted ${ids.length}`);
 }
 /* حذف أمر خارجي — مع إرجاع القطع للسلة أو بدونه */
 async function extJobDel(id, restore){
@@ -8089,7 +8145,7 @@ async function makeJob(mode){
   const vsup=supFind(selEl?selEl.value:null, vendor);
   const supplier_id=(vsup&&vsup.id)||null;
   if(mode==="emb"){
-    const pids=[...document.querySelectorAll(".embchk:checked")].map(c=>c.value);
+    const pids=[...document.querySelectorAll(".embchk:checked")].flatMap(c=>String(c.value).split(",")).filter(Boolean);
     if(!pids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
     const first=DB.parts.find(x=>x.id===pids[0]);
     const kind=(first&&first.emb_kind)||"تطريز";
@@ -8102,7 +8158,7 @@ async function makeJob(mode){
     await logIt("ext_send","ext_jobs",j.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
     await refresh(); printJob(j.id);
   }else{
-    const ids=[...document.querySelectorAll(".extchk:checked")].map(c=>c.value);
+    const ids=[...document.querySelectorAll(".extchk:checked")].flatMap(c=>String(c.value).split(",")).filter(Boolean);
     if(!ids.length) return alert(isAr()?"اختر القطع أولاً":"Select items");
     /* بدون مشغل ما نعرف يتعامل بالسم ولا بالإنش، فالورقة تطلع بوحدة غلط */
     if(!supplier_id && !vendor) return alert(isAr()
@@ -9232,7 +9288,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel",
+    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
