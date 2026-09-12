@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.08:APPV-->
+<!--APPV:2026-08-13.09:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.08";
+const APP_VERSION="2026-08-13.09";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5782,6 +5782,21 @@ function orderCard(o){
       ]):""}
     </div>
     ${isOpen?`
+      ${(function(){ const iss=orderBomIssues(o.id); if(!iss.any) return "";
+        const nm=(pid)=>esc(pname(product(pid)));
+        const fix=(pid)=>`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin:3px 3px 0 0" onclick="showProductForm('${pid}')">${nm(pid)} ←</button>`;
+        return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);margin-bottom:6px">
+          <b>${isAr()?"ما راح يطلع لهذا الأمر شراء إنتاج":"No production purchasing for this order"}</b>
+          <div style="font-size:12px;margin-top:3px">${isAr()
+            ? (iss.zero.length? "استهلاك الخام للقطعة الوحدة صفر. افتح بطاقة المنتج واكتب كم يستهلك كل خام." : "")
+              + (iss.none.length? (iss.zero.length?" ":"")+"وفي منتجات ما لها خامات مربوطة." : "")
+            : "Per-piece material consumption is zero or missing."}</div>
+          <div>${[...iss.zero,...iss.none].map(fix).join("")}</div>
+        </div>`; })()}
+      ${session.role==="manager"?`<div class="pillrow" style="margin-bottom:6px">
+        <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="showPurchase('${o.id}')">${I.pack} ${isAr()?"قائمة الشراء وأوامره":"Purchasing"}</button>
+        <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="mfgSheet('${o.id}')">${I.ext} ${isAr()?"التصنيع الخارجي":"External"}</button>
+      </div>`:""}
       ${o.customer_ref?`<div class="muted">${t("invoice")}: ${esc(o.customer_ref)}</div>`:""}
       ${o.repair_reason?`<div class="muted">${t("reason")}: ${esc(o.repair_reason)}</div>`:""}
       ${ls.map(l=>`<div class="lineitem">
@@ -5839,6 +5854,21 @@ function matMarginPct(m){
   const isMeter=((m&&m.unit)||"")==="متر";
   /* الأمتار: قصور + سبير. الإكسسوار بالعدد: سبير فقط — القصور نادر */
   return (isMeter? ((c.shortage||0)+(c.spare||0)) : (c.spare||0))/100;
+}
+/* البند له استهلاك فعلي؟ (عام أو لعمر معيّن) */
+function bomHasQty(b){
+  if(Number(b&&b.qty)>0) return true;
+  const ps=(b&&b.per_size)||null;
+  return !!ps && Object.keys(ps).some(k=>Number(ps[k])>0);
+}
+/* مربوط بخامات بس استهلاكها صفر ← ما يطلع منه شراء إنتاج، وكان يسكت */
+function bomZero(p){ const arr=allBom(p); return arr.length>0 && !arr.some(bomHasQty); }
+function orderBomIssues(orderId){
+  const pids=[...new Set((DB.lines||[]).filter(l=>l.order_id===orderId).map(l=>l.product_id))];
+  const none=[], zero=[];
+  pids.forEach(pid=>{ const pr=product(pid); if(isReadyProd(pr)) return;
+    if(!allBom(pr).length) none.push(pid); else if(bomZero(pr)) zero.push(pid); });
+  return {none, zero, any:(none.length+zero.length)>0};
 }
 function purchaseFor(lines){
   const need={};
@@ -6023,7 +6053,8 @@ async function createPOsFromOrder(orderId){
 function showPurchase(orderId){
   const lines=DB.lines.filter(l=>l.order_id===orderId);
   const need=purchaseFor(lines);
-  const noBom=[...new Set(lines.map(l=>l.product_id))].filter(pid=>!isReadyProd(product(pid)) && !allBom(product(pid)).length);
+  const _iss=orderBomIssues(orderId);
+  const noBom=_iss.none;
   /* نجمع حسب المورّد */
   const groups={}; let grand=0;
   Object.entries(need).forEach(([id,rawQ])=>{
@@ -6077,7 +6108,12 @@ function showPurchase(orderId){
       return `<div class="sechead" style="margin-top:12px">${isAr()?"الجاهز — القطع المطلوبة":"READY-MADE"}</div>${body}
         ${gt?`<div class="lineitem" style="font-weight:800"><div>${isAr()?"تكلفة الجاهز التقديرية":"Ready total"}</div><div>${fmtN(gt)}</div></div>`:""}`;
     })()}
-    ${noBom.length?`<div class="note-box">${isAr()?"منتجات بدون خامات مسجلة":"Products without materials"}: ${noBom.map(pid=>esc(pname(product(pid)))).join(" · ")}</div>`:""}
+    ${_iss.any?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk)">
+      ${_iss.zero.length?`<div><b>${isAr()?"استهلاك الخام صفر":"Zero consumption"}</b> — ${isAr()?"ما راح يطلع شراء لهذي المنتجات لين تكتب كم تستهلك القطعة الوحدة":"set per-piece usage first"}:
+        ${_iss.zero.map(pid=>`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin:3px 3px 0 0" onclick="closeSheet();showProductForm('${pid}')">${esc(pname(product(pid)))} ←</button>`).join("")}</div>`:""}
+      ${_iss.none.length?`<div style="margin-top:${_iss.zero.length?"6px":"0"}"><b>${isAr()?"بدون خامات مربوطة":"No materials"}</b>:
+        ${_iss.none.map(pid=>`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin:3px 3px 0 0" onclick="closeSheet();showProductForm('${pid}')">${esc(pname(product(pid)))} ←</button>`).join("")}</div>`:""}
+    </div>`:""}
     ${(()=>{ const ex=[...posOfOrder(orderId),...posOfOrderReady(orderId)]; return ex.length
         ? `<div class="note-box" style="background:var(--green-lt);color:var(--green-dk)">${isAr()?`مولّد لهذا الأمر: <b>${ex.length}</b> أمر شراء`:`${ex.length} POs generated`}</div>` : ""; })()}
     <button class="btn btn-ink btn-big" onclick="createPOsFromOrder('${orderId}')">${isAr()?"أنشئ أوامر الشراء الفعلية":"Create purchase orders"}</button>
