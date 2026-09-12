@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.07:APPV-->
+<!--APPV:2026-08-13.08:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1379,11 +1379,11 @@ function factorySheet(jobId){
       </div>
       ${Object.keys(byProd).map(block).join("")}
     </div>
-    <button class="btn btn-ink btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
+    <button class="btn btn-ink btn-big" onclick="printPage('factory','#${esc(String(o.order_no||""))}',${JSON.stringify((sup.name||j.vendor||""))})">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.07";
+const APP_VERSION="2026-08-13.08";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5042,6 +5042,7 @@ async function poSend(gidEnc, lang){
     srcMap[u]=null;
     try{ srcMap[u]=await imgToDataURI(u, 360); }catch(e){ srcMap[u]=null; }
   }));
+  setDocName("po", su.name, `${rows.length} items`);
   const html=reqDocHTML([{sup:su, rows}], lang, {id:"poManifest", qr:qrData,
     img:(u)=>srcMap[u]||null, sub:(su.name||"")});
   /* نص مختصر للوي تشات/واتساب */
@@ -5073,7 +5074,7 @@ async function poManifestSaveImg(btn){
   try{
     const canvas=await html2canvas(node,{useCORS:true, backgroundColor:"#ffffff", scale:3});
     const blob=await new Promise(r=>canvas.toBlob(r,"image/png"));
-    const fname="purchase-order-"+today()+".png";
+    const fname=(window._docName||docName("po"))+".png";
     if(blob && navigator.canShare){
       try{ const file=new File([blob],fname,{type:"image/png"});
         if(navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"Purchase Order"}); if(btn){btn.disabled=false;btn.textContent=orig;} return; }
@@ -5091,7 +5092,8 @@ function poManifestPrint(){
   const w=window.open("about:blank","_blank"); if(!w){ alert(isAr()?"اسمح بالنوافذ المنبثقة عشان الطباعة":"Allow popups to print"); return; }
   const closeLbl=isAr()?"إغلاق":"Close", printLbl=isAr()?"طباعة / حفظ PDF":"Print / Save PDF";
   const _pd=(window._manLang==="ar")?"rtl":"ltr";
-  w.document.write(`<!DOCTYPE html><html dir="${_pd}"><head><meta charset="utf-8"><title>order</title><style>
+  const _nm=window._docName||docName("po");
+  w.document.write(`<!DOCTYPE html><html dir="${_pd}"><head><meta charset="utf-8"><title>${esc(_nm)}</title><style>
     body{font-family:Arial,'Noto Sans SC',Tajawal,sans-serif;padding:16px;color:#18181B;margin:0}
     .bar{position:sticky;top:0;display:flex;gap:8px;background:#fff;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:12px}
     .bar button{flex:1;padding:12px;border:0;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
@@ -5308,6 +5310,8 @@ function purchaseReqPrint(){
   pos.forEach(po=>{ const k=po.supplier_id||po.supplier_name||"—"; (groups[k]=groups[k]||{sup:null,rows:[]});
     groups[k].sup = supOf(po) || {name:po.supplier_name};
     groups[k].rows.push(po); });
+  { const gs=Object.values(groups);
+    setDocName("req", gs.length===1? ((gs[0].sup||{}).name||"") : `${gs.length} suppliers`, `${pos.length} items`); }
   jobShow(reqDocHTML(Object.values(groups), lang, {}));
   /* نفس مبدّل اللغة اللي بالإرسال — الورقة وحدة والقالب واحد */
   const row=el("joLangRow");
@@ -6080,7 +6084,7 @@ function showPurchase(orderId){
     <button class="btn btn-ok btn-big" onclick="receiveAllForOrder('${orderId}')">📦 ${isAr()?"استلمت كل الخامات — أدخلها المخزون":"Receive all into stock"}</button>
     <button class="btn btn-line btn-big" onclick="issueForOrder('${orderId}')">${isAr()?"اصرف الخامات من المخزون":"Issue materials"}</button>
     <button class="btn btn-ghost btn-big" onclick="varianceSheet('${orderId}')">${isAr()?"فرق الاستهلاك (مخطط مقابل فعلي)":"Usage variance"}</button>
-    <button class="btn btn-ghost btn-big" onclick="window.print()">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
+    <button class="btn btn-ghost btn-big" onclick="printPage('order','#${esc(String(order(orderId).order_no||""))}')">${I.print} ${isAr()?"طباعة":"Print"}</button>`);
 }
 async function shipLine(id){await moveLine(id,"shipped");await refresh();}
 async function closeOrder(id){await sb.from("orders").update({status:"مكتمل"}).eq("id",id);await logIt("order_close","orders",id,"#"+(order(id).order_no||""));await refresh();}
@@ -8439,6 +8443,9 @@ async function printJobExt(j, lang){
   const pids=[...new Set(lines.map(l=>l.product_id))];
   const total=lines.reduce((a,l)=>a+(Number(l.qty)||0),0);
   const price=Number(j.unit_price)||0, cur=j.currency||"CNY";
+  { const p0=product(pids[0])||{};
+    setDocName(j.is_fix?"RETURN FOR FIX":"job", p0.sku, p0.name,
+      pids.length>1? `+${pids.length-1}` : ""); }
 
   /* صور السكيتش منفصلة عن الصور التوضيحية */
   const skOf=(p,d)=>{ const a=(d&&(d.sketches||[]).filter(Boolean))||[]; return a.length? a : (p.images||[]).filter(Boolean); };
@@ -8626,6 +8633,9 @@ async function printJobExt(j, lang){
 /* أمر التطريز/الطباعة — ورقة القطع */
 async function printJobEmb(j){
   const parts=(j.part_ids||[]).map(id=>DB.parts.find(x=>x.id===id)).filter(Boolean);
+  { const l0=parts[0]? (DB.lines.find(y=>y.id===parts[0].line_id)||{}) : {};
+    const p0=product(l0.product_id)||{};
+    setDocName("emb", p0.sku, p0.name, j.kind); }
   const rows=parts.map(x=>{const l=DB.lines.find(y=>y.id===x.line_id)||{}; const p=product(l.product_id),o=order(l.order_id);
       return `<tr><td>${pimg(p)?`<img crossorigin="anonymous" src="${esc(pimg(p))}" style="width:70px;height:70px;object-fit:cover;border-radius:8px">`:""}</td>
         <td><b>${esc(p.name)}</b><br><span style="color:#8C2F3E;font-weight:700">${esc(x.part_ar||"")}</span>
@@ -8652,6 +8662,7 @@ async function printJobEmb(j){
 /* أمر تنفيذ العينة للمشغل الخارجي — ورقة كاملة يستلمها المشغل */
 async function printSampleJob(id){
   const d=design_(id); if(!d) return;
+  setDocName("sample", d.sku, d.final_name||d.name);
   const sup=supFind(d.sample_vendor_id, d.sample_vendor);
   const vendor=d.sample_vendor||(sup&&sup.name)||"—";
   /* الوحدة من بيانات المشغل نفسه — المصنع الصيني سم والمشاغل المحلية إنش */
@@ -8717,6 +8728,33 @@ async function printSampleJob(id){
 }
 
 /* شاشة الجوب أوردر داخل التطبيق — فيها رجوع + حفظ صورة + طباعة */
+/* اسم ملف الطباعة/الـPDF — المتصفح ياخذه من عنوان الصفحة،
+   فبدون هذا يطلع الملف باسم النظام بدل اسم المستند. */
+const DOC_KIND={job:"JOB ORDER", emb:"EMBROIDERY ORDER", sample:"SAMPLE ORDER",
+  req:"PURCHASE REQUEST", po:"PURCHASE ORDER", order:"PRODUCTION ORDER",
+  factory:"FACTORY SHEET", chart:"SIZE CHART"};
+function docName(kind){
+  const bits=[].slice.call(arguments,1);
+  const clean=(x)=>String(x==null?"":x).replace(/[\/:*?"<>|\\\\]+/g," ").replace(/\s+/g," ").trim();
+  return ["VEEVOGUE", ...bits.map(clean).filter(Boolean), DOC_KIND[kind]||clean(kind), today()]
+    .filter(Boolean).join(" - ").slice(0,120);
+}
+function setDocName(kind){ window._docName=docName.apply(null, arguments); return window._docName; }
+/* نبدّل عنوان الصفحة وقت الطباعة بس، ونرجّعه بعدها */
+function withDocTitle(name, fn){
+  const old=document.title;
+  if(name) document.title=name;
+  let done=false;
+  const back=()=>{ if(done) return; done=true; document.title=old;
+    window.removeEventListener("afterprint",back); };
+  window.addEventListener("afterprint",back);
+  try{ fn(); }catch(e){ back(); throw e; }
+  setTimeout(back, 60000);   /* شبكة أمان لو المتصفح ما أطلق afterprint */
+}
+function printPage(kind){
+  const nm=docName.apply(null, arguments);
+  withDocTitle(nm, ()=>window.print());
+}
 function jobShow(html, extraBtns){
   closeJob();
   const ov=document.createElement("div"); ov.className="overlay"; ov.id="joOv";
@@ -8739,7 +8777,7 @@ async function jobSaveImg(btn){
   try{
     const canvas=await html2canvas(node,{useCORS:true, backgroundColor:"#ffffff", scale:2});
     const blob=await new Promise(r=>canvas.toBlob(r,"image/png"));
-    const fname="job-order-"+today()+".png";
+    const fname=(window._docName||docName("job"))+".png";
     if(blob && navigator.canShare){
       try{ const file=new File([blob],fname,{type:"image/png"});
         if(navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:"Job Order"}); if(btn){btn.disabled=false;btn.textContent=orig;} return; }
@@ -8753,12 +8791,15 @@ async function jobSaveImg(btn){
 }
 function jobPrint(){
   const node=el("joSheet"); if(!node) return;
+  const nm=window._docName||docName("job");
   const ifr=document.createElement("iframe"); ifr.style.position="fixed"; ifr.style.right="-9999px"; ifr.style.bottom="0"; ifr.style.width="800px"; ifr.style.height="1000px";
   document.body.appendChild(ifr);
   const d=ifr.contentWindow.document; d.open();
-  d.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><style>@page{size:auto;margin:0}body{font-family:Tajawal,Arial,sans-serif;padding:20px;color:#1C1B1A}table{width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}</style></head><body>${node.outerHTML}</body></html>`);
+  d.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${esc(nm)}</title><style>@page{size:auto;margin:0}body{font-family:Tajawal,Arial,sans-serif;padding:20px;color:#1C1B1A}table{width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}</style></head><body>${node.outerHTML}</body></html>`);
   d.close();
-  setTimeout(()=>{ try{ifr.contentWindow.focus(); ifr.contentWindow.print();}catch(e){} setTimeout(()=>ifr.remove(),1500); },400);
+  withDocTitle(nm, ()=>{
+    setTimeout(()=>{ try{ifr.contentWindow.focus(); ifr.contentWindow.print();}catch(e){} setTimeout(()=>ifr.remove(),1500); },400);
+  });
 }
 
 /* ---- التصوير ---- */
