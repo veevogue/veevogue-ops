@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.12:APPV-->
+<!--APPV:2026-08-13.13:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.12";
+const APP_VERSION="2026-08-13.13";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2724,7 +2724,8 @@ function chSamples(){
   designIds.forEach(did=>{ const d=design_(did); const c=(d&&d.collection_id)||"__none"; (byCol[c]=byCol[c]||[]).push(did); });
   /* الكولكشنات اللي فيها جاهز تظهر بالدفتر حتى لو ما فيها تصميم واحد */
   readyItems().forEach(x=>{ const c=(x.collection_id&&collection_(x.collection_id))? x.collection_id : "__none"; if(!byCol[c]) byCol[c]=[]; });
-  (DB.collections||[]).forEach(c=>{ if(colKind(c)!=="tailor" && !byCol[c.id]) byCol[c.id]=[]; });
+  /* كل الكولكشنات تنفتح — حتى اللي ما فيها تصميم، عشان تقدر تضيف لها عينة عامة */
+  (DB.collections||[]).forEach(c=>{ if(!byCol[c.id]) byCol[c.id]=[]; });
   const colKeys=Object.keys(byCol);
 
   if(window._smpCol && byCol[window._smpCol]){
@@ -2746,7 +2747,9 @@ function chSamples(){
         <span style="width:38px"></span></div>
       ${kind==="ready"? rdBlock + (blocks?`<div style="height:14px"></div>${filterPill}${blocks}`:"")
                       : filterPill + blocks + rdBlock}
-      <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric')">＋ ${isAr()?"عينة عامة (بدون تصميم)":"General sample"}</button>
+      ${(function(){ const mine=applyF(showList(loose.filter(x=>!x.collection_id || x.collection_id===cid)));
+        return mine.length? `<div class="sechead" style="margin-top:12px">${isAr()?"عينات بدون تصميم":"NO DESIGN"} (${mine.length})</div>${mine.map(sampleCard).join("")}` : ""; })()}
+      <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric','${isNone?"":cid}')">＋ ${isAr()?"عينة عامة (بدون تصميم)":"General sample"}</button>
       <div class="muted" style="font-size:11px;margin-top:4px;text-align:center">${isAr()
         ?"للخامات اللي مو مربوطة بتصميم مسجّل — تقدر تربطها بتصميم وبند بعدين."
         :"For materials not tied to a registered design."}</div>`;
@@ -2970,8 +2973,10 @@ async function sampleStatus(id, st){
   const r=(DB.samples||[]).find(x=>x.id===id); if(r) r.status=st;
   render();
 }
-function sampleSheet(designId, itemId, kind){
+function sampleSheet(designId, itemId, kind, colId){
   window._smpPhotos=[]; window._smpCard=null; window._smpCards=[]; window._smpDesigns=[]; window._smpCardFields=null; window._smpEdit=null;
+  /* العينة العامة تنحفظ تحت الكولكشن اللي ضفتها منه — وإلا ما تطلع لك بأي مكان */
+  window._smpCol4 = colId || (designId? ((design_(designId)||{}).collection_id||"") : "");
   window._chDesign = designId||"";
   window._chItem = itemId||"";
   const k = kind||"fabric";
@@ -3311,6 +3316,8 @@ async function sampleSave(){
     card_photos:window._smpCards||[],
     fabric_type:el("smp_fab").value||null,
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
+    collection_id:(function(){ const d=(el("smp_design")?el("smp_design").value:null)||window._chDesign||null;
+      return (d && (design_(d)||{}).collection_id) || window._smpCol4 || null; })(),
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:(el("smp_item")? (el("smp_item").value||null) : (window._chItem||null)),
     sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample", k),
@@ -3351,6 +3358,7 @@ function sampleEdit(id){
   window._smpCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : (x.card_photo?[x.card_photo]:[]);
   window._smpCard=window._smpCards[0]||null;
   window._smpDesigns=[...(x.design_ids||[])].filter(id=>id&&id!==x.design_id).map(did=>({did, qty:null, unit:null}));
+  window._smpCol4=x.collection_id||window._smpCol4||"";
   const setv=(idf,v)=>{ const e=el(idf); if(e&&v!=null) e.value=v; };
   if(el("smp_supname")) el("smp_supname").value=x.supplier_name||"";
   if(el("smp_shop")) el("smp_shop").value=x.shop_no||"";
