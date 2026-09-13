@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.11:APPV-->
+<!--APPV:2026-08-13.12:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1383,7 +1383,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.11";
+const APP_VERSION="2026-08-13.12";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2745,7 +2745,11 @@ function chSamples(){
           <div class="colhead-sub">${sub.join(" · ")}</div></div>
         <span style="width:38px"></span></div>
       ${kind==="ready"? rdBlock + (blocks?`<div style="height:14px"></div>${filterPill}${blocks}`:"")
-                      : filterPill + blocks + rdBlock}`;
+                      : filterPill + blocks + rdBlock}
+      <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric')">＋ ${isAr()?"عينة عامة (بدون تصميم)":"General sample"}</button>
+      <div class="muted" style="font-size:11px;margin-top:4px;text-align:center">${isAr()
+        ?"للخامات اللي مو مربوطة بتصميم مسجّل — تقدر تربطها بتصميم وبند بعدين."
+        :"For materials not tied to a registered design."}</div>`;
     return;
   }
 
@@ -3019,7 +3023,12 @@ function sampleSheet(designId, itemId, kind){
       <label>${isAr()?"السعر لكل (عدد حبات/درزن)":"Price per (pcs)"}</label><input id="smp_percount" inputmode="numeric" placeholder="12">
     </div>
     <label>${isAr()?"لأي تصميم؟":"For design"}</label>
-    <select id="smp_design">${designOptions(window._chDesign)}</select>
+    <select id="smp_design" onchange="smpItemOpts()">${designOptions(window._chDesign)}</select>
+    <label>${isAr()?"لأي بند من التشيك ليست؟":"Which checklist item?"}</label>
+    <select id="smp_item">${smpItemOptions(window._chDesign, window._chItem)}</select>
+    <div class="muted" style="font-size:11px;margin-top:-2px">${isAr()
+      ?"اتركها «عامة» لو العينة مو لبند محدد — تقدر تخصّصها بعدين من «تعديل»."
+      :"Leave general if it is not tied to one item."}</div>
     <label style="font-size:12px;color:#8a8172">${isAr()?"نفس الخام يخدم تصاميم ثانية؟":"Same material used by other designs?"}</label>
     <div id="smpExtraList" class="pillrow" style="min-height:20px"></div>
     <button type="button" class="btn btn-ghost" style="font-size:13px;padding:5px 12px" onclick="smpAddExtraDesign()">＋ ${isAr()?"أضف تصميم يستخدم نفس الخام":"Add design"}</button>
@@ -3031,6 +3040,21 @@ function sampleSheet(designId, itemId, kind){
     <label>${isAr()?"ملاحظة":"Note"}</label><textarea id="smp_note"></textarea>
     <button class="btn btn-ink btn-big" onclick="sampleSave()">${t("save")}</button>`);
   smpKindToggle(); smpRenderExtra();
+}
+/* بنود التشيك ليست للتصميم المختار — عشان تخصّص عينة عامة لبند بعدين */
+function smpItemOptions(did, sel){
+  const d=did? design_(did) : null;
+  const items=(d&&d.checklist)||[];
+  const gen=`<option value="">${isAr()?"— عامة (بدون بند) —":"— general —"}</option>`;
+  if(!items.length) return gen;
+  return gen+items.map(it=>`<option value="${esc(it.id)}" ${sel===it.id?"selected":""}>${esc(it.name||"")}${
+    it.qty!=null?` · ${esc(String(it.qty))} ${esc(it.unit||"")}`:""}</option>`).join("");
+}
+function smpItemOpts(){
+  const box=el("smp_item"); if(!box) return;
+  const did=el("smp_design")?el("smp_design").value:"";
+  const keep=box.value;
+  box.innerHTML=smpItemOptions(did, keep);
 }
 function smpSupPick(id){
   const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return;
@@ -3288,7 +3312,7 @@ async function sampleSave(){
     fabric_type:el("smp_fab").value||null,
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
-    checklist_item_id:window._chItem||null,
+    checklist_item_id:(el("smp_item")? (el("smp_item").value||null) : (window._chItem||null)),
     sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample", k),
     kind:k,
     note:el("smp_note").value||null,
@@ -3334,6 +3358,8 @@ function sampleEdit(id){
   if(el("smp_fab")) el("smp_fab").value=x.fabric_type||"";
   if(el("smp_note")) el("smp_note").value=x.note||"";
   if(el("smp_kind")){ el("smp_kind").value=x.kind||"fabric"; smpKindToggle(); }
+  if(el("smp_design")) el("smp_design").value=x.design_id||"";
+  if(el("smp_item")) el("smp_item").innerHTML=smpItemOptions(x.design_id||"", x.checklist_item_id||"");
   if((x.kind||"fabric")==="accessory"){ setv("smp_aprice",x.price); if(el("smp_acur"))el("smp_acur").value=x.currency||"CNY"; setv("smp_percount",x.per_count); }
   else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); smpPerToggle(); }
   smpRenderPhotos();
