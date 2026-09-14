@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.13:APPV-->
+<!--APPV:2026-08-13.14:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -533,6 +533,8 @@ function skuNext(prefix, arr, field){
 }
 function activeDesigns(){ return (DB.designs||[]).filter(d=>(d.stage||"idea")!=="approved"); }
 function designOptions(sel){ return `<option value="">${isAr()?"— بدون —":"none"}</option>`+activeDesigns().map(d=>`<option value="${d.id}" ${sel===d.id?"selected":""}>${esc(d.name||"")}${d.sku?` (${esc(d.sku)})`:""}</option>`).join(""); }
+function colOptions(sel){ return `<option value="">${isAr()?"— عام (بدون كولكشن) —":"— general —"}</option>`
+  +(DB.collections||[]).map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.name||"")}</option>`).join(""); }
 /* نوع البند يحدّد بداية الكود: الخام F، والكلف والإكسسوارات E */
 function skuPrefix(k){ return (k==="accessory"||k==="trim") ? "E" : "F"; }
 function kindLabel(k){ return k==="accessory" ? (isAr()?"إكسسوار":"accessory")
@@ -1383,7 +1385,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.13";
+const APP_VERSION="2026-08-13.14";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2747,7 +2749,7 @@ function chSamples(){
         <span style="width:38px"></span></div>
       ${kind==="ready"? rdBlock + (blocks?`<div style="height:14px"></div>${filterPill}${blocks}`:"")
                       : filterPill + blocks + rdBlock}
-      ${(function(){ const mine=applyF(showList(loose.filter(x=>!x.collection_id || x.collection_id===cid)));
+      ${(function(){ const mine=applyF(showList(loose.filter(x=>x.collection_id===cid)));
         return mine.length? `<div class="sechead" style="margin-top:12px">${isAr()?"عينات بدون تصميم":"NO DESIGN"} (${mine.length})</div>${mine.map(sampleCard).join("")}` : ""; })()}
       <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric','${isNone?"":cid}')">＋ ${isAr()?"عينة عامة (بدون تصميم)":"General sample"}</button>
       <div class="muted" style="font-size:11px;margin-top:4px;text-align:center">${isAr()
@@ -2778,7 +2780,8 @@ function chSamples(){
         </div>`;
       }).join("")
       : `<div class="muted" style="font-size:13px">${isAr()?"ما في تصاميم بعد — عبّي تشيك ليست تصميم من قسم التصميم":"No designs yet"}</div>`}
-    ${applyF(showList(loose)).length?`<div class="sechead" style="margin-top:12px">${isAr()?"عينات غير مربوطة بتصميم":"UNLINKED"}</div>${applyF(showList(loose)).map(sampleCard).join("")}`:""}
+    ${(function(){ const gen=applyF(showList(loose.filter(x=>!x.collection_id)));
+      return gen.length? `<div class="sechead" style="margin-top:12px">${isAr()?"عينات عامة (بدون كولكشن)":"GENERAL"} (${gen.length})</div>${gen.map(sampleCard).join("")}` : ""; })()}
     <button class="btn btn-ink btn-big" style="margin-top:12px" onclick="sampleSheet('','','fabric')">＋ ${isAr()?"عينة جديدة":"New sample"}</button>`;
 }
 /* يعطي كل بند تشيك ليست معرّف ثابت حتى نربط العينات به */
@@ -3027,6 +3030,11 @@ function sampleSheet(designId, itemId, kind, colId){
       </div>
       <label>${isAr()?"السعر لكل (عدد حبات/درزن)":"Price per (pcs)"}</label><input id="smp_percount" inputmode="numeric" placeholder="12">
     </div>
+    <label>${isAr()?"لأي كولكشن؟":"For collection"}</label>
+    <select id="smp_col">${colOptions(window._smpCol4)}</select>
+    <div class="muted" style="font-size:11px;margin-top:-2px">${isAr()
+      ?"اتركه «عام» لو مو تابع لكولكشن — يطلع بشاشة الكولكشنات بس. وإذا خصّصته يطلع تحته وحده."
+      :"Leave general to keep it outside collections."}</div>
     <label>${isAr()?"لأي تصميم؟":"For design"}</label>
     <select id="smp_design" onchange="smpItemOpts()">${designOptions(window._chDesign)}</select>
     <label>${isAr()?"لأي بند من التشيك ليست؟":"Which checklist item?"}</label>
@@ -3056,10 +3064,12 @@ function smpItemOptions(did, sel){
     it.qty!=null?` · ${esc(String(it.qty))} ${esc(it.unit||"")}`:""}</option>`).join("");
 }
 function smpItemOpts(){
-  const box=el("smp_item"); if(!box) return;
   const did=el("smp_design")?el("smp_design").value:"";
-  const keep=box.value;
-  box.innerHTML=smpItemOptions(did, keep);
+  const box=el("smp_item");
+  if(box){ const keep=box.value; box.innerHTML=smpItemOptions(did, keep); }
+  /* اخترت تصميم؟ الكولكشن ينضبط على كولكشنه — وتقدر تغيّره بعدها */
+  const cb=el("smp_col");
+  if(cb && did){ const c=(design_(did)||{}).collection_id||""; if(c) cb.value=c; }
 }
 function smpSupPick(id){
   const spx=(DB.suppliers||[]).find(x=>x.id===id); if(!spx)return;
@@ -3316,8 +3326,8 @@ async function sampleSave(){
     card_photos:window._smpCards||[],
     fabric_type:el("smp_fab").value||null,
     design_id:(el("smp_design")?el("smp_design").value:null)||window._chDesign||null,
-    collection_id:(function(){ const d=(el("smp_design")?el("smp_design").value:null)||window._chDesign||null;
-      return (d && (design_(d)||{}).collection_id) || window._smpCol4 || null; })(),
+    collection_id:(el("smp_col")? (el("smp_col").value||null)
+                 : ((function(){ const d=window._chDesign; return (d&&(design_(d)||{}).collection_id)||window._smpCol4||null; })())),
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:(el("smp_item")? (el("smp_item").value||null) : (window._chItem||null)),
     sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample", k),
@@ -3358,7 +3368,7 @@ function sampleEdit(id){
   window._smpCards=(x.card_photos&&x.card_photos.length)? [...x.card_photos] : (x.card_photo?[x.card_photo]:[]);
   window._smpCard=window._smpCards[0]||null;
   window._smpDesigns=[...(x.design_ids||[])].filter(id=>id&&id!==x.design_id).map(did=>({did, qty:null, unit:null}));
-  window._smpCol4=x.collection_id||window._smpCol4||"";
+  window._smpCol4=x.collection_id||"";
   const setv=(idf,v)=>{ const e=el(idf); if(e&&v!=null) e.value=v; };
   if(el("smp_supname")) el("smp_supname").value=x.supplier_name||"";
   if(el("smp_shop")) el("smp_shop").value=x.shop_no||"";
@@ -3368,6 +3378,7 @@ function sampleEdit(id){
   if(el("smp_kind")){ el("smp_kind").value=x.kind||"fabric"; smpKindToggle(); }
   if(el("smp_design")) el("smp_design").value=x.design_id||"";
   if(el("smp_item")) el("smp_item").innerHTML=smpItemOptions(x.design_id||"", x.checklist_item_id||"");
+  if(el("smp_col")) el("smp_col").innerHTML=colOptions(x.collection_id||"");
   if((x.kind||"fabric")==="accessory"){ setv("smp_aprice",x.price); if(el("smp_acur"))el("smp_acur").value=x.currency||"CNY"; setv("smp_percount",x.per_count); }
   else { setv("smp_price",x.price); if(el("smp_cur"))el("smp_cur").value=x.currency||"CNY"; if(el("smp_per"))el("smp_per").value=x.per||"yard"; setv("smp_width",x.width); smpPerToggle(); }
   smpRenderPhotos();
