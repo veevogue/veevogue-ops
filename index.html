@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.17:APPV-->
+<!--APPV:2026-08-13.18:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1389,7 +1389,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.17";
+const APP_VERSION="2026-08-13.18";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6728,7 +6728,10 @@ function showProductForm(pid){
       </select>
       <span class="muted" style="font-size:11px">${isAr()?"أوامر المصنع الصيني تطلع سم تلقائياً":"China orders print cm"}</span>
     </div>
-    <label>${isAr()?"صفوف القياس المطلوبة — اختر اللي يبني الجدول":"Measurement rows"}</label>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <label style="margin:0">${isAr()?"صفوف القياس المطلوبة — اختر اللي يبني الجدول":"Measurement rows"}</label>
+      <button type="button" class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:12px" onclick="chartCopySheet()">${I.ruler} ${isAr()?"انسخ جدول القياسات":"Copy size chart"}</button>
+    </div>
     <div class="pillrow" id="rowPills">${allMeas().map(m=>{
       const on=(p.meas_rows&&p.meas_rows.length? p.meas_rows : defaultRows(p.garment_type||"full")).includes(m[0]);
       return `<span class="pill ${on?'on':''}" data-k="${m[0]}" onclick="captureChart();this.classList.toggle('on');redrawChart()">${isAr()?m[1]:m[2]}</span>`;}).join("")}</div>
@@ -7255,6 +7258,64 @@ function addCustomPart(){
   el("partPills").insertAdjacentHTML("beforeend",
     `<span class="pill on" data-ar="${esc(a)}" data-en="${esc(e)}" onclick="this.remove();redrawParts()">${esc(isAr()?a:e)} ✕</span>`);
   el("p_newpart_ar").value=""; el("p_newpart_en").value=""; redrawParts();
+}
+/* نسخ جدول القياسات من منتج ثاني — نفس الأعمار والصفوف والأرقام،
+   محوّلة لوحدة الجدول اللي أنت عليه. */
+function chartCopySrc(){
+  const me=editProductId||null;
+  return (DB.products||[]).filter(x=>x.id!==me && x.active!==false && !isReadyProd(x)
+    && Object.keys(x.size_chart||{}).length);
+}
+function chartCopySheet(){
+  captureChart();
+  const list=chartCopySrc();
+  if(!list.length) return alert(isAr()?"ما في منتج ثاني عنده جدول قياسات":"No other product has a chart");
+  openSheet2(`<div class="title">${isAr()?"انسخ جدول القياسات":"Copy size chart"}</div>
+    <div class="muted" style="font-size:12px">${isAr()
+      ?"اختر المنتج — ينزل لك بأعماره وصفوفه وأرقامه، ويستبدل اللي عندك."
+      :"Pick a product — its ages, rows and values replace yours."}</div>
+    ${list.map(x=>{ const ages=Object.keys(x.size_chart||{});
+      const rows=(x.meas_rows&&x.meas_rows.length? x.meas_rows : defaultRows(x.garment_type||"full"));
+      return `<div class="lineitem" style="cursor:pointer;align-items:center" onclick="chartCopyDo('${x.id}')">
+        ${thumb(x)}
+        <div style="flex:1;min-width:0;padding-inline-start:10px">
+          <b>${esc(pname(x))}</b>${x.sku?` <span class="muted" style="font-family:Arial;font-size:11px">${esc(x.sku)}</span>`:""}
+          <div class="muted" style="font-size:12px">${ages.length} ${isAr()?"عمر":"ages"} · ${rows.length} ${isAr()?"صف":"rows"} · ${unitLbl(chartUnitOf(x))}</div>
+          <div class="muted" style="font-size:11px">${esc(ages.slice(0,12).join(" · "))}${ages.length>12?" …":""}</div>
+        </div>
+        <span class="muted" style="font-size:18px">←</span>
+      </div>`;}).join("")}
+`);
+}
+function chartCopyDo(srcId){
+  const x=(DB.products||[]).find(z=>z.id===srcId); if(!x) return;
+  const cur=window._chart||{};
+  const hasData=Object.keys(cur).some(sz=>Object.keys(cur[sz]||{}).some(k=>String(cur[sz][k]||"").trim()!==""));
+  if(hasData && !confirm(isAr()
+    ? `الجدول اللي عندك فيه أرقام — ننسخ فوقه من «${pname(x)}»؟`
+    : "Replace your chart?")) return;
+  const to=(el("p_unit")?el("p_unit").value:null)||window._pUnit||"inch";
+  window._chart=chartConv(JSON.parse(JSON.stringify(x.size_chart||{})), chartUnitOf(x), to);
+  window._pUnit=to;
+  /* الأعمار: نشغّل اللي موجود بالقائمة ونضيف الباقي كأزرار */
+  const ages=Object.keys(window._chart);
+  document.querySelectorAll("#agePills .pill").forEach(pl=>{
+    if(pl.dataset.a && AGES_PRESET.includes(pl.dataset.a)) pl.classList.toggle("on", ages.indexOf(pl.dataset.a)>=0);
+    else if(pl.dataset.a && ages.indexOf(pl.dataset.a)<0) pl.remove();
+  });
+  ages.filter(a=>!AGES_PRESET.includes(a)).forEach(a=>{
+    if([...document.querySelectorAll("#agePills .pill")].some(pl=>pl.dataset.a===a)) return;
+    el("agePills").insertAdjacentHTML("beforeend",
+      `<span class="pill on" data-a="${esc(a)}" onclick="this.remove();syncAges()">${esc(a)} ✕</span>`);
+  });
+  el("p_sizes").value=ages.join(",");
+  /* الصفوف: نفس صفوف المصدر */
+  const rows=(x.meas_rows&&x.meas_rows.length? x.meas_rows : defaultRows(x.garment_type||"full"));
+  document.querySelectorAll("#rowPills .pill").forEach(pl=>pl.classList.toggle("on", rows.indexOf(pl.dataset.k)>=0));
+  redrawChart();
+  currentParts().forEach(c=>redrawBomP(c.ar));
+  closeSheet2();
+  toast(isAr()?`انتسخ جدول «${pname(x)}» — ${ages.length} عمر`:`Copied`, 3000);
 }
 function syncAges(){
   captureChart();
