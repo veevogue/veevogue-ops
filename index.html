@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.19:APPV-->
+<!--APPV:2026-08-13.20:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -407,6 +407,24 @@ function convMeas(v, from, to, exact){
           : (from==="cm"&&to==="inch") ? cmToInch(v) : null;
   return r==null ? String(v) : String(r);
 }
+/* التصدير (مصنع خارجي · مشغل محلي · جدول الموقع): يقرّب لأعلى —
+   نصف سنتيمتر أو ربع إنش — حتى لو ما فيه تحويل وحدة. */
+function roundExport(v, unit){
+  const t=(v==null)? "" : String(v).trim();
+  if(t==="") return "";
+  const x=parseFloat(toAsciiDigits(t));
+  if(!isFinite(x)) return t;
+  return String(unit==="cm" ? Math.ceil(x*2)/2 : Math.ceil(x*4)/4);
+}
+function chartExport(chart, from, to){
+  const out={};
+  Object.keys(chart||{}).forEach(sz=>{ out[sz]={};
+    Object.keys(chart[sz]||{}).forEach(k=>{
+      const v=chart[sz][k];
+      const c=(from===to)? v : convMeas(v, from, to, true);
+      out[sz][k]=roundExport(c, to); }); });
+  return out;
+}
 function chartConv(chart, from, to, exact){
   if(from===to) return chart||{};
   const out={};
@@ -432,7 +450,7 @@ function supFind(id, name){
 function chartFor(owner, who){
   const from=chartUnitOf(owner);
   const to = (who && typeof who==="object") ? supUnit(who) : execUnit(who);
-  return {chart:chartConv(owner&&owner.size_chart||{}, from, to), unit:to, from};
+  return {chart:chartExport(owner&&owner.size_chart||{}, from, to), unit:to, from};
 }
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الحوض","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
 const MEAS_ZH={chest:"胸围",waist:"腰围",hips:"臀围",shoulder:"肩宽",length:"衣长",sleeve:"袖长",
@@ -1358,7 +1376,9 @@ function factorySheet(jobId){
   const block=(pid)=>{
     const pr=product(pid), ls=byProd[pid];
     const sizes=[...new Set(ls.map(l=>l.size).filter(Boolean))];
-    const chartRows=Object.keys((pr.size_chart||{})[sizes[0]]||{});
+    const _fc=chartFor(pr, sup&&sup.id? sup : "local");   /* تصدير: مقرّب لوحدة المشغل */
+    const fchart=_fc.chart, funit=_fc.unit;
+    const chartRows=Object.keys(fchart[sizes[0]]||{});
     const mats=allBom(pr).map(b=>{ const m=material(b.material_id); return {m, b}; });
     return `<div style="page-break-inside:avoid;margin-bottom:18px;border:1px solid #ddd;border-radius:10px;padding:12px">
       <div style="display:flex;gap:12px;align-items:flex-start">
@@ -1371,9 +1391,10 @@ function factorySheet(jobId){
       <table style="width:100%;margin-top:10px;font-size:13px"><tr><th>${isAr()?"المقاس":"Size"}</th><th>${isAr()?"اللون":"Color"}</th><th>${isAr()?"العدد":"Qty"}</th></tr>
         ${ls.map(l=>`<tr><td>${esc(l.size||"—")}</td><td>${esc(l.color||"—")}</td><td><b>${l.qty||1}</b></td></tr>`).join("")}
         <tr><td colspan="2"><b>${isAr()?"المجموع":"Total"}</b></td><td><b>${ls.reduce((a,l)=>a+(l.qty||1),0)}</b></td></tr></table>
-      ${chartRows.length?`<div style="font-weight:700;margin-top:10px;font-size:13px">${isAr()?"جدول القياسات":"Size chart"}</div>
+      ${chartRows.length?`<div style="font-weight:700;margin-top:10px;font-size:13px">${isAr()?"جدول القياسات":"Size chart"} (${unitLbl(funit)})</div>
         <table style="width:100%;font-size:12px"><tr><th>${isAr()?"القياس":"Measure"}</th>${sizes.map(sz=>`<th>${esc(sz)}</th>`).join("")}</tr>
-        ${chartRows.map(k=>`<tr><td>${esc(k)}</td>${sizes.map(sz=>`<td>${esc(String(((pr.size_chart||{})[sz]||{})[k]??"—"))}</td>`).join("")}</tr>`).join("")}</table>`:""}
+        ${chartRows.map(k=>{ const m=measByKey(k);
+          return `<tr><td>${esc(m?(isAr()?m[1]:m[2]):k)}</td>${sizes.map(sz=>`<td>${esc(String((fchart[sz]||{})[k]||"—"))}</td>`).join("")}</tr>`;}).join("")}</table>`:""}
       ${mats.length?`<div style="font-weight:700;margin-top:10px;font-size:13px">${isAr()?"الخامات":"Materials"}</div>
         <table style="width:100%;font-size:12px"><tr><th>${isAr()?"الخام":"Material"}</th><th>SKU</th><th>${isAr()?"للقطعة":"Per piece"}</th></tr>
         ${mats.map(({m,b})=>`<tr><td>${esc(m.name||"—")}${m.color?` · ${esc(m.color)}`:""}</td><td style="font-family:Inter">${esc(m.sku||"—")}</td><td>${b.qty} ${esc(m.unit||"")}</td></tr>`).join("")}</table>`:""}
@@ -1393,7 +1414,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.19";
+const APP_VERSION="2026-08-13.20";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -7042,8 +7063,11 @@ function scCard(o){
 }
 function scStage(pid, o){
   const {p, ages, rows}=scData(pid);
+  const u=chartUnitOf(p);
   return scCard({id:"scStage", eyebrow:o.eyebrow, title:o.title, sub:o.sub, badge:o.badge,
-    ageLabel:o.ageLabel, rows, ages, chart:p.size_chart||{}, img:pimg(p)});
+    ageLabel:o.ageLabel, rows, ages,
+    chart:chartExport(p.size_chart||{}, u, u),   /* تصدير للموقع: مقرّب */
+    img:pimg(p)});
 }
 function scOpts(){
   return {eyebrow:"SIZE GUIDE", ageLabel:"AGE",
@@ -8844,7 +8868,7 @@ async function printJobExt(j, lang){
     /* الأرقام تتحوّل بنفس وحدة الجدول الرئيسي — والنص اللي مو رقم يبقى مثل ما هو */
     const cv=(val)=>{ const t=String(val==null?"":val).trim();
       if(!/^[0-9\u0660-\u0669]+(\.[0-9\u0660-\u0669]+)?$/.test(toAsciiDigits(t))) return t;
-      return convMeas(toAsciiDigits(t), cf.from, cf.unit); };
+      return roundExport(convMeas(toAsciiDigits(t), cf.from, cf.unit, true), cf.unit); };
     const partCharts = pcKeys.length? `
       <div class="jsec">${H("PART CHARTS","جداول القطع","部件尺码")} <span style="letter-spacing:0;font-weight:400;color:#8a8172">· ${UL(cf.unit)}</span></div>
       ${pcKeys.map(pk=>{ const c=pcs[pk]; const cc=(comps.find(x=>x.ar===pk)||{ar:pk,en:pk});
