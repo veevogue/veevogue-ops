@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.14:APPV-->
+<!--APPV:2026-08-13.15:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -431,7 +431,8 @@ function chartFor(owner, who){
 }
 const MEAS = [["chest","الصدر","Chest"],["waist","الخصر","Waist"],["hips","الحوض","Hips"],["shoulder","الكتف","Shoulder"],["length","الطول الكلي","Length"],["sleeve","الكم","Sleeve"]];
 const MEAS_ZH={chest:"胸围",waist:"腰围",hips:"臀围",shoulder:"肩宽",length:"衣长",sleeve:"袖长",
-  corsage:"胸衣",top_len:"上衣长",skirt_len:"裙长",pants_len:"裤长",short_len:"短裤长",width:"宽度"};
+  corsage:"胸衣",top_len:"上衣长",skirt_len:"裙长",pants_len:"裤长",short_len:"短裤长",width:"宽度",
+  back_len:"后长",front_len:"前长",bicep:"臂围",cuff:"袖口"};
 /* قاموس كلمات المواد والألوان — الورقة اللي تروح للمصنع لازم يقراها */
 const AR_TR={
   /* أقمشة */
@@ -485,7 +486,9 @@ const SLEEVES = ["نص كم","كم طويل","جبانيز"]; const BOTTOMS = ["
 /* قياسات إضافية للقياسات الخاصة */
 const MEAS2 = [["corsage","الكورساج","Corsage"],["top_len","طول التوب","Top length"],
   ["skirt_len","طول التنورة","Skirt length"],["pants_len","طول البنطرون","Pants length"],
-  ["short_len","طول الشورت","Shorts length"],["width","العرض","Width"]];
+  ["short_len","طول الشورت","Shorts length"],["width","العرض","Width"],
+  ["back_len","الطول الخلفي","Back length"],["front_len","الطول الأمامي","Front length"],
+  ["bicep","الزند (العضد)","Bicep"],["cuff","السوار (المعصم)","Cuff"]];
 function allMeas(){return [...MEAS,...MEAS2];}
 function measByKey(k){return allMeas().find(m=>m[0]===k);}
 /* أنواع القطع وقياساتها الافتراضية */
@@ -1385,7 +1388,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.14";
+const APP_VERSION="2026-08-13.15";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
