@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.16:APPV-->
+<!--APPV:2026-08-13.17:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -193,6 +193,7 @@
   @keyframes vvpulse{0%,100%{opacity:1}50%{opacity:.25}}
   .offbar{background:#F3E3E6;color:#8C2F3E;border:1px solid #E8D4D8;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-weight:700;font-size:14px;}
   .partcard{border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0;background:var(--paper);}
+  .chartblock{border-top:1px dashed var(--line);padding-top:10px;}
   .partcard-h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
   .partcard-h svg{width:18px;height:18px;}
   .partcard label{margin-top:8px;}
@@ -1388,7 +1389,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.16";
+const APP_VERSION="2026-08-13.17";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5904,9 +5905,15 @@ function toggleOrder(id){
 /* ===== قائمة الشراء التقديرية ===== */
 /* الخامات صارت لكل قطعة تصميم — نجمعها كلها */
 /* بنود المنتج الخام كما هي محفوظة عليه */
+function bomPartKeys(p){
+  const bp=(p&&p.bom_parts)||{};
+  const comps=(p&&p.components)||[];
+  return comps.length? comps.map(c=>c.ar).filter(k=>bp[k]) : Object.keys(bp);
+}
 function rawBom(p){
-  const out=[];
-  Object.values((p&&p.bom_parts)||{}).forEach(arr=>(arr||[]).forEach(b=>out.push(b)));
+  const out=[]; const bp=(p&&p.bom_parts)||{};
+  /* بس القطع اللي على المنتج الحين — المطفّاة تبقى محفوظة وما تنحسب */
+  bomPartKeys(p).forEach(k=>(bp[k]||[]).forEach(b=>out.push(b)));
   if(!out.length) ((p&&p.bom)||[]).forEach(b=>out.push(b));   /* منتجات قديمة */
   return out;
 }
@@ -6789,7 +6796,6 @@ function toggleExt(){
 function toggleEmb(){
   const on=!!(el("p_hasemb")&&el("p_hasemb").checked);
   const b=el("embBar"); if(b) b.classList.toggle("on", on);
-  document.querySelectorAll(".embblock").forEach(x=>x.style.display = on? "none":"none");
   document.querySelectorAll(".embblock").forEach(x=>x.style.display = on? "":"none");
   if(!on) window._embP={};
 }
@@ -6914,12 +6920,21 @@ function redrawParts(){
     </div>`;
     return; }
   const mats=matPool();
-  /* أي قطعة جديدة تجي معها كل خامات التصميم — تشيل منها اللي ما تستخدمه بهالقطعة */
+  /* القطعة تجي معها كل خامات التصميم. طفّيتها ورجّعتها؟ اللستة ترجع كاملة
+     والكميات اللي كتبتها تبقى مثل ما هي — ما نمسح شغلك. */
   const seed=(window._bomSeed||[]);
   parts.forEach(c=>{
-    if(window._bomP[c.ar]===undefined)
-      window._bomP[c.ar]=seed.map(b=>({material_id:b.material_id, qty:0}));
+    const cur=window._bomP[c.ar];
+    if(cur===undefined){ window._bomP[c.ar]=seed.map(b=>({material_id:b.material_id, qty:0})); return; }
+    if(!window._pOff || !window._pOff[c.ar]) return;   /* ما انطفّت — نحترم اللي شلته */
+    delete window._pOff[c.ar];
+    const have=new Set(cur.map(b=>b.material_id));
+    seed.forEach(b=>{ if(!have.has(b.material_id)) cur.push({material_id:b.material_id, qty:0}); });
   });
+  /* نعلّم اللي انطفّت عشان ترجع كاملة لو شبّيتها */
+  { const on=new Set(parts.map(c=>c.ar));
+    window._pOff=window._pOff||{};
+    Object.keys(window._bomP||{}).forEach(k=>{ if(!on.has(k)) window._pOff[k]=1; }); }
   const html=parts.map((c,ci)=>{
     const k=pkey(c.ar), e=window._embP[c.ar]||{};
     return `<div class="partcard">
@@ -6955,7 +6970,7 @@ function redrawParts(){
       ${ci===0? `<div class="muted" style="font-size:11px;margin-top:10px">${isAr()
           ?"هذي القطعة تمشي على جدول القياسات الرئيسي فوق."
           :"This part uses the main size chart above."}</div>`
-      : `<div class="embblock" style="margin-top:10px">
+      : `<div class="chartblock" style="margin-top:10px">
         <label>${isAr()?"جدول قياس خاص بهذي القطعة (اختياري)":"Own size chart (optional)"}</label>
         <div class="muted" style="font-size:11px;margin-bottom:6px">${isAr()
           ?"اتركه فاضي وما يطلع للمصنع. العمود ممكن يغطي أكثر من عمر — اكتب «3-6» أو «كل الأعمار»."
@@ -7312,15 +7327,18 @@ async function saveProduct(){
       setEmbArr(c.ar, arr);
     }
   } else { window._embP={}; }
+  /* القطعة المطفّاة ما تطلع بالمنتج، بس بياناتها تبقى محفوظة — ترجع مثل ما تركتها */
   const keep=o=>{const r={}; comps.forEach(c=>{ if(o[c.ar]!==undefined && o[c.ar]!==null && o[c.ar]!=="") r[c.ar]=o[c.ar]; }); return r;};
+  const keepAll=o=>{const r={}; Object.keys(o||{}).forEach(k=>{ if(o[k]!==undefined && o[k]!==null && o[k]!=="") r[k]=o[k]; }); return r;};
   const estSew=keep(window._estSew), estCut=keep(window._estCut);
-  const bomP=keep(window._bomP), embP=keep(window._embP);
+  const bomP=keepAll(window._bomP), embP=keep(window._embP);
   const chart={}; chartSizes().forEach(s=>chart[s]=window._chart[s]||{});
   const row={name, name_en:el("p_name_en").value||null, images:window._pimgs, patterns:pats, components:comps,
     sku:el("p_sku").value||null, materials:el("p_materials")?(el("p_materials").value||null):null,
     est_parts:estSew, est_cut_parts:estCut, bom_parts:bomP, emb_parts:embP,
-    part_charts:(function(){ const o={}; comps.forEach((c,i)=>{ if(i===0) return;
-      const ch=(window._pChart||{})[c.ar]; if(pcHasData(ch)) o[c.ar]=ch; }); return o; })(),
+    part_charts:(function(){ const o={}; const first=(comps[0]||{}).ar;
+      Object.keys(window._pChart||{}).forEach(k=>{ if(k===first) return;
+        const ch=(window._pChart||{})[k]; if(pcHasData(ch)) o[k]=ch; }); return o; })(),
     meas_rows:activeRows(),
     external_make:isExt, size_chart:chart, chart_unit:(window._pUnit||"inch"), notes:el("p_notes").value||null};
   if(RDY){
@@ -8677,7 +8695,7 @@ async function printJobExt(j, lang){
   /* مواد المنتج بدون تكرار — الجدول فوق، وتحته كل قطعة شنو استخدمت */
   const matsOf=(p)=>{ const bp=(p.bom_parts||{}); const out=[], seen=new Set();
     const add=b=>{ const id=b&&b.material_id; if(!id||seen.has(id)) return; seen.add(id); out.push(id); };
-    Object.keys(bp).forEach(k=>(bp[k]||[]).forEach(add));
+    bomPartKeys(p).forEach(k=>(bp[k]||[]).forEach(add));
     allBom(p).forEach(add);
     return out; };
 
@@ -8756,7 +8774,8 @@ async function printJobExt(j, lang){
 
     /* ٤ — جداول القطع الإضافية: تطلع بس لو عبّيتها */
     const pcs=(p.part_charts||{});
-    const pcKeys=Object.keys(pcs).filter(k=>pcHasData(pcs[k]));
+    const _live=new Set(comps.length? comps.map(c=>c.ar) : Object.keys(pcs));
+    const pcKeys=Object.keys(pcs).filter(k=>_live.has(k) && pcHasData(pcs[k]));
     /* الأرقام تتحوّل بنفس وحدة الجدول الرئيسي — والنص اللي مو رقم يبقى مثل ما هو */
     const cv=(val)=>{ const t=String(val==null?"":val).trim();
       if(!/^[0-9\u0660-\u0669]+(\.[0-9\u0660-\u0669]+)?$/.test(toAsciiDigits(t))) return t;
