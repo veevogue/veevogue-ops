@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.18:APPV-->
+<!--APPV:2026-08-13.19:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -390,24 +390,28 @@ const SPEC_LIST = ["cut","sew","sample","pack"];
 const SPEC_LABEL = {cut:["قص","CUT"], sew:["خياطة","SEW"], sample:["عينات","SAMPLES"], pack:["تجهيز","PACK"]};
 const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
 /* ===== وحدة جداول القياسات =====
-   الأصل إنش — المشاغل المحلية بالكويت تمشي عليه. المصنع الصيني ياخذ سنتيمتر،
-   والتحويل يقرّب لأعلى نصف سنتيمتر عشان ما تطلع كسور ما تنفع بالتنفيذ. */
+   الأصل إنش — المشاغل المحلية بالكويت تمشي عليه. المصنع الصيني ياخذ سنتيمتر.
+   التقريب لأعلى نصف سنتيمتر يصير عند التصدير للمصنع فقط (عشان ما تطلع
+   كسور ما تنفع بالتنفيذ، وما ياخذ أقل من المطلوب). */
 function chartUnitOf(o){ return ((o&&o.chart_unit)==="cm") ? "cm" : "inch"; }
 function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"in"); }
+/* التقريب لأعلى نصف سنتيمتر مكانه وقت التصدير للمصنع فقط.
+   داخل التطبيق التحويل مضبوط، عشان تقلّب بين إنش وسم وما تتغيّر أرقامك. */
 function inchToCmUp(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.ceil(x*2.54*2)/2; }
+function inchToCm(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.round(x*2.54*100)/100; }
 function cmToInch(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.round((x/2.54)*100)/100; }
-function convMeas(v, from, to){
+function convMeas(v, from, to, exact){
   if(v===null || v===undefined || String(v).trim()==="") return "";
   if(from===to) return String(v);
-  const r = (from==="inch"&&to==="cm") ? inchToCmUp(v)
+  const r = (from==="inch"&&to==="cm") ? (exact? inchToCm(v) : inchToCmUp(v))
           : (from==="cm"&&to==="inch") ? cmToInch(v) : null;
   return r==null ? String(v) : String(r);
 }
-function chartConv(chart, from, to){
+function chartConv(chart, from, to, exact){
   if(from===to) return chart||{};
   const out={};
   Object.keys(chart||{}).forEach(sz=>{ out[sz]={};
-    Object.keys(chart[sz]||{}).forEach(k=>{ out[sz][k]=convMeas(chart[sz][k], from, to); }); });
+    Object.keys(chart[sz]||{}).forEach(k=>{ out[sz][k]=convMeas(chart[sz][k], from, to, exact); }); });
   return out;
 }
 /* وحدة الجهة المنفّذة: من بيانات المورّد نفسه أولاً، وإلا من قناته (الصين سم · الكويت إنش) */
@@ -1389,7 +1393,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.18";
+const APP_VERSION="2026-08-13.19";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -7295,7 +7299,7 @@ function chartCopyDo(srcId){
     ? `الجدول اللي عندك فيه أرقام — ننسخ فوقه من «${pname(x)}»؟`
     : "Replace your chart?")) return;
   const to=(el("p_unit")?el("p_unit").value:null)||window._pUnit||"inch";
-  window._chart=chartConv(JSON.parse(JSON.stringify(x.size_chart||{})), chartUnitOf(x), to);
+  window._chart=chartConv(JSON.parse(JSON.stringify(x.size_chart||{})), chartUnitOf(x), to, true);
   window._pUnit=to;
   /* الأعمار: نشغّل اللي موجود بالقائمة ونضيف الباقي كأزرار */
   const ages=Object.keys(window._chart);
@@ -7354,7 +7358,7 @@ function pUnitSwitch(){
   const from=window._pUnit||"inch";
   if(to===from) return;
   captureChart();
-  window._chart=chartConv(window._chart||{}, from, to);
+  window._chart=chartConv(window._chart||{}, from, to, true);
   window._pUnit=to;
   redrawChart();
   toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
@@ -7753,7 +7757,7 @@ function eaUnitSwitch(){
   const to=el("ea_unit")?el("ea_unit").value:"inch";
   const from=window._eaUnit||"inch";
   if(to===from) return;
-  window._eaChart=chartConv(eaCaptureChart(), from, to);
+  window._eaChart=chartConv(eaCaptureChart(), from, to, true);
   window._eaUnit=to;
   eaRedrawChart();
   toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
@@ -8147,7 +8151,7 @@ function dUnitSwitch(){
   const from=window._dUnit||"inch";
   if(to===from) return;
   captureDChart();
-  window._dchart=chartConv(window._dchart||{}, from, to);
+  window._dchart=chartConv(window._dchart||{}, from, to, true);
   window._dUnit=to;
   redrawDChart();
   toast(isAr()?`تحوّلت للـ${to==="cm"?"سنتيمتر":"إنش"}`:"Converted", 1600);
