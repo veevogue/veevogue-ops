@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.20:APPV-->
+<!--APPV:2026-08-13.21:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1414,7 +1414,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.20";
+const APP_VERSION="2026-08-13.21";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6048,6 +6048,7 @@ async function dropPlannedPOs(orderId){
 }
 async function createPOsFromOrder(orderId, opts){
   const _quiet=!!(opts&&opts.quiet);
+  const _auto=!!(opts&&opts.auto);   /* انطلقت بنفسها بعد حفظ الأمر */
   const say=(m)=>{ if(!_quiet) alert(m); };
   const ask=(m)=>_quiet? true : confirm(m);
   const o=order(orderId); if(!o) return;
@@ -6057,12 +6058,18 @@ async function createPOsFromOrder(orderId, opts){
   const rdyLines=allLines.filter(l=>isReadyProd(product(l.product_id)));
   const _need=purchaseFor(lines)||{};
   if(!rdyLines.length){
+    /* الأمر انحفظ — اللي وقف هو توليد الشراء. نفرّقها عشان ما تفهمها غلط. */
+    const _head=(_auto && isAr())? `الأمر #${o.order_no||""} انحفظ ✓\n\nبس ما طلعت له أوامر شراء:\n\n` : "";
+    const iss=orderBomIssues(orderId);
+    const _names=(arr)=>arr.map(pid=>pname(product(pid))).join(" · ");
     if(!Object.keys(_need).length)
-      { say(isAr()?"ما فيه خامات مربوطة بمنتجات هذا الأمر":"No materials linked"); return; }
+      { say(_head+(isAr()
+        ? `ما فيه خامات مربوطة بمنتجات هذا الأمر${iss.none.length?`:\n${_names(iss.none)}`:"."}\n\nافتح بطاقة المنتج واربط خاماته.`
+        : "No materials linked")); return; }
     if(!Object.values(_need).some(v=>Number(v)>0))
-      { say(isAr()
-        ? "الخامات مربوطة بس استهلاكها صفر.\n\nافتح بطاقة المنتج واكتب كم يستهلك كل خام للقطعة الوحدة — للأعمار كلها أو لكل عمر على حدة."
-        : "Materials linked but consumption is zero — set it on the product card first."); return; }
+      { say(_head+(isAr()
+        ? `الخامات مربوطة بس استهلاكها صفر${iss.zero.length?`:\n${_names(iss.zero)}`:"."}\n\nافتح بطاقة المنتج واكتب كم يستهلك كل خام للقطعة الوحدة — للأعمار كلها أو لكل عمر على حدة.\n\nبعدها ارجع للأمر واضغط «قائمة الشراء وأوامره».`
+        : "Materials linked but consumption is zero — set it on the product card first.")); return; }
   }
   /* نفصل الاحتياج حسب الكولكشن — كل تكلفة تُنسب لمركزها */
   const needByCol={};
@@ -6566,7 +6573,7 @@ async function saveOrder(){
   await refresh();
   /* الأمر الجديد يولّد أوامر شراء الإنتاج على طول — ما ننتظرك تدوّر الزر.
      التصليح ما يشتري خامات. */
-  if(!_wasEdit && ty!=="تصليح"){ try{ await createPOsFromOrder(o.id); }catch(e){} }
+  if(!_wasEdit && ty!=="تصليح"){ try{ await createPOsFromOrder(o.id,{auto:true}); }catch(e){} }
   } finally { _savingOrder=false; }
 }
 
