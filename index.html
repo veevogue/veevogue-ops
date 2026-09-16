@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.21:APPV-->
+<!--APPV:2026-08-13.22:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -393,6 +393,14 @@ const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
    الأصل إنش — المشاغل المحلية بالكويت تمشي عليه. المصنع الصيني ياخذ سنتيمتر.
    التقريب لأعلى نصف سنتيمتر يصير عند التصدير للمصنع فقط (عشان ما تطلع
    كسور ما تنفع بالتنفيذ، وما ياخذ أقل من المطلوب). */
+/* خانات الجداول: كيبورد الأرقام، والرقم يتظلّل بالضغطة عشان تكتب الجديد على طول */
+const CELLIN='inputmode="decimal" enterkeyhint="next" onfocus="cellPick(this)" onclick="cellPick(this)"';
+function cellPick(inp){
+  if(!inp || inp._picking) return;
+  inp._picking=true;
+  const pick=()=>{ try{ inp.setSelectionRange(0, (inp.value||"").length); }catch(e){ try{ inp.select(); }catch(_){} } };
+  pick(); setTimeout(()=>{ pick(); inp._picking=false; }, 0);
+}
 function chartUnitOf(o){ return ((o&&o.chart_unit)==="cm") ? "cm" : "inch"; }
 function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"in"); }
 /* التقريب لأعلى نصف سنتيمتر مكانه وقت التصدير للمصنع فقط.
@@ -1414,7 +1422,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.21";
+const APP_VERSION="2026-08-13.22";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6907,7 +6915,7 @@ function pcRedraw(partAr){
     ${(c.cols.length&&c.rows.length)? `<div style="overflow-x:auto;margin-top:6px"><table>
       <tr><th>${isAr()?"القياس":"Measure"} (${unitLbl(window._pUnit||"inch")})</th>${c.cols.map(col=>`<th>${esc(col)}</th>`).join("")}</tr>
       ${c.rows.map(r=>`<tr><td>${esc(r)}</td>${c.cols.map(col=>
-        `<td><input id="pcv_${k}_${pkey(col)}_${pkey(r)}" style="min-width:58px;padding:6px" value="${esc(((c.v[col]||{})[r])||"")}"></td>`).join("")}</tr>`).join("")}
+        `<td><input id="pcv_${k}_${pkey(col)}_${pkey(r)}" ${CELLIN} style="min-width:58px;padding:6px;text-align:center" value="${esc(((c.v[col]||{})[r])||"")}"></td>`).join("")}</tr>`).join("")}
       </table></div>`
       : `<div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"أضف عمر/مقاس وقياس واحد على الأقل عشان يطلع الجدول.":"Add at least one column and one row."}</div>`}`;
 }
@@ -6979,7 +6987,7 @@ function redrawParts(){
       <div id="bom_${k}"></div>
       <div style="display:flex;gap:6px;margin-top:6px">
         <select id="bp_${k}" style="flex:1">${mats.map(m=>`<option value="${m.id}">${esc(m.name)}${m.color?" · "+esc(m.color):""}${m.sku?" ("+esc(m.sku)+")":""}</option>`).join("")}</select>
-        <input id="bq_${k}" inputmode="decimal" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
+        <input id="bq_${k}" inputmode="decimal" enterkeyhint="next" onfocus="cellPick(this)" onclick="cellPick(this)" placeholder="${isAr()?"الكمية":"Qty"}" style="width:90px">
         <button type="button" class="btn btn-ghost" onclick="addBomP('${esc(c.ar)}')">${I.plus}</button>
       </div>
       <div style="display:flex;gap:6px;margin-top:6px">
@@ -7213,7 +7221,7 @@ function redrawBomP(partAr){
         ${!m.supplier_id?`<span class="chip" style="margin-inline-start:6px;background:var(--wine-lt);color:var(--wine-dk);font-size:10px">${isAr()?"يحتاج مورّد":"needs supplier"}</span>`:""}
       </div>
       <div style="display:flex;gap:4px;align-items:center">
-        <input inputmode="decimal" value="${b.qty!=null&&b.qty!==0?esc(String(b.qty)):""}" placeholder="0"
+        <input ${CELLIN} value="${b.qty!=null&&b.qty!==0?esc(String(b.qty)):""}" placeholder="0"
           title="${isAr()?"الاستهلاك لكل قطعة — لكل الأعمار":"Per piece — all ages"}"
           style="width:66px;text-align:center;padding:6px"
           onchange="setBomQty('${esc(partAr)}',${i},this.value)">
@@ -7233,7 +7241,7 @@ function tglBomSizes(partAr,i){
   const m=material(b.material_id)||{}, sizes=bomSizes();
   box.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?`اتركه فاضي = يستخدم العام (${b.qty} ${esc(m.unit||"")})`:`empty = general (${b.qty})`}</div>
     <div class="grid3">${sizes.map(sz=>`<div><label style="font-size:12px">${esc(sz)}</label>
-      <input inputmode="decimal" value="${(b.per_size&&b.per_size[sz]!=null)?b.per_size[sz]:""}" placeholder="${b.qty}"
+      <input ${CELLIN} value="${(b.per_size&&b.per_size[sz]!=null)?b.per_size[sz]:""}" placeholder="${b.qty}"
         onchange="setBomSize('${esc(partAr)}',${i},'${esc(sz)}',this.value)"></div>`).join("")}</div>
     <button type="button" class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px"
       onclick="clrBomSizes('${esc(partAr)}',${i})">${isAr()?"امسح التخصيص":"Clear"}</button>`;
@@ -7400,7 +7408,7 @@ function redrawChart(){
   sizes.forEach(s=>{window._chart[s]=window._chart[s]||{};});
   box.innerHTML = (sizes.length&&rows.length)? `<div style="overflow-x:auto"><table><tr><th>${isAr()?"القياس":"Measure"} (${unitLbl(window._pUnit||"inch")})</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${rows.map(k=>{const m=measByKey(k); if(!m) return "";
-      return `<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="sc_${s}_${k}" style="min-width:58px;padding:6px" value="${esc(window._chart[s]?.[k]||"")}"></td>`).join("")}</tr>`;}).join("")}</table></div>`:"";
+      return `<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="sc_${s}_${k}" ${CELLIN} style="min-width:58px;padding:6px;text-align:center" value="${esc(window._chart[s]?.[k]||"")}"></td>`).join("")}</tr>`;}).join("")}</table></div>`:"";
 }
 async function saveProduct(){
   const name=el("p_name").value.trim(); if(!name) return alert(isAr()?"اكتب الاسم":"Enter name");
@@ -7781,7 +7789,7 @@ function eaRedrawChart(){
   const _u=window._eaUnit||"inch";
   box.innerHTML = sizes.length? `<div style="overflow-x:auto"><table><tr><th>${unitLbl(_u)}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
     ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>
-      `<td><input id="eac_${esc(s)}_${m[0]}" style="min-width:56px;padding:6px" value="${esc((window._eaChart[s]||{})[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>` : "";
+      `<td><input id="eac_${esc(s)}_${m[0]}" ${CELLIN} style="min-width:56px;padding:6px;text-align:center" value="${esc((window._eaChart[s]||{})[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>` : "";
 }
 /* تبديل الوحدة يحوّل الأرقام المكتوبة — ما تعيد إدخالها */
 function eaUnitSwitch(){
@@ -8192,7 +8200,7 @@ function redrawDChart(){
   const sizes=el("d_sizes").value.split(",").map(s=>s.trim()).filter(Boolean);
   sizes.forEach(s=>{window._dchart[s]=window._dchart[s]||{};});
   box.innerHTML= sizes.length? `<div style="overflow-x:auto"><table><tr><th>${unitLbl(window._dUnit||"inch")}</th>${sizes.map(s=>`<th>${esc(s)}</th>`).join("")}</tr>
-    ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="dc_${s}_${m[0]}" style="min-width:56px;padding:6px" value="${esc(window._dchart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
+    ${MEAS.map(m=>`<tr><td>${isAr()?m[1]:m[2]}</td>${sizes.map(s=>`<td><input id="dc_${s}_${m[0]}" ${CELLIN} style="min-width:56px;padding:6px;text-align:center" value="${esc(window._dchart[s]?.[m[0]]||"")}"></td>`).join("")}</tr>`).join("")}</table></div>`:"";
 }
 async function addDesignFiles(id, field){
   const d=design_(id); const arr=[...(d[field]||[])];
