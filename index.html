@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.15:APPV-->
+<!--APPV:2026-08-13.16:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1388,7 +1388,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.15";
+const APP_VERSION="2026-08-13.16";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6758,6 +6758,7 @@ function showProductForm(pid){
     _seed.forEach(b=>_have.add(b.material_id));
     window._bomSeed=[...(_have)].map(mid=>({material_id:mid, qty:0})); }
   window._embP   =JSON.parse(JSON.stringify(p.emb_parts||{}));
+  window._pChart =JSON.parse(JSON.stringify(p.part_charts||{}));
   window._artNew ={};
   migrateLegacy(p);
   redrawChart(); redrawPimgs();
@@ -6837,6 +6838,54 @@ function histAvg(pid, stage, partAr){
   if(!avg) return n? `<span class="chip">${isAr()?`${n}/${EST_MIN_SAMPLE} قراءة`:`${n}/${EST_MIN_SAMPLE}`}</span>` : "";
   return `<span class="chip sage">${isAr()?"متوسط الكل":"avg"} ${avg}</span>`;
 }
+/* جدول قياس خاص بقطعة إضافية — صفوفه وأعمدته تكتبها بيدك،
+   والعمود ممكن يغطّي أكثر من عمر («٣-٦» أو «كل الأعمار»). */
+function pcOf(partAr){
+  const o=(window._pChart=window._pChart||{});
+  if(!o[partAr]) o[partAr]={cols:[],rows:[],v:{}};
+  const c=o[partAr];
+  c.cols=Array.isArray(c.cols)?c.cols:[]; c.rows=Array.isArray(c.rows)?c.rows:[]; c.v=c.v||{};
+  return c;
+}
+function pcHasData(c){
+  if(!c || !(c.cols||[]).length || !(c.rows||[]).length) return false;
+  return (c.cols||[]).some(col=>(c.rows||[]).some(r=>String(((c.v||{})[col]||{})[r]||"").trim()!==""));
+}
+function pcCapture(partAr){
+  const c=pcOf(partAr), k=pkey(partAr);
+  c.cols.forEach(col=>{ c.v[col]=c.v[col]||{};
+    c.rows.forEach(r=>{ const i=el(`pcv_${k}_${pkey(col)}_${pkey(r)}`); if(i) c.v[col][r]=i.value; }); });
+}
+function pcRedraw(partAr){
+  const k=pkey(partAr), box=el("pc_"+k); if(!box) return;
+  const c=pcOf(partAr);
+  const chips=(arr,kind)=>arr.map((x,i)=>`<span class="chip" style="background:var(--wine-lt);color:var(--wine-dk)">${esc(x)} <b style="cursor:pointer" onclick="pcDel('${esc(partAr)}','${kind}',${i})">✕</b></span>`).join("");
+  box.innerHTML=`
+    <div class="pillrow" style="min-height:18px">${chips(c.cols,"col")}</div>
+    <div class="pillrow" style="min-height:18px">${chips(c.rows,"row")}</div>
+    ${(c.cols.length&&c.rows.length)? `<div style="overflow-x:auto;margin-top:6px"><table>
+      <tr><th>${isAr()?"القياس":"Measure"} (${unitLbl(window._pUnit||"inch")})</th>${c.cols.map(col=>`<th>${esc(col)}</th>`).join("")}</tr>
+      ${c.rows.map(r=>`<tr><td>${esc(r)}</td>${c.cols.map(col=>
+        `<td><input id="pcv_${k}_${pkey(col)}_${pkey(r)}" style="min-width:58px;padding:6px" value="${esc(((c.v[col]||{})[r])||"")}"></td>`).join("")}</tr>`).join("")}
+      </table></div>`
+      : `<div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"أضف عمر/مقاس وقياس واحد على الأقل عشان يطلع الجدول.":"Add at least one column and one row."}</div>`}`;
+}
+function pcAdd(partAr, kind){
+  const k=pkey(partAr);
+  const inp=el((kind==="col"?"pcc_":"pcr_")+k); if(!inp) return;
+  const v=(inp.value||"").trim(); if(!v) return;
+  pcCapture(partAr);
+  const c=pcOf(partAr); const arr=(kind==="col"?c.cols:c.rows);
+  if(arr.indexOf(v)<0) arr.push(v);
+  inp.value=""; pcRedraw(partAr);
+}
+function pcDel(partAr, kind, i){
+  pcCapture(partAr);
+  const c=pcOf(partAr);
+  if(kind==="col"){ const col=c.cols[i]; c.cols.splice(i,1); delete c.v[col]; }
+  else { const r=c.rows[i]; c.rows.splice(i,1); Object.keys(c.v).forEach(col=>{ if(c.v[col]) delete c.v[col][r]; }); }
+  pcRedraw(partAr);
+}
 function currentParts(){
   return [...document.querySelectorAll("#partPills .pill.on")].map(x=>({ar:x.dataset.ar,en:x.dataset.en}));
 }
@@ -6847,6 +6896,7 @@ function capturePartCards(){
     if(ec) window._estCut[c.ar]=+ec.value||null;
     if(es) window._estSew[c.ar]=+es.value||null;
     captureEmbP(c.ar);
+    if(el("pc_"+k)) pcCapture(c.ar);
   });
 }
 function redrawParts(){
@@ -6870,7 +6920,7 @@ function redrawParts(){
     if(window._bomP[c.ar]===undefined)
       window._bomP[c.ar]=seed.map(b=>({material_id:b.material_id, qty:0}));
   });
-  const html=parts.map(c=>{
+  const html=parts.map((c,ci)=>{
     const k=pkey(c.ar), e=window._embP[c.ar]||{};
     return `<div class="partcard">
       <div class="partcard-h">${I.cut} ${esc(isAr()?c.ar:c.en)}</div>
@@ -6901,8 +6951,30 @@ function redrawParts(){
         <div id="emb_${k}"></div>
         <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addEmbP('${esc(c.ar)}')">${I.plus} ${isAr()?"أضف تطريز أو طباعة":"Add"}</button>
       </div>
+
+      ${ci===0? `<div class="muted" style="font-size:11px;margin-top:10px">${isAr()
+          ?"هذي القطعة تمشي على جدول القياسات الرئيسي فوق."
+          :"This part uses the main size chart above."}</div>`
+      : `<div class="embblock" style="margin-top:10px">
+        <label>${isAr()?"جدول قياس خاص بهذي القطعة (اختياري)":"Own size chart (optional)"}</label>
+        <div class="muted" style="font-size:11px;margin-bottom:6px">${isAr()
+          ?"اتركه فاضي وما يطلع للمصنع. العمود ممكن يغطي أكثر من عمر — اكتب «3-6» أو «كل الأعمار»."
+          :"Leave empty and nothing prints. A column may cover several ages."}</div>
+        <div style="display:flex;gap:6px">
+          <input id="pcc_${k}" placeholder="${isAr()?"عمر/مقاس (مثلاً 3-6)":"Age/size"}" style="flex:1"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();pcAdd('${esc(c.ar)}','col');}">
+          <button type="button" class="btn btn-ghost" onclick="pcAdd('${esc(c.ar)}','col')">${I.plus}</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input id="pcr_${k}" placeholder="${isAr()?"اسم القياس (مثلاً الطول)":"Measure name"}" style="flex:1"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();pcAdd('${esc(c.ar)}','row');}">
+          <button type="button" class="btn btn-ghost" onclick="pcAdd('${esc(c.ar)}','row')">${I.plus}</button>
+        </div>
+        <div id="pc_${k}" style="margin-top:6px"></div>
+      </div>`}
     </div>`;}).join("");
   box.innerHTML=html;
+  parts.forEach((c,ci)=>{ if(ci>0) pcRedraw(c.ar); });
   parts.forEach(c=>{ redrawBomP(c.ar); redrawEmbP(c.ar); });
   toggleExt(); toggleEmb();
 }
@@ -7247,6 +7319,8 @@ async function saveProduct(){
   const row={name, name_en:el("p_name_en").value||null, images:window._pimgs, patterns:pats, components:comps,
     sku:el("p_sku").value||null, materials:el("p_materials")?(el("p_materials").value||null):null,
     est_parts:estSew, est_cut_parts:estCut, bom_parts:bomP, emb_parts:embP,
+    part_charts:(function(){ const o={}; comps.forEach((c,i)=>{ if(i===0) return;
+      const ch=(window._pChart||{})[c.ar]; if(pcHasData(ch)) o[c.ar]=ch; }); return o; })(),
     meas_rows:activeRows(),
     external_make:isExt, size_chart:chart, chart_unit:(window._pUnit||"inch"), notes:el("p_notes").value||null};
   if(RDY){
@@ -8680,6 +8754,25 @@ async function printJobExt(j, lang){
           ${rws.map(()=>"<td></td>").join("")}</tr>
       </table>` : "";
 
+    /* ٤ — جداول القطع الإضافية: تطلع بس لو عبّيتها */
+    const pcs=(p.part_charts||{});
+    const pcKeys=Object.keys(pcs).filter(k=>pcHasData(pcs[k]));
+    /* الأرقام تتحوّل بنفس وحدة الجدول الرئيسي — والنص اللي مو رقم يبقى مثل ما هو */
+    const cv=(val)=>{ const t=String(val==null?"":val).trim();
+      if(!/^[0-9\u0660-\u0669]+(\.[0-9\u0660-\u0669]+)?$/.test(toAsciiDigits(t))) return t;
+      return convMeas(toAsciiDigits(t), cf.from, cf.unit); };
+    const partCharts = pcKeys.length? `
+      <div class="jsec">${H("PART CHARTS","جداول القطع","部件尺码")} <span style="letter-spacing:0;font-weight:400;color:#8a8172">· ${UL(cf.unit)}</span></div>
+      ${pcKeys.map(pk=>{ const c=pcs[pk]; const cc=(comps.find(x=>x.ar===pk)||{ar:pk,en:pk});
+        const cn=(lang==="ar")? cc.ar : (cc.en || trName(cc.ar).en || cc.ar);
+        return `<div class="jpart">
+          <div class="jpart-h">${esc(cn)}${lang!=="ar"&&cc.ar!==cn?` <span style="opacity:.6;font-weight:400">${esc(cc.ar)}</span>`:""}</div>
+          <table class="jchart">
+            <tr><th>${H("MEASURE","القياس","尺寸")}</th>${(c.cols||[]).map(col=>`<th>${esc(col)}</th>`).join("")}</tr>
+            ${(c.rows||[]).map(r=>`<tr><td class="ag">${esc(r)}</td>${(c.cols||[]).map(col=>
+              `<td>${esc(cv(((c.v||{})[col]||{})[r])||"—")}</td>`).join("")}</tr>`).join("")}
+          </table></div>`;}).join("")}` : "";
+
     /* تطريز وطباعة هذا المنتج */
     const embs=jobEmb([pid]);
     const embBlock = embs.length? `
@@ -8715,6 +8808,7 @@ async function printJobExt(j, lang){
       ${matsBlock}
       ${partsBlock}
       ${chartTable}
+      ${partCharts}
       ${embBlock}
       ${patBlock}
       ${fixBlock}
