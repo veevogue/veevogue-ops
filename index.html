@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.24:APPV-->
+<!--APPV:2026-08-13.25:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1429,7 +1429,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.24";
+const APP_VERSION="2026-08-13.25";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6887,6 +6887,7 @@ function showProductForm(pid){
     window._bomSeed=[...(_have)].map(mid=>({material_id:mid, qty:0})); }
   window._embP   =JSON.parse(JSON.stringify(p.emb_parts||{}));
   window._pChart =JSON.parse(JSON.stringify(p.part_charts||{}));
+  window._pOff={};   /* علامات الإطفاء تخص هذا المنتج وحده */
   window._pCustom=JSON.parse(JSON.stringify(p.meas_custom||[]));
   window._pRows  =[...((p.meas_rows&&p.meas_rows.length)? p.meas_rows : defaultRows(p.garment_type||"full"))];
   window._artNew ={};
@@ -7032,6 +7033,10 @@ function redrawParts(){
   const box=el("partCards"); if(!box) return;
   capturePartCards();
   const parts=currentParts();
+  /* نعلّم المطفّاة أول شي — حتى لو ما بقي ولا قطعة شغّالة */
+  { const on=new Set(parts.map(c=>c.ar));
+    window._pOff=window._pOff||{};
+    Object.keys(window._bomP||{}).forEach(k=>{ if(!on.has(k)) window._pOff[k]=1; }); }
   if(!parts.length){
     const sd=(window._bomSeed||[]);
     box.innerHTML=`<div class="note-box" style="background:#FBF0D8;color:#8a6d1f">
@@ -7054,10 +7059,6 @@ function redrawParts(){
     const have=new Set(cur.map(b=>b.material_id));
     seed.forEach(b=>{ if(!have.has(b.material_id)) cur.push({material_id:b.material_id, qty:0}); });
   });
-  /* نعلّم اللي انطفّت عشان ترجع كاملة لو شبّيتها */
-  { const on=new Set(parts.map(c=>c.ar));
-    window._pOff=window._pOff||{};
-    Object.keys(window._bomP||{}).forEach(k=>{ if(!on.has(k)) window._pOff[k]=1; }); }
   const html=parts.map((c,ci)=>{
     const k=pkey(c.ar), e=window._embP[c.ar]||{};
     return `<div class="partcard">
