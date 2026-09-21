@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.26:APPV-->
+<!--APPV:2026-08-13.27:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -420,28 +420,34 @@ function cellIns(ch){
 function cellBarPos(){
   const b=el("cellBar"); if(!b || b.style.display==="none") return;
   const vv=window.visualViewport;
-  b.style.top = vv? Math.max(0,(vv.offsetTop+vv.height-b.offsetHeight-8))+"px"
-                  : Math.max(0,(window.innerHeight-b.offsetHeight-8))+"px";
+  /* ارتفاع الكيبورد = اللي ناقص من الشاشة. نلصق الشريط على حافته العليا بدون فراغ
+     عشان الزر يكون ملزوق بالكيبورد مو طاير بنص الصفحة. */
+  let kb = vv ? Math.round(window.innerHeight - vv.height - vv.offsetTop) : 0;
+  if(!isFinite(kb) || kb<0) kb=0;
+  b.style.top="auto";
+  b.style.bottom=kb+"px";
 }
 function cellBar(show){
   let b=el("cellBar");
   if(!show){ if(b) b.style.display="none"; return; }
   if(!b){
     b=document.createElement("div"); b.id="cellBar";
-    b.style.cssText="position:fixed;inset-inline-start:0;width:100%;display:flex;gap:8px;justify-content:center;"
-      +"padding:6px 10px;z-index:120;pointer-events:none";
-    b.innerHTML=`<button type="button" id="cellSlash" style="pointer-events:auto;min-width:64px;padding:10px 18px;`
-      +`font-size:20px;font-weight:800;border:1px solid var(--line);border-radius:12px;background:var(--ink);color:#fff;`
-      +`box-shadow:0 4px 14px rgba(0,0,0,.18)">/</button>`;
+    b.style.cssText="position:fixed;inset-inline-start:0;width:100%;bottom:0;display:flex;gap:8px;justify-content:center;"
+      +"padding:4px 10px;z-index:120;background:var(--card);border-top:1px solid var(--line)";
+    b.innerHTML=`<button type="button" id="cellSlash" style="min-width:72px;padding:7px 18px;`
+      +`font-size:19px;font-weight:800;border:1px solid var(--line);border-radius:10px;background:var(--ink);color:#fff">/</button>`;
     document.body.appendChild(b);
     const ins=(e)=>{ e.preventDefault(); cellIns("/"); };
     const btn=el("cellSlash");
     btn.addEventListener("pointerdown", ins);
     if(!window.PointerEvent) btn.addEventListener("touchstart", ins, {passive:false});
+    /* الضغط على الشريط نفسه ما يطيّر التركيز عن الخانة */
+    b.addEventListener("pointerdown", (e)=>{ if(e.target===b) e.preventDefault(); });
     if(window.visualViewport){ window.visualViewport.addEventListener("resize", cellBarPos);
       window.visualViewport.addEventListener("scroll", cellBarPos); }
   }
-  b.style.display="flex"; cellBarPos(); setTimeout(cellBarPos, 250);
+  b.style.display="flex"; cellBarPos();
+  [60,250,600].forEach(ms=>setTimeout(cellBarPos, ms));
 }
 function chartUnitOf(o){ return ((o&&o.chart_unit)==="cm") ? "cm" : "inch"; }
 function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"in"); }
@@ -1481,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.26";
+const APP_VERSION="2026-08-13.27";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6910,7 +6916,7 @@ function showProductForm(pid){
     <div id="partsWrap">
       <label>${isAr()?"قطع التصميم — كل اللي بعدها يتفرّع منها":"Design parts"}</label>
       <div class="pillrow" id="partPills">${PARTS_PRESET.map(([a,e])=>`<span class="pill ${(p.components||[]).some(c=>c.ar===a)?'on':''}" data-ar="${a}" data-en="${e}" onclick="this.classList.toggle('on');redrawParts()">${isAr()?a:e}</span>`).join("")}
-        ${(p.components||[]).filter(c=>!PARTS_PRESET.some(x=>x[0]===c.ar)).map(c=>`<span class="pill on" data-ar="${esc(c.ar)}" data-en="${esc(c.en||c.ar)}" onclick="this.remove();redrawParts()">${esc(isAr()?c.ar:(c.en||c.ar))} ✕</span>`).join("")}
+        ${cusPillsOf(p)}
       </div>
       <div style="display:flex;gap:6px;margin-top:6px">
         <input id="p_newpart_ar" placeholder="${isAr()?"قطعة جديدة (عربي)":"New part AR"}" style="flex:1">
@@ -7428,11 +7434,41 @@ function addBomP(partAr){
   el("bq_"+k).value=""; redrawBomP(partAr);
 }
 function rmBomP(partAr,i){ (window._bomP[partAr]||[]).splice(i,1); redrawBomP(partAr); }
+/* القطع الاضافية تشتغل نفس الجاهزة: ضغطة تطفّيها وضغطة ترجّعها بكل بياناتها.
+   الحذف النهائي له علامة ✕ لحالها. */
+function cusPill(ar, en, on){
+  return `<span class="pill ${on?"on":""}" data-cus="1" data-ar="${esc(ar)}" data-en="${esc(en||ar)}"`
+    +` onclick="this.classList.toggle('on');redrawParts()">${esc(isAr()?ar:(en||ar))}`
+    +`<span onclick="event.stopPropagation();cusPartDel(this)" title="${isAr()?"حذف نهائي":"Delete"}"`
+    +` style="margin-inline-start:7px;opacity:.65;font-weight:800">✕</span></span>`;
+}
+function cusPillsOf(p){
+  const pre=new Set(PARTS_PRESET.map(x=>x[0]));
+  const on=new Set(((p&&p.components)||[]).map(c=>c.ar));
+  const seen=new Set(), out=[];
+  const push=(ar,en)=>{ ar=String(ar||"").trim();
+    if(!ar || pre.has(ar) || seen.has(ar)) return; seen.add(ar); out.push(cusPill(ar,en,on.has(ar))); };
+  ((p&&p.components)||[]).forEach(c=>push(c.ar,c.en));
+  ((p&&p.parts_pool)||[]).forEach(c=>push(c&&c.ar, c&&c.en));
+  /* قطع انطفّت قبل — بياناتها باقية، فنرجّع البيل حقها مطفّي عشان تقدر تشبّها */
+  Object.keys((p&&p.bom_parts)||{}).forEach(k=>push(k,k));
+  Object.keys((p&&p.part_charts)||{}).forEach(k=>push(k,k));
+  return out.join("");
+}
+function cusPartDel(x){
+  const pill=x.closest(".pill"); if(!pill) return;
+  const ar=pill.dataset.ar;
+  if(!confirm(isAr()?`حذف «${ar}» نهائياً؟ خاماتها وجدولها بينمسحون.`:`Delete “${ar}” for good?`)) return;
+  [window._bomP, window._embP, window._pChart, window._estSew, window._estCut, window._pOff]
+    .forEach(o=>{ if(o) delete o[ar]; });
+  pill.remove(); redrawParts();
+}
 function addCustomPart(){
   const a=el("p_newpart_ar").value.trim(); if(!a) return;
   const e=el("p_newpart_en").value.trim()||a;
-  el("partPills").insertAdjacentHTML("beforeend",
-    `<span class="pill on" data-ar="${esc(a)}" data-en="${esc(e)}" onclick="this.remove();redrawParts()">${esc(isAr()?a:e)} ✕</span>`);
+  const have=[...document.querySelectorAll("#partPills .pill")].find(x=>x.dataset.ar===a);
+  if(have){ have.classList.add("on"); }
+  else el("partPills").insertAdjacentHTML("beforeend", cusPill(a,e,true));
   el("p_newpart_ar").value=""; el("p_newpart_en").value=""; redrawParts();
 }
 /* نسخ جدول القياسات من منتج ثاني — نفس الأعمار والصفوف والأرقام،
@@ -7634,6 +7670,9 @@ async function saveProduct(){
     meas_rows:activeRows(),
     meas_custom:(window._pCustom||[]).filter(c=>activeRows().includes(c.k)),
     external_make:isExt, size_chart:chart, chart_unit:(window._pUnit||"inch"), notes:el("p_notes").value||null};
+  /* القطع الاضافية — حتى المطفّاة — تبقى محفوظة عشان ترجع تشبّها وقت ما تبي */
+  if(el("partPills")) row.parts_pool=[...document.querySelectorAll("#partPills .pill[data-cus]")]
+    .map(x=>({ar:x.dataset.ar, en:x.dataset.en}));
   if(RDY){
     row.track="ready";
     row.supplier_id=el("p_sup")?(el("p_sup").value||null):null;
