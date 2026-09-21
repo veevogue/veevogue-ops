@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.23:APPV-->
+<!--APPV:2026-08-13.24:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1429,7 +1429,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.23";
+const APP_VERSION="2026-08-13.24";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2662,7 +2662,19 @@ async function tripDel(id){
 
 /* -- دفتر العينات -- */
 function smpForDesign(x,did){ return x.design_id===did || (x.design_ids||[]).includes(did); }
-function sampleCard(x){
+/* العينة الوحدة تخدم أكثر من تصميم — ولها بند وكمية مستقلة في كل واحد.
+   المورد والسعر والصور واحدة لأنها نفس الخام بنفس الكود. */
+function smpItemFor(x, did){
+  const m=(x&&x.item_ids)||{};
+  if(m && m[did]) return m[did];
+  return (x&&x.design_id===did)? (x.checklist_item_id||null) : null;
+}
+function smpChkFor(x, did){
+  const d=did? design_(did) : null; if(!d) return null;
+  const iid=smpItemFor(x,did); if(!iid) return null;
+  return (d.checklist||[]).find(c=>c.id===iid)||null;
+}
+function sampleCard(x, did){
   const ph=(x.photos||[])[0];
   const isAcc=x.kind==="accessory";
   const st=x.status||"candidate";
@@ -2678,9 +2690,14 @@ function sampleCard(x){
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center">
       <div style="font-weight:700">${esc(x.fabric_type||kindLabel(x.kind))}</div>
       ${x.sku?`<div class="muted" style="font-family:Arial;font-size:11px;letter-spacing:.5px;margin-top:1px">${esc(x.sku)}</div>`:""}
-      ${(()=>{ const _d=x.design_id?design_(x.design_id):null;
-               const _ci=_d&&x.checklist_item_id?((_d.checklist||[]).find(c=>c.id===x.checklist_item_id)):null;
-               return (_ci&&_ci.qty!=null)?`<div style="font-size:11px;color:var(--wine-dk);margin-top:1px">${isAr()?"المطلوب":"needed"}: <b>${esc(String(_ci.qty))} ${esc(_ci.unit||"متر")}</b></div>`:""; })()}
+      ${(()=>{ const _did=did||x.design_id||null;
+               const _ci=_did? smpChkFor(x,_did) : null;
+               if(!_ci) return "";
+               const _n=(x.design_ids||[]).filter(Boolean).length;
+               return `<div style="font-size:11px;color:var(--wine-dk);margin-top:1px;cursor:pointer"
+                 onclick="smpQtySheet('${x.id}','${_did}')" title="${isAr()?"عدّل كمية هذا التصميم":"Edit qty"}">
+                 ${isAr()?"المطلوب":"needed"}: <b>${_ci.qty!=null?esc(String(_ci.qty)):"—"} ${esc(_ci.unit||"متر")}</b> ${I.edit}
+                 ${_n>1?`<span class="muted" style="font-size:10px"> · ${isAr()?`مستخدمة في ${_n} تصاميم`:`${_n} designs`}</span>`:""}</div>`; })()}
       <div class="muted" style="font-size:12px;margin-top:1px">${esc(supNameOf(x))}</div>
       <div style="font-size:13px;margin-top:3px">${x.price!=null?`<b>${x.price} ${esc(x.currency||"CNY")}</b>/${perLbl}`:""}${kd!=null?`<div class="muted" style="font-size:11px">≈ ${fmtKD(kd)} ${isAr()?"د.ك":"KWD"}/${isAcc?(isAr()?"حبة":"pc"):(isAr()?"متر":"m")}</div>`:""}</div>
       ${x.note?`<div class="muted" style="font-size:12px;margin-top:3px">📝 ${esc(x.note)}</div>`:""}
@@ -2707,7 +2724,7 @@ function chSamples(){
     const F=window._smpFilter||"all";
     if(F==="fabric" && !isFabricKind(item.kind)) return "";
     if(F==="accessory" && isFabricKind(item.kind)) return "";
-    const list=allS.filter(x=>x.design_id===d.id && x.checklist_item_id===item.id);
+    const list=allS.filter(x=>smpForDesign(x,d.id) && smpItemFor(x,d.id)===item.id);
     if(F==="nosample" && list.length) return "";
     const shown=showList(list);
     if(chCompare && !shown.length) return "";
@@ -2715,7 +2732,7 @@ function chSamples(){
     return `<div class="note-box" style="background:var(--paper);padding:10px;margin-top:8px">
       <div style="font-weight:700;font-size:13px">${sourced?"★ ":""}${esc(item.name||"")}
         <span class="muted" style="font-size:11px;font-weight:400">· ${kindLabel(item.kind)}${item.qty?` · ${item.qty} ${esc(item.unit||(item.kind==="accessory"?(isAr()?"عدد":"pc"):(isAr()?"م":"m")))}`:""} · ${list.length} ${isAr()?"عينة":"samples"}</span></div>
-      ${shown.map(sampleCard).join("")}
+      ${shown.map(x=>sampleCard(x,d.id)).join("")}
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin-top:4px" onclick="sampleSheet('${d.id}','${item.id}','${item.kind||"fabric"}')">＋ ${isAr()?"عينة لهذا البند":"Add sample"}</button>
     </div>`;
   };
@@ -2724,7 +2741,7 @@ function chSamples(){
     const d=design_(did)||{name:"?"}; ensureChkIds(d);
     const items=d.checklist||[];
     const dsamples=allS.filter(x=>smpForDesign(x,did));
-    const orphan=dsamples.filter(x=>!x.checklist_item_id || !items.some(it=>it.id===x.checklist_item_id));
+    const orphan=dsamples.filter(x=>{ const iid=smpItemFor(x,did); return !iid || !items.some(it=>it.id===iid); });
     const shownOrphan=applyF(showList(orphan));
     const starTot=dsamples.filter(x=>x.status==="shortlist").length;
     const _open=smpIsOpen(did);
@@ -2732,7 +2749,7 @@ function chSamples(){
     let _cnt, _cntLbl=(isAr()?"عينة":"samples");
     if(_F==="fabric") _cnt=dsamples.filter(x=>isFabricKind(x.kind)).length;
     else if(_F==="accessory") _cnt=dsamples.filter(x=>!isFabricKind(x.kind)).length;
-    else if(_F==="nosample"){ _cnt=items.filter(it=>!allS.some(sm=>smpForDesign(sm,did)&&sm.checklist_item_id===it.id)).length; _cntLbl=(isAr()?"بند بلا عينة":"no-sample"); }
+    else if(_F==="nosample"){ _cnt=items.filter(it=>!allS.some(sm=>smpForDesign(sm,did)&&smpItemFor(sm,did)===it.id)).length; _cntLbl=(isAr()?"بند بلا عينة":"no-sample"); }
     else _cnt=dsamples.length;
     return `<div class="card" style="padding:12px;padding-inline-start:14px;border-inline-start:4px solid var(--wine)">
       <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="smpToggleOpen('${did}')">
@@ -2747,7 +2764,7 @@ function chSamples(){
       ${_open?`
       ${items.length? items.map(it=>slotBlock(d,it)).join("")
         : `<div class="muted" style="font-size:12px">${isAr()?"ما فيه بنود تشيك ليست — أضفها من صفحة التصميم":"Add checklist items on the design page"}</div>`}
-      ${shownOrphan.length?`<div class="sechead" style="margin-top:8px;font-size:11px">${isAr()?"عينات بدون بند":"UNSLOTTED"}</div>${shownOrphan.map(sampleCard).join("")}`:""}
+      ${shownOrphan.length?`<div class="sechead" style="margin-top:8px;font-size:11px">${isAr()?"عينات بدون بند":"UNSLOTTED"}</div>${shownOrphan.map(x=>sampleCard(x,did)).join("")}`:""}
       <button class="btn btn-ghost btn-big" style="margin-top:6px" onclick="sampleSheet('${did}','','fabric')">＋ ${isAr()?"عينة عامة لهذا التصميم":"Sample for this design"}</button>`:""}
     </div>`;
   };
@@ -2811,7 +2828,7 @@ function chSamples(){
         const dids=byCol[cid];
         const kind=cid==="__none"? "tailor" : colKind(c);
         const rdL=readyItems(cid==="__none"?null:cid).filter(x=>x.status!=="rejected");
-        const nSourced=dids.filter(did=>{ const d=design_(did); const items=(d.checklist||[]); return items.length && items.every(it=>allS.some(sm=>sm.design_id===did&&sm.checklist_item_id===it.id&&sm.status==="shortlist")); }).length;
+        const nSourced=dids.filter(did=>{ const d=design_(did); const items=(d.checklist||[]); return items.length && items.every(it=>allS.some(sm=>smpForDesign(sm,did)&&smpItemFor(sm,did)===it.id&&sm.status==="shortlist")); }).length;
         const bits=[];
         if(dids.length || kind!=="ready") bits.push(`${dids.length} ${isAr()?"تصميم":"designs"}`);
         if(rdL.length || kind!=="tailor") bits.push(`${rdL.length} ${isAr()?"جاهز":"ready"}`);
@@ -2966,6 +2983,35 @@ async function poFromSample(x){
   alert(error.message||"error"); return false;
 }
 /* ★ اعتماد عينة → يولّد أمر شراء مباشرة (19ب) */
+/* الكمية على بند التصميم — فتعديلها من هنا يخص هذا التصميم وحده */
+function smpQtySheet(sid, did){
+  const x=(DB.samples||[]).find(z=>z.id===sid); if(!x) return;
+  const d=design_(did); const it=smpChkFor(x,did); if(!d||!it) return;
+  openSheet2(`<div class="title">${isAr()?"الكمية المطلوبة":"Required qty"}</div>
+    <div class="muted" style="font-size:12px">${esc(x.fabric_type||kindLabel(x.kind))}${x.sku?` · ${esc(x.sku)}`:""}
+      — ${esc(d.final_name||d.name||"")}</div>
+    <div class="note-box" style="font-size:11px">${isAr()
+      ?"هذي كمية هذا التصميم وحده. باقي التصاميم اللي تستخدم نفس الخام ما تتأثر."
+      :"This design only."}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"الكمية":"Qty"}</label><input id="sq_qty" ${CELLIN} value="${it.qty!=null?esc(String(it.qty)):""}"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="sq_unit">${["متر","يارد","عدد"].map(u=>`<option value="${u}" ${(it.unit||"متر")===u?"selected":""}>${u}</option>`).join("")}</select></div>
+    </div>
+    <button class="btn btn-ok btn-big" style="margin-top:10px" onclick="smpQtySave('${sid}','${did}')">${t("save")}</button>`);
+}
+async function smpQtySave(sid, did){
+  const x=(DB.samples||[]).find(z=>z.id===sid); if(!x) return;
+  const d=design_(did); const it=smpChkFor(x,did); if(!d||!it) return;
+  const qs=String((el("sq_qty")?el("sq_qty").value:"")||"").trim();
+  const arr=(d.checklist||[]).map(c=>c.id===it.id
+    ? {...c, qty: qs===""? null : (parseFloat(toAsciiDigits(qs))||null), unit:(el("sq_unit")?el("sq_unit").value:c.unit)}
+    : c);
+  await sb.from("design_projects").update({checklist:arr}).eq("id",d.id);
+  d.checklist=arr; cacheDB();
+  try{ await syncChkToPO(d.id, it.id); }catch(e){}
+  closeSheet2(); render();
+  toast(isAr()?`انحفظت لـ«${d.final_name||d.name||""}» وحده`:"Saved", 3000);
+}
 async function sampleStar(id){
   const x=(DB.samples||[]).find(s=>s.id===id); if(!x) return;
   if(x.status==="shortlist") return;
@@ -3156,7 +3202,7 @@ function smpAddExtraDesign(){
       <div><label>${isAr()?"الكمية المطلوبة":"Qty"}</label><input id="ed_qty" inputmode="decimal" placeholder="${isAr()?"كم يحتاج هذا التصميم":"qty"}"></div>
       <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="ed_unit">${isAcc?`<option value="عدد">${isAr()?"عدد":"pcs"}</option><option value="متر">${isAr()?"متر":"m"}</option>`:`<option value="متر">${isAr()?"متر":"m"}</option><option value="يارد">${isAr()?"يارد":"yd"}</option><option value="عدد">${isAr()?"عدد":"pcs"}</option>`}</select></div>
     </div>
-    <div class="muted" style="font-size:11px">${isAr()?"باقي بيانات الخام تُنقل تلقائياً، ويُضاف كبند لهذا التصميم":"Material data carries over as a checklist item"}</div>
+    <div class="muted" style="font-size:11px">${isAr()?"المورد والسعر والصور والكود تنتقل كما هي — ويُضاف بند لهذا التصميم بالكمية اللي تكتبها، وتقدر تعدّلها بعدين من كرت العينة داخل التصميم.":"Supplier, price, photos and SKU carry over."}</div>
     <button class="btn btn-ink btn-big" onclick="smpExtraAdd()">${t("add")}</button>
     <button class="btn btn-ghost btn-big" onclick="var o=el('ov2');if(o)o.remove()">${t("close")}</button>
   </div>`;
@@ -3171,16 +3217,26 @@ function smpExtraAdd(){
   const o=el("ov2"); if(o) o.remove();
   smpRenderExtra();
 }
+/* التصميم الإضافي ياخذ بنده الخاص بكميته، والعينة تتذكّر بند كل تصميم —
+   فتطلع مربوطة بمكانها الصحيح بكل تصميم، بنفس المورد والسعر والصور. */
 async function linkExtraDesigns(row){
   const extras=window._smpDesigns||[];
+  row.item_ids=row.item_ids||{};
   for(const e of extras){
     const d=design_(e.did); if(!d) continue; ensureChkIds(d);
     const nm=row.fabric_type||kindLabel(row.kind);
     const chk=[...(d.checklist||[])];
-    if(!chk.some(c=>String(c.name||"").trim()===String(nm).trim() && (c.kind||"fabric")===(row.kind||"fabric"))){
-      chk.push({id:"ci-"+newId().slice(0,8), name:nm, kind:row.kind||"fabric", qty:e.qty||null, unit:e.unit||(row.kind==="accessory"?"عدد":"متر")});
+    let it=chk.find(c=>String(c.name||"").trim()===String(nm).trim() && (c.kind||"fabric")===(row.kind||"fabric"));
+    if(!it){
+      it={id:"ci-"+newId().slice(0,8), name:nm, kind:row.kind||"fabric",
+          qty:e.qty||null, unit:e.unit||(row.kind==="accessory"?"عدد":"متر")};
+      chk.push(it);
       await sb.from("design_projects").update({checklist:chk}).eq("id",d.id); d.checklist=chk;
+    } else if(e.qty!=null && Number(it.qty)!==Number(e.qty)){
+      const arr=chk.map(c=>c.id===it.id? {...c, qty:e.qty, unit:e.unit||c.unit} : c);
+      await sb.from("design_projects").update({checklist:arr}).eq("id",d.id); d.checklist=arr;
     }
+    row.item_ids[e.did]=it.id;
   }
 }
 async function smpAddPhotos(files){
@@ -3374,6 +3430,8 @@ async function sampleSave(){
                  : ((function(){ const d=window._chDesign; return (d&&(design_(d)||{}).collection_id)||window._smpCol4||null; })())),
     design_ids:[...new Set([((el("smp_design")?el("smp_design").value:null)||window._chDesign||null), ...((window._smpDesigns||[]).map(e=>e.did))].filter(Boolean))],
     checklist_item_id:(el("smp_item")? (el("smp_item").value||null) : (window._chItem||null)),
+    item_ids:JSON.parse(JSON.stringify((window._smpEdit
+      ? (((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).item_ids||{}) : {}))),
     sku:(window._smpEdit? ((DB.samples||[]).find(z=>z.id===window._smpEdit)||{}).sku : null) || genSKU("sample", k),
     kind:k,
     note:el("smp_note").value||null,
@@ -3391,6 +3449,9 @@ async function sampleSave(){
   }
   await ensurePotentialSupplier(row);
   await linkExtraDesigns(row);
+  /* بند التصميم الأساسي ينسجّل بنفس الخريطة */
+  if(row.design_id && row.checklist_item_id) row.item_ids[row.design_id]=row.checklist_item_id;
+  Object.keys(row.item_ids||{}).forEach(k=>{ if(!(row.design_ids||[]).includes(k)) delete row.item_ids[k]; });
   if(window._smpEdit){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
@@ -9923,7 +9984,7 @@ async function wDone(lineId, partId){
     "eaSaveChart","eaSaveMat","eaAddFiles","addDesignFiles","matKindSave","chkEditSave","poMatchPlan",
     "photoAudit","syncPhotosNow","photoPurgeGone","reconcilePending","photoPushOne","photoReplace","syncNow","sysCheck","addNewBomMat","createPOsFromOrder","delLinked",
     "mfgCreate","mfgPriceSave","mfgPayAdd","tripColsSave","poReceive","issueForOrder","stockEntrySave",
-    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel","extPriceSave","delOrder",
+    "receiveAllForOrder","mfgReceive","stockMoveDel","extJobDel","extLinesDel","embPartsDel","extPriceSave","delOrder","smpQtySave",
     "readySave","readyApprove","readyUnapprove","readyReject","readyDelete","supAddQR","rdyAddQR",
     "createReadyProduct","readyPOSave","readyReceiveSave","editCollection"];
   GUARDED.forEach(function(name){
