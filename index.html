@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.27:APPV-->
+<!--APPV:2026-08-13.28:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.27";
+const APP_VERSION="2026-08-13.28";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5705,23 +5705,68 @@ async function delLinked(kind, id, label, after){
 async function delOrder(id){
   const o=order(id)||{};
   const pos=(DB.purchases||[]).filter(x=>x.order_id===id);
-  const locked=pos.filter(poLocked);
-  if(locked.length && !confirm(isAr()
-    ? `الأمر #${o.order_no||""} عليه ${locked.length} أمر شراء مدفوع أو مُرسل.\n\nالحذف يشيلها كلها. تكمل؟`
-    : `${locked.length} POs are paid or sent. Delete anyway?`)) return;
+  const locked=pos.filter(poLocked);           /* مدفوع أو مُرسل أو مستلم — شراء صار فعلاً */
+  const planned=pos.filter(x=>!poLocked(x));   /* ما اشتريت منه شي — يروح مع الشغل */
+  const lids=(DB.lines||[]).filter(l=>l.order_id===id).map(l=>l.id);
+  const pids=(DB.parts||[]).filter(x=>lids.indexOf(x.line_id)>=0).map(x=>x.id);
+  const xj=extJobsOfLines(lids, pids);
+  /* ما نسأل مرتين إلا إذا في شي ثاني يروح معه — عشان تعرف وش بيصير بالضبط */
+  if((xj.length||pos.length) && !confirm(isAr()
+    ? `حذف الأمر #${o.order_no||""}؟\n\n`
+      +`• ${lids.length} بند إنتاج\n`
+      +(xj.length? `• ${xj.length} أمر تنفيذ/تطريز خارجي بينشال من اللوحة\n`:"")
+      +(planned.length? `• ${planned.length} أمر شراء ما اشتريت منه شي — بينحذف\n`:"")
+      +(locked.length? `• ${locked.length} أمر شراء مدفوع أو مُرسل — يبقى محفوظ، واللي استلمته يبقى بالمخزون\n`:"")
+      +`\nالحذف نهائي.`
+    : `Delete order #${o.order_no||""}?`)) return;
+  /* الفواتير اللي دفعتها نفكّها عن الأمر قبل الحذف — عشان ما يشيلها الكاسكيد */
+  for(const x of locked){
+    try{ await sb.from("purchases").update({order_id:null}).eq("id",x.id); x.order_id=null; }catch(e){}
+  }
   const {error}=await sb.from("orders").delete().eq("id",id);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
-  const lids=(DB.lines||[]).filter(l=>l.order_id===id).map(l=>l.id);
+  /* الأمر الخارجي مربوط ببنود الأمر مو بالأمر نفسه — فما ينشال لحاله */
+  await extJobsDrop(xj);
   DB.orders=(DB.orders||[]).filter(x=>x.id!==id);
   DB.lines=(DB.lines||[]).filter(l=>l.order_id!==id);
   DB.parts=(DB.parts||[]).filter(x=>lids.indexOf(x.line_id)<0);
   DB.purchases=(DB.purchases||[]).filter(x=>x.order_id!==id);
   DB.jobs=(DB.jobs||[]).filter(x=>x.order_id!==id);
   cacheDB();
-  await logIt("order_del","orders",id, `#${o.order_no||""} · ${pos.length} ${isAr()?"أمر شراء":"POs"}`);
+  await logIt("order_del","orders",id,
+    `#${o.order_no||""} · ${planned.length} ${isAr()?"أمر شراء":"POs"} · ${xj.length} ${isAr()?"أمر خارجي":"ext"}`);
   render();
-  toast(isAr()?`انحذف الأمر${pos.length?` و${pos.length} أمر شراء`:""}`:"Deleted", pos.length?4500:2500);
+  toast(isAr()
+    ? `انحذف الأمر${planned.length?` و${planned.length} أمر شراء`:""}${xj.length?` و${xj.length} أمر خارجي`:""}`
+    : "Deleted", (planned.length||xj.length)?4500:2500);
   await refresh();
+}
+/* الأوامر الخارجية تمشي على بنود الأمر (line_ids / part_ids) مو على order_id،
+   فما فيه كاسكيد يشيلها — نشيلها بأنفسنا لما يروح شغلها. */
+function extJobsOfLines(lineIds, partIds){
+  const L=new Set(lineIds||[]), P=new Set(partIds||[]);
+  return (DB.jobs||[]).filter(j=>
+    ((j.line_ids||[]).some(x=>L.has(x))) || ((j.part_ids||[]).some(x=>P.has(x))));
+}
+/* بنود انحذفت وحدها: نشيلها من الأمر الخارجي، واللي فضى ينحذف */
+async function extJobsTrim(lineIds){
+  const kill=new Set((lineIds||[]).filter(Boolean)); if(!kill.size) return 0;
+  let gone=0;
+  for(const j of [...(DB.jobs||[])]){
+    const ids=(j.line_ids||[]); if(!ids.length || !ids.some(x=>kill.has(x))) continue;
+    const left=ids.filter(x=>!kill.has(x));
+    if(left.length){ try{ await sb.from("ext_jobs").update({line_ids:left}).eq("id",j.id); }catch(e){} j.line_ids=left; }
+    else { try{ await sb.from("ext_jobs").delete().eq("id",j.id); }catch(e){}
+           DB.jobs=(DB.jobs||[]).filter(x=>x.id!==j.id); gone++; }
+  }
+  return gone;
+}
+async function extJobsDrop(jobs){
+  for(const j of (jobs||[])){
+    try{ await sb.from("ext_jobs").delete().eq("id",j.id); }catch(e){}
+    DB.jobs=(DB.jobs||[]).filter(x=>x.id!==j.id);
+  }
+  return (jobs||[]).length;
 }
 async function delRow(table, id, after){
   const {error}=await sb.from(table).delete().eq("id",id);
@@ -8729,12 +8774,16 @@ function tabExternal(){
       <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px;${window._extAll?'background:var(--wine);color:#fff;border-color:var(--wine)':''}" onclick="window._extAll=true;render()">${isAr()?"الكل":"All"} (${nAll})</button>
     </div>`:""}
     ${openJobs.map(j=>{
-      const days=Math.round((new Date()-new Date(j.sent_at))/86400000);
-      const n=(j.part_ids||[]).length||(j.line_ids||[]).length;
+      const n=jobQty(j);
+      const prods=jobProds(j).map(pid=>{ const p=product(pid)||{};
+        return `${esc(pname(p))}${p.sku?` <span class="muted" style="direction:ltr;font-family:Arial">${esc(p.sku)}</span>`:""}`; });
       return `<div class="card">
         <div class="lineitem" style="border:0"><div><b>${esc(j.kind)}</b>${j.is_fix?` <span class="chip wine">${I.fix} ${isAr()?"إرجاع تصليح":"fix"}</span>`:""}
           ${j.status!=="sent"?`<span class="chip sage" style="font-size:10px">${isAr()?"مقفول":"closed"}</span>`:""}
-          — ${esc((supFind(j.supplier_id,j.vendor)||{}).name||j.vendor||"—")} <span class="muted">${days} ${isAr()?"يوم":"days"} · ${n}</span></div></div>
+          — ${esc((supFind(j.supplier_id,j.vendor)||{}).name||j.vendor||"—")}
+          <div style="font-size:13px;margin-top:3px">${prods.length? prods.join(" &nbsp;·&nbsp; ") : `<span class="muted">${isAr()?"— بنوده انحذفت":"— lines deleted"}</span>`}</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">${n} ${isAr()?"قطعة":"pcs"} · ${jobAgo(j)}${
+            j.delivery_date?` · ${isAr()?"التسليم":"due"} ${esc(j.delivery_date)}`:""}</div></div></div>
         <div class="pillrow"><button class="btn btn-ghost" onclick="printJob('${j.id}')">${I.print}</button>
         <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button>
         ${rowMenu(esc(j.kind)+" — "+esc(j.vendor||""),[
@@ -8790,6 +8839,7 @@ async function extLinesDel(idsEnc){
   DB.parts=(DB.parts||[]).filter(x=>ids.indexOf(x.line_id)<0);
   cacheDB();
   await logIt("del","order_lines",ids[0], `${pname(p)} · ${ls.length} ${isAr()?"بند":"lines"}`);
+  await extJobsTrim(ids);   /* لو كانت مُرسلة، تنشال من أمر التنفيذ الخارجي */
   /* الشغل انحذف ← أوامر شرائه المخطّطة تنشال، واللي باقي يتولّد بالكميات الجديدة */
   const _oid=o.id, _gone=await dropPlannedPOs(_oid);
   const _left=(DB.lines||[]).filter(l=>l.order_id===_oid).length;
@@ -8987,6 +9037,28 @@ function matPhoto(mid){
   const m=(DB.materials||[]).find(x=>x.id===mid);
   if(m && m.sku){ const s3=(DB.samples||[]).find(x=>x.sku===m.sku && (x.photos||[]).length); if(s3) return s3.photos[0]; }
   return null;
+}
+/* بنود الأمر الخارجي: إما بنود إنتاج مباشرة، أو قطع تطريز ترجع لبنودها */
+function jobLineIds(j){
+  if(((j&&j.line_ids)||[]).length) return j.line_ids;
+  return [...new Set(((j&&j.part_ids)||[]).map(pid=>{
+    const x=(DB.parts||[]).find(y=>y.id===pid); return x&&x.line_id; }).filter(Boolean))];
+}
+function jobProds(j){
+  return [...new Set(jobLineIds(j).map(id=>(DB.lines||[]).find(l=>l.id===id))
+    .filter(Boolean).map(l=>l.product_id).filter(Boolean))];
+}
+function jobQty(j){
+  if(((j&&j.part_ids)||[]).length) return j.part_ids.length;
+  return jobLineIds(j).reduce((a,id)=>{
+    const l=(DB.lines||[]).find(x=>x.id===id); return a+((l&&Number(l.qty))||0); },0);
+}
+function jobAgo(j){
+  /* نقارن تاريخ بتاريخ — مو تاريخ بوقت — عشان ما يطلع يوم زيادة */
+  const d=Math.round((new Date(today())-new Date((j&&j.sent_at)||today()))/86400000);
+  if(!isFinite(d)) return "";
+  if(!isAr()) return d<=0? "sent today" : `sent ${d}d ago`;
+  return d<=0? "أُرسل اليوم" : d===1? "أُرسل أمس" : `أُرسل قبل ${d} يوم`;
 }
 function jobEmb(pids){
   const out=[];
