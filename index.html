@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.25:APPV-->
+<!--APPV:2026-08-13.26:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -394,12 +394,54 @@ const DAYS = ["sat","sun","mon","tue","wed","thu","fri"];
    التقريب لأعلى نصف سنتيمتر يصير عند التصدير للمصنع فقط (عشان ما تطلع
    كسور ما تنفع بالتنفيذ، وما ياخذ أقل من المطلوب). */
 /* خانات الجداول: كيبورد الأرقام، والرقم يتظلّل بالضغطة عشان تكتب الجديد على طول */
-const CELLIN='inputmode="decimal" enterkeyhint="next" onfocus="cellPick(this)" onclick="cellPick(this)"';
+const CELLIN='inputmode="decimal" enterkeyhint="next" onfocus="cellPick(this)" onclick="cellPick(this)" onblur="cellBlur()"';
 function cellPick(inp){
-  if(!inp || inp._picking) return;
+  if(!inp) return;
+  window._cellActive=inp;
+  cellBar(true);
+  if(inp._picking) return;
   inp._picking=true;
   const pick=()=>{ try{ inp.setSelectionRange(0, (inp.value||"").length); }catch(e){ try{ inp.select(); }catch(_){} } };
   pick(); setTimeout(()=>{ pick(); inp._picking=false; }, 0);
+}
+function cellBlur(){ setTimeout(()=>{ const a=document.activeElement;
+  if(!a || !a.getAttribute || a.getAttribute("inputmode")!=="decimal"){ window._cellActive=null; cellBar(false); } }, 120); }
+/* كيبورد الأرقام ما فيه «/» — فنحط زر فوقه يدخّله بمكان المؤشر */
+function cellIns(ch){
+  const inp=window._cellActive; if(!inp) return;
+  const v=String(inp.value||"");
+  let s0=inp.selectionStart, e0=inp.selectionEnd;
+  if(s0==null) { s0=v.length; e0=v.length; }
+  inp.value=v.slice(0,s0)+ch+v.slice(e0);
+  const pos=s0+ch.length;
+  try{ inp.focus(); inp.setSelectionRange(pos,pos); }catch(e){}
+  try{ inp.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+}
+function cellBarPos(){
+  const b=el("cellBar"); if(!b || b.style.display==="none") return;
+  const vv=window.visualViewport;
+  b.style.top = vv? Math.max(0,(vv.offsetTop+vv.height-b.offsetHeight-8))+"px"
+                  : Math.max(0,(window.innerHeight-b.offsetHeight-8))+"px";
+}
+function cellBar(show){
+  let b=el("cellBar");
+  if(!show){ if(b) b.style.display="none"; return; }
+  if(!b){
+    b=document.createElement("div"); b.id="cellBar";
+    b.style.cssText="position:fixed;inset-inline-start:0;width:100%;display:flex;gap:8px;justify-content:center;"
+      +"padding:6px 10px;z-index:120;pointer-events:none";
+    b.innerHTML=`<button type="button" id="cellSlash" style="pointer-events:auto;min-width:64px;padding:10px 18px;`
+      +`font-size:20px;font-weight:800;border:1px solid var(--line);border-radius:12px;background:var(--ink);color:#fff;`
+      +`box-shadow:0 4px 14px rgba(0,0,0,.18)">/</button>`;
+    document.body.appendChild(b);
+    const ins=(e)=>{ e.preventDefault(); cellIns("/"); };
+    const btn=el("cellSlash");
+    btn.addEventListener("pointerdown", ins);
+    if(!window.PointerEvent) btn.addEventListener("touchstart", ins, {passive:false});
+    if(window.visualViewport){ window.visualViewport.addEventListener("resize", cellBarPos);
+      window.visualViewport.addEventListener("scroll", cellBarPos); }
+  }
+  b.style.display="flex"; cellBarPos(); setTimeout(cellBarPos, 250);
 }
 function chartUnitOf(o){ return ((o&&o.chart_unit)==="cm") ? "cm" : "inch"; }
 function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"in"); }
@@ -408,21 +450,31 @@ function unitLbl(u){ return u==="cm" ? (isAr()?"سم":"cm") : (isAr()?"إنش":"
 function inchToCmUp(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.ceil(x*2.54*2)/2; }
 function inchToCm(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.round(x*2.54*100)/100; }
 function cmToInch(v){ const x=parseFloat(toAsciiDigits(v)); if(!isFinite(x)) return null; return Math.round((x/2.54)*100)/100; }
+/* الخانة ممكن تحمل أكثر من رقم مفصولة بـ «/» — نحوّل كل رقم وحده */
+function eachNum(v, fn){
+  const t=String(v==null?"":v);
+  if(t.indexOf("/")<0) return fn(t);
+  return t.split("/").map(x=>fn(x.trim())).join("/");
+}
 function convMeas(v, from, to, exact){
   if(v===null || v===undefined || String(v).trim()==="") return "";
   if(from===to) return String(v);
-  const r = (from==="inch"&&to==="cm") ? (exact? inchToCm(v) : inchToCmUp(v))
-          : (from==="cm"&&to==="inch") ? cmToInch(v) : null;
-  return r==null ? String(v) : String(r);
+  return eachNum(v, (one_)=>{
+    const r = (from==="inch"&&to==="cm") ? (exact? inchToCm(one_) : inchToCmUp(one_))
+            : (from==="cm"&&to==="inch") ? cmToInch(one_) : null;
+    return r==null ? String(one_) : String(r);
+  });
 }
 /* التصدير (مصنع خارجي · مشغل محلي · جدول الموقع): يقرّب لأعلى —
    نصف سنتيمتر أو ربع إنش — حتى لو ما فيه تحويل وحدة. */
 function roundExport(v, unit){
   const t=(v==null)? "" : String(v).trim();
   if(t==="") return "";
-  const x=parseFloat(toAsciiDigits(t));
-  if(!isFinite(x)) return t;
-  return String(unit==="cm" ? Math.ceil(x*2)/2 : Math.ceil(x*4)/4);
+  return eachNum(t, (one_)=>{
+    const x=parseFloat(toAsciiDigits(one_));
+    if(!isFinite(x)) return one_;
+    return String(unit==="cm" ? Math.ceil(x*2)/2 : Math.ceil(x*4)/4);
+  });
 }
 function chartExport(chart, from, to){
   const out={};
@@ -1429,7 +1481,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.25";
+const APP_VERSION="2026-08-13.26";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
