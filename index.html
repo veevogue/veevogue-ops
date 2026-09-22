@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.30:APPV-->
+<!--APPV:2026-08-13.31:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.30";
+const APP_VERSION="2026-08-13.31";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -8013,6 +8013,17 @@ async function syncProductToDesign(pid){
   const d=(DB.designs||[]).find(x=>x.product_id===pid)
        || (pr.sku? (DB.designs||[]).find(x=>x.sku===pr.sku) : null);
   if(!d) return;
+  /* الاسم واحد بين التصميم ومنتجه — تعدّله بالمنتج ينزل على التصميم،
+     وما يرجع القديم لما ترجّع التصميم خطوة وتعيد اعتماده */
+  { const np={};
+    const nm=String(pr.name||"").trim();
+    if(nm && nm!==String(d.final_name||d.name||"").trim()){ np.name=nm; np.final_name=nm; }
+    const ne=String(pr.name_en||"").trim();
+    if(ne!==String(d.final_name_en||"").trim()) np.final_name_en=ne||null;
+    if(Object.keys(np).length){
+      try{ await sb.from("design_projects").update(np).eq("id",d.id); }catch(e){}
+      Object.assign(d,np); cacheDB();
+    } }
   const ch=pr.size_chart||{};
   if(!Object.keys(ch).length) return;
   /* مين أحدث؟ اللي فيه أرقام أكثر — عشان ما نمسح جدول عبّيته بالتصميم */
