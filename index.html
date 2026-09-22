@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.37:APPV-->
+<!--APPV:2026-08-13.38:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.37";
+const APP_VERSION="2026-08-13.38";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -6208,6 +6208,13 @@ function orderCard(o){
       </div>
       ${session.role==="manager"? rowMenu(`${t("order")} #${o.order_no}`,[
         {label:isAr()?"قائمة الشراء":"Purchase list", icon:I.pack, fn:()=>showPurchase(o.id)},
+        {label:isAr()?"حدّث كميات الشراء على الاستهلاك الحالي":"Refresh PO quantities", icon:I.pack, fn:async()=>{
+          const r=await poSyncQty(o.id); render();
+          alert(isAr()
+            ? (r.done? `تحدّث ${r.done} أمر شراء.` : "ما في شي يتغيّر — الكميات مضبوطة.")
+              +(r.kept?`\n${r.kept} ما لمسناه — مدفوع أو مُرسل.`:"")
+              +(r.covered?`\n${r.covered} صار المخزون يغطّيه.`:"")
+            : `Updated ${r.done} POs.`); }},
         {label:isAr()?"التصنيع الخارجي":"External manufacturing", icon:I.ext, fn:()=>mfgSheet(o.id)},
         {label:isAr()?"إلغاء الأمر":"Cancel order", icon:I.fix, fn:()=>cancelOrder(o.id)},
         {label:isAr()?"حذف الأمر نهائياً":"Delete order", icon:I.trash, danger:true, fn:()=>delOrder(o.id)}
@@ -6367,6 +6374,72 @@ async function dropPlannedPOs(orderId){
   for(const x of kill){ try{ await sb.from("purchases").delete().eq("id",x.id); }catch(e){} }
   if(kill.length){ DB.purchases=(DB.purchases||[]).filter(x=>!kill.some(k=>k.id===x.id)); cacheDB(); }
   return kill.length;
+}
+/* غيّرت هوامش القناة أو الاستهلاك؟ نحدّث كميات أوامر الشراء المخطّطة
+   بدون ما نحذفها — نفس الأوامر بأسعارها ومورّديها ودفعاتها، بكميات اليوم. */
+function orderNeedByColMat(orderId){
+  const out={};
+  DB.lines.filter(l=>l.order_id===orderId && !isReadyProd(product(l.product_id))).forEach(l=>{
+    const col=productCollection(l.product_id)||"__none";
+    const pr=product(l.product_id);
+    const bag=(out[col]=out[col]||{});
+    allBom(pr).forEach(b=>{ bag[b.material_id]=(bag[b.material_id]||0)+(bomQtyForSize(b,l.size)*(l.qty||1)); });
+  });
+  return out;
+}
+async function poSyncQty(orderId){
+  const byCol=orderNeedByColMat(orderId);
+  const stockLeft={};
+  Object.values(byCol).forEach(bag=>Object.keys(bag).forEach(mid=>{
+    if(stockLeft[mid]===undefined) stockLeft[mid]=Math.max(0, matBalance(mid)); }));
+  const out={done:0, kept:0, covered:0};
+  for(const col of Object.keys(byCol)){
+    const colId = col==="__none"? null : col;
+    for(const mid of Object.keys(byCol[col])){
+      const m=material(mid); if(!m || !m.id) continue;
+      const po=(DB.purchases||[]).find(x=>x.order_id===orderId && x.stage==="production"
+        && String(x.material_id)===String(mid) && (x.collection_id||null)===colId);
+      const withMarginRaw=byCol[col][mid]*(1+matMarginPct(m));
+      const use=Math.min(stockLeft[mid]||0, withMarginRaw);
+      stockLeft[mid]=(stockLeft[mid]||0)-use;
+      const withMargin=withMarginRaw-use;
+      if(!po) continue;
+      if(poLocked(po)){ out.kept++; continue; }
+      if(withMargin<=0.0001){ out.covered++; continue; }   /* المخزون يغطّيه — نتركه لك تقرّر */
+      const isMeter=(m.unit||"")==="متر";
+      const pu=matPriceUnit(m);
+      const need=Math.round(withMargin*100)/100;
+      const upd={};
+      if(!isMeter || pu==="count"){
+        upd.buy_unit="count"; upd.unit="count"; upd.buy_qty=Math.ceil(need);
+        upd.plan_qty=upd.buy_qty; upd.plan_meters=null; upd.qty_yd=null;
+      } else if(pu==="yard"){
+        upd.buy_unit="yard"; upd.unit="yard"; upd.buy_qty=Math.ceil(need/YARD);
+        upd.qty_yd=upd.buy_qty; upd.plan_meters=need; upd.plan_qty=null;
+      } else {
+        upd.buy_unit="meter"; upd.unit="meter"; upd.buy_qty=Math.ceil(need);
+        upd.plan_meters=need; upd.qty_yd=null; upd.plan_qty=null;
+      }
+      const same=Object.keys(upd).every(k=>{
+        const a=po[k], b=upd[k];
+        return (a==null&&b==null) || String(a)===String(b); });
+      if(same) continue;
+      await sb.from("purchases").update(upd).eq("id",po.id);
+      Object.assign(po,upd); out.done++;
+    }
+  }
+  if(out.done) cacheDB();
+  return out;
+}
+/* نحدّث كل الأوامر الجارية مرة وحدة — بعد ما تغيّر الهوامش مثلاً */
+async function poSyncQtyAll(){
+  const tot={done:0, kept:0, covered:0, orders:0};
+  for(const o of (DB.orders||[]).filter(x=>x.status==="جاري")){
+    const r=await poSyncQty(o.id);
+    tot.done+=r.done; tot.kept+=r.kept; tot.covered+=r.covered;
+    if(r.done) tot.orders++;
+  }
+  return tot;
 }
 async function createPOsFromOrder(orderId, opts){
   const _quiet=!!(opts&&opts.quiet);
@@ -6737,6 +6810,19 @@ async function saveChannels(){
   DB.settings.channels=cfg;
   await loadAll();
   if(msg){msg.style.color="var(--green)"; msg.textContent=t("savedOk");}
+  /* الهوامش تغيّرت ← أوامر الشراء المخطّطة تصير بكميات قديمة. نعرض تحديثها. */
+  const _open=(DB.purchases||[]).filter(x=>x.stage==="production" && !poLocked(x)).length;
+  if(_open && confirm(isAr()
+    ? `الهوامش انحفظت.\n\nعندك ${_open} أمر شراء إنتاج ما اشتريت منه شي.\n\nنحدّث كمياته على الهوامش الجديدة؟\nالأسعار والمورّدين والدفعات ما تنمسّ.`
+    : `Recalculate ${_open} planned POs with the new margins?`)){
+    const r=await poSyncQtyAll();
+    render();
+    alert(isAr()
+      ? `تحدّث ${r.done} أمر شراء.`
+        +(r.kept?`\n${r.kept} ما لمسناه — مدفوع أو مُرسل.`:"")
+        +(r.covered?`\n${r.covered} صار المخزون يغطّيه — شوفه بنفسك.`:"")
+      : `Updated ${r.done} POs.`);
+  }
 }
 /* ---- أمر جديد ---- */
 function tabNewOrder(){
