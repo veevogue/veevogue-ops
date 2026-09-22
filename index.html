@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.28:APPV-->
+<!--APPV:2026-08-13.29:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.28";
+const APP_VERSION="2026-08-13.29";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5851,8 +5851,8 @@ function stageStats(){
   const c=cnt("cut"), e=cnt("emb"), s=cnt("sew");
   const qcN=act.filter(l=>l.stage==="qc").length;
   const packN=act.filter(l=>l.stage==="pack").length;
-  const extSent=act.filter(l=>l.stage==="ext"&&l.stage_status==="sent").length
-    + DB.parts.filter(p=>p.stage==="emb"&&p.status==="sent"&&actIds.has(p.line_id)).length;
+  const extSent=act.filter(atVendor).length
+    + DB.parts.filter(p=>partAtVendor(p)&&actIds.has(p.line_id)).length;
   const extRec=DB.jobs.filter(j=>j.status==="received").reduce((a,j)=>a+(j.line_ids||[]).length+(j.part_ids||[]).length,0);
   const dActive=DB.designs.filter(d=>(d.stage||"idea")!=="approved");
   const dGo=DB.designs.filter(d=>d.stage==="sample"&&d.sample_started_at&&!d.sample_finished_at).length;
@@ -5883,7 +5883,7 @@ function tabBoard(){
   });
   const actIds2=new Set(act.map(l=>l.id));
   const embPool=DB.parts.filter(p=>p.stage==="emb"&&p.status==="waiting"&&actIds2.has(p.line_id)).length;
-  const extPool=act.filter(l=>l.stage==="ext"&&l.stage_status!=="sent").length;
+  const extPool=act.filter(l=>l.stage==="ext"&&!atVendor(l)).length;
   const activeOrders=DB.orders.filter(o=>o.status==="جاري");
   const onBreakNow=DB.breaks.filter(b=>!b.ended_at);
   el("tabbody").innerHTML=`
@@ -8706,11 +8706,16 @@ async function finishApprove(id){
 async function delDesign(id){ await delLinked("design_projects", id, (design_(id)||{}).name||"", async()=>{ closeSheet(); await refresh(); }); }
 
 /* ---- الخارجي ---- */
+/* بند «مُرسل» وأمره الخارجي انحذف = معلّق. نعتبره راجع للسلة، مو عند المشغل. */
+function atVendor(l){ if(!l || l.stage!=="ext" || l.stage_status!=="sent") return false;
+  return (DB.jobs||[]).some(j=>(j.line_ids||[]).indexOf(l.id)>=0); }
+function partAtVendor(x){ if(!x || x.stage!=="emb" || x.status!=="sent") return false;
+  return (DB.jobs||[]).some(j=>(j.part_ids||[]).indexOf(x.id)>=0); }
 function tabExternal(){
   /* التطريز صار على مستوى القطعة: نجمع قطع التصميم اللي مرحلتها emb */
-  const embPool=DB.parts.filter(x=>x.stage==="emb" && x.status!=="done" && x.status!=="sent"
+  const embPool=DB.parts.filter(x=>x.stage==="emb" && x.status!=="done" && !partAtVendor(x)
     && DB.lines.some(l=>l.id===x.line_id && activeLine(l)));
-  const extPool=DB.lines.filter(l=>l.stage==="ext"&&l.stage_status!=="sent"&&activeLine(l));
+  const extPool=DB.lines.filter(l=>l.stage==="ext"&&!atVendor(l)&&activeLine(l));
   const jobShown=(window._extAll? (DB.jobs||[]) : (DB.jobs||[]).filter(j=>j.status==="sent"))
     .slice().sort((a,b)=>String(b.sent_at||"").localeCompare(String(a.sent_at||"")));
   const openJobs=jobShown;
@@ -8788,8 +8793,7 @@ function tabExternal(){
         <button class="btn btn-ok" onclick="receiveJob('${j.id}')">${I.done}</button>
         ${rowMenu(esc(j.kind)+" — "+esc(j.vendor||""),[
           {label:isAr()?"السعر وموعد التسليم":"Price & delivery", icon:I.price, fn:()=>extPriceSheet(j.id)},
-          {label:isAr()?"إلغاء الإرسالية (ترجع القطع للسلة)":"Cancel job", icon:I.fix, danger:true, fn:()=>extJobDel(j.id,true)},
-          {label:isAr()?"حذف الأمر نهائياً":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id,false)}
+          {label:isAr()?"حذف الأمر (القطع ترجع للسلة)":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id)}
         ])}</div>
       </div>`;}).join("")}`;
 }
@@ -8862,27 +8866,35 @@ async function embPartsDel(idsEnc){
   closeSheet(); render();
   toast(isAr()?`انحذفت ${ids.length} قطعة`:`Deleted ${ids.length}`);
 }
-/* حذف أمر خارجي — مع إرجاع القطع للسلة أو بدونه */
-async function extJobDel(id, restore){
+/* حذف أمر خارجي — القطع اللي لسّه عنده ترجع للسلة إجبارياً.
+   ما ينفع تبقى «مُرسلة» وأمرها انحذف — تصير معلّقة ما تقدر توصلها ولا تعيد إرسالها. */
+function extJobHeld(j){
+  const lines=((j&&j.line_ids)||[]).filter(lid=>{ const l=(DB.lines||[]).find(x=>x.id===lid);
+    return l && l.stage==="ext" && l.stage_status==="sent"; });
+  const parts=((j&&j.part_ids)||[]).filter(pid=>{ const x=(DB.parts||[]).find(y=>y.id===pid);
+    return x && x.stage==="emb" && x.status==="sent"; });
+  return {lines, parts, n:lines.length+parts.length};
+}
+async function extJobDel(id){
   const j=(DB.jobs||[]).find(x=>x.id===id); if(!j) return;
-  const n=(j.part_ids||[]).length||(j.line_ids||[]).length;
   const nm=((supFind(j.supplier_id,j.vendor)||{}).name)||j.vendor||"—";
+  const held=extJobHeld(j);
   if(!confirm(isAr()
-    ? (restore? `إلغاء الإرسالية «${j.kind}» — ${nm}؟\n\n${n} قطعة ترجع للسلة.`
-              : `حذف الأمر «${j.kind}» — ${nm} نهائياً؟\n\nالقطع تبقى على وضعها الحالي.`)
+    ? `حذف أمر «${j.kind}» — ${nm}؟\n\n`
+      +(held.n? `${held.n} قطعة لسّه عنده — ترجع لسلة ${j.kind} تقدر ترسلها من جديد.`
+              : `القطع اللي فيه استُلمت أصلاً — ما يتغيّر وضعها، بس الأمر ينشال.`)
     : "Delete?")) return;
-  if(restore){
-    for(const pid of (j.part_ids||[])) await sb.from("line_parts").update({status:"waiting"}).eq("id",pid);
-    for(const lid of (j.line_ids||[])) await sb.from("order_lines").update({stage_status:"waiting"}).eq("id",lid);
-    (DB.parts||[]).forEach(x=>{ if((j.part_ids||[]).indexOf(x.id)>=0) x.status="waiting"; });
-    (DB.lines||[]).forEach(x=>{ if((j.line_ids||[]).indexOf(x.id)>=0) x.stage_status="waiting"; });
-  }
-  await logIt("del","ext_jobs",id, `${j.kind||""} — ${nm}`);
+  for(const pid of held.parts) await sb.from("line_parts").update({status:"waiting"}).eq("id",pid);
+  for(const lid of held.lines) await sb.from("order_lines").update({stage_status:"waiting"}).eq("id",lid);
+  (DB.parts||[]).forEach(x=>{ if(held.parts.indexOf(x.id)>=0) x.status="waiting"; });
+  (DB.lines||[]).forEach(x=>{ if(held.lines.indexOf(x.id)>=0) x.stage_status="waiting"; });
+  await logIt("del","ext_jobs",id, `${j.kind||""} — ${nm} · ${held.n}`);
   const {error}=await sb.from("ext_jobs").delete().eq("id",id);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   DB.jobs=(DB.jobs||[]).filter(x=>x.id!==id); cacheDB();
   closeSheet(); render();
-  toast(isAr()?"انحذف الأمر":"Deleted");
+  toast(isAr()? (held.n? `انحذف الأمر · ${held.n} قطعة رجعت للسلة` : "انحذف الأمر") : "Deleted",
+    held.n?4000:2500);
 }
 /* المصانع والمشاغل — مع وحدة القياس عشان تبين وأنت تختار */
 function vendorOpts(){
