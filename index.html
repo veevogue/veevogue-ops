@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.42:APPV-->
+<!--APPV:2026-08-13.43:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.42";
+const APP_VERSION="2026-08-13.43";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5154,7 +5154,16 @@ function prodOverKWD(pid){
       .reduce((a,l)=>a+(Number(l.qty)||0),0);
   }
   frt=(pcs? frtTot/pcs : 0) + ((c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0);
-  return {frt, oth: pcs? othTot/pcs : 0, frtTot, othTot, pcs,
+  /* العينات: كل اللي دفعته على عينات هذا الكولكشن — حتى تصاميم ألغيتها —
+     تكلفة يتحمّلها الشغل اللي نفّذته فعلاً */
+  let smpTot=0;
+  if(col){
+    const fm=smpFeeByDesign(DB.supplier_payments||[]);
+    Object.keys(fm).forEach(did=>{ const d=did==="__none"? null : design_(did);
+      if(d && d.collection_id===col) smpTot+=fm[did]; });
+  }
+  return {frt, oth: pcs? othTot/pcs : 0, smp: pcs? smpTot/pcs : 0,
+          frtTot, othTot, smpTot, pcs,
           perPiece:(c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0};
 }
 function prodChannelOf(pid){
@@ -5178,9 +5187,9 @@ function prodCost(pid){
   /* وكيل الشراء ياخذ نسبته على كل اللي يدفعه عنك:
      الخامات والتنفيذ والنقل والشحن وتأمينه والتخليص. سفرك مو منها. */
   const cmPct=(chan(prodChannelOf(pid)).commission||0)/100;
-  const base=mat+(exec||0)+ov.frt;
+  const base=mat+(exec||0)+ov.frt+ov.smp;
   const comm=base*cmPct;
-  return {mat, exec, frt:ov.frt, oth:ov.oth, base, comm, cmPct, ov, lines, missing,
+  return {mat, exec, frt:ov.frt, smp:ov.smp, oth:ov.oth, base, comm, cmPct, ov, lines, missing,
           total:base+comm+ov.oth, execMissing:exec==null};
 }
 function costPerPieceCard(money){
@@ -5191,7 +5200,7 @@ function costPerPieceCard(money){
   const bar=(c)=>{ const t=c.total||1;
     const seg=(v,col)=>v>0? `<span style="width:${Math.max(2,Math.round(v/t*100))}%;background:${col}"></span>`:"";
     return `<div style="display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:5px;background:var(--line)">
-      ${seg(c.mat,"var(--ink)")}${seg(c.exec||0,"var(--wine)")}${seg(c.frt,"#3A6EA5")}${seg(c.comm,"#C9A227")}${seg(c.oth,"var(--green)")}</div>`; };
+      ${seg(c.mat,"var(--ink)")}${seg(c.exec||0,"var(--wine)")}${seg(c.smp,"#8E6BB0")}${seg(c.frt,"#3A6EA5")}${seg(c.comm,"#C9A227")}${seg(c.oth,"var(--green)")}</div>`; };
   return `<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"تكلفة القطعة الواحدة":"Cost per piece"}</div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
@@ -5200,6 +5209,7 @@ function costPerPieceCard(money){
     <div class="pillrow" style="font-size:11px;margin-bottom:8px">
       <span class="chip" style="background:var(--ink);color:#fff">${isAr()?"خامات":"materials"}</span>
       <span class="chip" style="background:var(--wine);color:#fff">${isAr()?"تنفيذ":"making"}</span>
+      <span class="chip" style="background:#8E6BB0;color:#fff">${isAr()?"عينات":"samples"}</span>
       <span class="chip" style="background:#3A6EA5;color:#fff">${isAr()?"شحن ونقل":"freight"}</span>
       <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة الوكيل":"agent fee"}</span>
       <span class="chip sage">${isAr()?"مصاريف أخرى":"other"}</span>
@@ -5209,7 +5219,8 @@ function costPerPieceCard(money){
         <b>${esc(pname(p))}</b>${p.sku?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(p.sku)}</span>`:""}
         <div class="muted" style="font-size:12px;margin-top:2px">
           ${isAr()?"خامات":"mat"} ${fmtKD(c.mat)} · ${isAr()?"تنفيذ":"make"} ${c.execMissing?"—":fmtKD(c.exec)}
-          · ${isAr()?"شحن":"frt"} ${fmtKD(c.frt)} · ${isAr()?"وكيل":"fee"} ${fmtKD(c.comm)} · ${isAr()?"أخرى":"oth"} ${fmtKD(c.oth)}</div>
+          · ${isAr()?"عينات":"smp"} ${fmtKD(c.smp)} · ${isAr()?"شحن":"frt"} ${fmtKD(c.frt)}
+          · ${isAr()?"وكيل":"fee"} ${fmtKD(c.comm)} · ${isAr()?"أخرى":"oth"} ${fmtKD(c.oth)}</div>
         ${bar(c)}
         ${(c.execMissing||c.missing.length)?`<div class="muted" style="font-size:11px;color:var(--wine-dk);margin-top:3px">${
           [c.execMissing?(isAr()?"ما دخلت سعر التنفيذ":"no making price"):"",
@@ -5247,6 +5258,10 @@ function prodCostSheet(pid){
           ?"ما فيه سعر تنفيذ مسجّل لهذا المنتج — دخّله من أمر التنفيذ الخارجي («السعر وموعد التسليم») وبيدخل بالحساب."
           :"No making price recorded yet."}</div>`
       : row(isAr()?"التنفيذ (خياطة)":"Making", c.exec, isAr()?"سعر القطعة من أمر التنفيذ":"from the job order")}
+    ${row(isAr()?"عينات الكولكشن":"Collection samples", c.smp, isAr()
+      ? (c.ov.pcs? `${fmtKD(c.ov.smpTot)} د.ك على ${c.ov.pcs} قطعة — تشمل التصاميم الملغاة`
+         : "ما في قطع مسجّلة بالكولكشن")
+      : "all sample spend on this collection, per piece")}
     ${row(isAr()?"النقل والشحن والتأمين والتخليص":"Freight, insurance & customs", c.frt, isAr()
       ? (c.ov.frtTot? `${fmtKD(c.ov.frtTot)} د.ك على ${c.ov.pcs} قطعة بالكولكشن${c.ov.perPiece?` + ${fmtKD(c.ov.perPiece)} للقطعة من إعدادات القناة`:""}`
          : (c.ov.perPiece? "من إعدادات القناة" : "ما سجّلت مصاريف شحن بعد"))
@@ -5255,7 +5270,7 @@ function prodCostSheet(pid){
       <div>${isAr()?"قيمة ما يدفعه الوكيل عنك":"What the agent pays for you"}</div>
       <div style="text-align:left">${fmtKD(c.base)}</div></div>
     ${row(isAr()?`عمولة الوكيل ${cm}%`:`Agent fee ${cm}%`, c.comm, isAr()
-      ? "على الخامات والتنفيذ والنقل والشحن وتأمينه والتخليص"
+      ? "على الخامات والتنفيذ والعينات والنقل والشحن وتأمينه والتخليص"
       : "on goods, making, freight, insurance & customs")}
     ${row(isAr()?"مصاريف أخرى (سفرك)":"Your own expenses", c.oth, isAr()
       ? (c.ov.pcs? `${fmtKD(c.ov.othTot)} د.ك على ${c.ov.pcs} قطعة — فندق وتذاكر وأكل، ما عليها عمولة`
@@ -8188,6 +8203,24 @@ function showChart(pid, size){
 }
 
 /* ---- التصميم: الكولكشنات ← المسار ---- */
+/* تصميم ملغى: ما راح ينفّذ. يختفي من خط الأنابيب، وتكلفة عيناته
+   تبقى محسوبة على الكولكشن — ما يوخذ نصيب من المصاريف العمومية
+   لأنه ما ينتج ولا قطعة. */
+function dCancelled(d){ return !!(d && d.cancelled); }
+async function designCancel(id, on){
+  const d=design_(id); if(!d) return;
+  const nm=d.final_name||d.name||"";
+  if(on && !confirm(isAr()
+    ? `إلغاء تصميم «${nm}»؟\n\nيطلع من خط الأنابيب وما يدخل بالإنتاج.\n`
+      +`تكلفة عيناته تبقى محسوبة على الكولكشن، وما ينزل عليه نصيب من المصاريف العمومية.\n\n`
+      +`ما ينحذف شي — تقدر ترجعه أي وقت.`
+    : `Cancel design “${nm}”?`)) return;
+  await sb.from("design_projects").update({cancelled:!!on}).eq("id",id);
+  d.cancelled=!!on; cacheDB();
+  await logIt(on?"cancel":"edit","design_projects",id, nm+(on?" — ملغى":" — رجع"));
+  closeSheet(); render();
+  toast(isAr()? (on?"انلغى التصميم — تكلفة عيناته باقية":"رجع التصميم") : (on?"Cancelled":"Restored"));
+}
 const DSTAGES=["idea","sketch","materials","prep","sample","notes","approved"];
 const DLABEL={idea:["الفكرة","IDEA"],sketch:["السكيتشات","SKETCH"],materials:["شراء المواد","MATERIALS"],prep:["تجهيز العينة","PREP"],
   sample:["تنفيذ العينة","SAMPLE"],notes:["ملاحظات العينة","REVIEW"],approved:["معتمد","APPROVED"]};
@@ -8216,7 +8249,8 @@ function tabDesign(){
   el("tabbody").innerHTML=`
     <button class="btn btn-ink btn-big" onclick="newCollection()">${I.plus} ${isAr()?"كولكشن جديد":"New collection"}</button>
     ${cols.map(c=>{
-      const ds=DB.designs.filter(d=>d.collection_id===c.id);
+      const ds=DB.designs.filter(d=>d.collection_id===c.id && !dCancelled(d));
+      const nDead=DB.designs.filter(d=>d.collection_id===c.id && dCancelled(d)).length;
       const rd=readyItems(c.id).filter(x=>x.status!=="rejected");
       const rdAp=rd.filter(x=>x.status==="shortlist").length;
       const kind=colKind(c);
@@ -8234,6 +8268,7 @@ function tabDesign(){
       if(ds.length || kind!=="ready") parts.push(`${ds.length} ${isAr()?"تصميم":"designs"}`);
       if(rd.length || kind!=="tailor") parts.push(`${rd.length} ${isAr()?"جاهز":"ready"}`);
       parts.push(`${okN} ${isAr()?"معتمد":"approved"}`);
+      if(nDead) parts.push(`${nDead} ${isAr()?"ملغى":"cancelled"}`);
       return `<div class="card colcard" onclick="window._curCol='${c.id}';window._colStage=null;render()">
         ${cover?`<img class="thumb" src="${esc(cover)}">`:`<div class="thumb" style="display:flex;align-items:center;justify-content:center;color:#c8c2b8">${kind==="ready"?I.pack:I.design}</div>`}
         <div style="flex:1">
@@ -8315,7 +8350,9 @@ function renderCollection(cid){
     ${(function(){
       const B=[["idea","sketch"],["materials"],["prep","sample","notes"],["approved"]];
       const blab=[isAr()?"الفكرة":"Idea", isAr()?"شراء المواد":"Materials", isAr()?"تجهيز العينة":"Sample", isAr()?"معتمد":"Approved"];
-      const buckets=B.map(g=>ds.filter(d=>g.includes(d.stage||"idea")));
+      const live=ds.filter(d=>!dCancelled(d));
+      const dead=ds.filter(dCancelled);
+      const buckets=B.map(g=>live.filter(d=>g.includes(d.stage||"idea")));
       let sel=window._colStage; if(sel==null){ sel=buckets.findIndex(b=>b.length); if(sel<0) sel=0; }
       const pipe=`<div class="dpipe">${blab.map((l,i)=>`<div class="pill ${i===sel?'on':''}" onclick="window._colStage=${i};render()"><b>${buckets[i].length}</b><span>${l}</span></div>`).join("")}</div>`;
       const cardOf=(d)=>`<div class="dcard" onclick="openDesign('${d.id}')">
@@ -8330,15 +8367,25 @@ function renderCollection(cid){
         </div>
         <span onclick="event.stopPropagation()">${rowMenu(esc(d.final_name||d.name||"—"),[
           {label:isAr()?"فتح":"Open", icon:I.edit, fn:()=>openDesign(d.id)},
+          dCancelled(d)
+            ? {label:isAr()?"رجّعه للتنفيذ":"Restore", icon:I.fix, fn:()=>designCancel(d.id,false)}
+            : {label:isAr()?"إلغاء التصميم — ما راح ينفّذ":"Cancel design", icon:I.fix, fn:()=>designCancel(d.id,true)},
           {label:isAr()?"حذف التصميم":"Delete design", icon:I.trash, danger:true, fn:()=>delLinked("design_projects",d.id,d.name)}
         ])}</span>
         <span class="dcard-open">←</span>
       </div>`;
       const cur=buckets[sel]||[];
       const body = cur.length? cur.map(cardOf).join("") : `<div class="empty">${isAr()?"ما في تصاميم في هذه المرحلة":"No designs in this stage"}</div>`;
+      const deadBlock = dead.length? `<details style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:800;font-size:13px;color:var(--wine-dk)">${
+          isAr()?`ملغاة — ما راح تنفّذ (${dead.length})`:`Cancelled (${dead.length})`}</summary>
+        <div class="muted" style="font-size:12px;margin:6px 0">${isAr()
+          ?"تكلفة عيناتها محسوبة على الكولكشن، وما ينزل عليها نصيب من المصاريف العمومية."
+          :"Their sample cost stays on the collection; no overhead is allocated to them."}</div>
+        <div style="opacity:.65">${dead.map(cardOf).join("")}</div></details>` : "";
       /* كولكشن جاهز بلا تصاميم: ما نزحم الشاشة بخط أنابيب فاضي */
       if(kind==="ready" && !ds.length) return "";
-      return pipe + body;
+      return pipe + body + deadBlock;
     })()}
     ${kind==="ready"? "" : readyBlock}`;
 }
