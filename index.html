@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.36:APPV-->
+<!--APPV:2026-08-13.37:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.36";
+const APP_VERSION="2026-08-13.37";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2937,6 +2937,47 @@ async function syncSamplePrice(x){
   mat.price=mp.price; mat.price_unit=mp.unit; cacheDB();
   return true;
 }
+/* تعدّل بيانات العينة بدفتر العينات ← تنزل على أوامر الشراء اللي ما انشرت:
+   الاسم والمورّد والعملة والسعر، ووحدة الشراء والكمية لأوامر الإنتاج.
+   المدفوع والمُرسل والمستلم ما ينمسّ — سجلّه بالسعر والوحدة اللي انشرى فيهم. */
+async function syncSampleToPOs(x){
+  if(!x || !x.id) return 0;
+  const mp=samplePrice(x);
+  const nm=String(x.fabric_type||"").trim()||null;
+  const sup=x.supplier_id? ((DB.suppliers||[]).find(s=>s.id===x.supplier_id)||null) : null;
+  let n=0;
+  for(const po of (DB.purchases||[])){
+    if(!(po.material_id===x.id || po.sample_id===x.id) || poLocked(po)) continue;
+    const upd={};
+    if(nm && String(po.fabric_name||"")!==nm) upd.fabric_name=nm;
+    if(x.supplier_id && po.supplier_id!==x.supplier_id){
+      upd.supplier_id=x.supplier_id;
+      upd.supplier_name=(sup&&sup.name)||x.supplier_name||po.supplier_name||null;
+    }
+    if(mp.price!=null){
+      if(x.currency && po.currency!==x.currency) upd.currency=x.currency;
+      if((po.stage||"")==="production"){
+        /* وحدة الشراء تتبع وحدة السعر المسجّلة، والكمية تنحسب من جديد عدد صحيح لأعلى */
+        const u=mp.unit||"meter";
+        const m=(po.plan_meters!=null)? Number(po.plan_meters) : null;
+        let q=Number(po.buy_qty)||0;
+        if(u==="count") q=Math.ceil(Number(po.plan_qty!=null? po.plan_qty : po.buy_qty)||0);
+        else if(m!=null) q=(u==="yard")? Math.ceil(m/YARD) : Math.ceil(m);
+        if(po.buy_unit!==u){ upd.buy_unit=u; upd.unit=u; }
+        if(Number(po.buy_qty)!==q) upd.buy_qty=q;
+        const yd=(u==="yard")? q : null;
+        if((po.qty_yd==null? null : Number(po.qty_yd))!==yd) upd.qty_yd=yd;
+        if(u==="count" && Number(po.plan_qty)!==q) upd.plan_qty=q;
+      }
+      if(Number(po.unit_price)!==Number(mp.price)) upd.unit_price=mp.price;
+    }
+    if(!Object.keys(upd).length) continue;
+    try{ await sb.from("purchases").update(upd).eq("id",po.id); }catch(e){}
+    Object.assign(po,upd); n++;
+  }
+  if(n) cacheDB();
+  return n;
+}
 /* الكمية المطلوبة في التصميم هي «الخطة». هذي الدالة تحوّلها لأرقام أمر الشراء —
    يستخدمها إنشاء الأمر وتحديثه، فما يصير اختلاف بين الاثنين.
    الوحدة كما تعاملت بها مع المورّد — لا نحوّلها. المتر المكافئ يُحفظ للمخزون فقط. */
@@ -3559,9 +3600,13 @@ async function sampleSave(){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
     const i=(DB.samples||[]).findIndex(x=>x.id===window._smpEdit); if(i>=0) DB.samples[i]={...DB.samples[i],...upd};
-    try{ await smpNameSync(i>=0?DB.samples[i]:{...row, id:window._smpEdit}, row.fabric_type); }catch(e){}
-    try{ await syncSamplePrice(i>=0?DB.samples[i]:{...row, id:window._smpEdit}); }catch(e){}
-    window._smpEdit=null; closeSheet(); cacheDB(); render(); return;
+    const _sx=(i>=0? DB.samples[i] : {...row, id:window._smpEdit});
+    try{ await smpNameSync(_sx, row.fabric_type); }catch(e){}
+    try{ await syncSamplePrice(_sx); }catch(e){}
+    let _npo=0; try{ _npo=await syncSampleToPOs(_sx); }catch(e){}
+    window._smpEdit=null; closeSheet(); cacheDB(); render();
+    if(_npo) toast(isAr()? `انحفظت · تحدّث ${_npo} أمر شراء` : `Saved · ${_npo} POs updated`, 4000);
+    return;
   }
   const {error}=await sb.from("trip_samples").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert((isAr()?"ما انحفظت العينة:\n\n":"Save failed:\n\n")+error.message);
