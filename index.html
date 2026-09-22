@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.33:APPV-->
+<!--APPV:2026-08-13.34:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.33";
+const APP_VERSION="2026-08-13.34";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5357,13 +5357,15 @@ function poManifestPrint(){
   const _pd=(window._manLang==="ar")?"rtl":"ltr";
   const _nm=window._docName||docName("po");
   w.document.write(`<!DOCTYPE html><html dir="${_pd}"><head><meta charset="utf-8"><title>${esc(_nm)}</title><style>
+    *{box-sizing:border-box}
     body{font-family:Arial,'Noto Sans SC',Tajawal,sans-serif;padding:16px;color:#18181B;margin:0}
     .bar{position:sticky;top:0;display:flex;gap:8px;background:#fff;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:12px}
     .bar button{flex:1;padding:12px;border:0;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
     .b-print{background:#18181B;color:#fff}.b-close{background:#F4F4F2;color:#18181B}
-    table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #E7E7E4;padding:8px}
-    img{border-radius:8px}.muted{color:#8A8A85;font-size:12px}.note-box{background:#F4F4F2;border-radius:10px;padding:10px;margin-bottom:8px}
-    @media print{.bar{display:none}} @page{size:auto;margin:0}
+    table{width:100%;max-width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #E7E7E4;padding:8px}
+    img{border-radius:8px;max-width:100%;height:auto}.muted{color:#8A8A85;font-size:12px}.note-box{background:#F4F4F2;border-radius:10px;padding:10px;margin-bottom:8px}
+    /* هوامش الصفحة تتكفّل بالفراغ — عشان ما ينقص شي لو غيّرت المقاس أو حجم الورقة */
+    @media print{.bar{display:none} body{padding:0}} @page{size:A4;margin:10mm}
   </style></head><body>
     <div class="bar"><button class="b-print" onclick="window.print()">${printLbl}</button><button class="b-close" onclick="window.close()">${closeLbl}</button></div>
     ${node.innerHTML}
@@ -5562,8 +5564,8 @@ function reqDocHTML(groups, lang, opts){
       const sku=poSku(po);
       const phCell = phs.length
         ? (phs.length===1
-            ? `<img crossorigin="anonymous" src="${esc(phs[0])}" style="width:104px;height:104px;object-fit:cover;border-radius:6px">`
-            : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;width:104px">${phs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:100%;height:50px;object-fit:cover;border-radius:5px">`).join("")}</div>`)
+            ? `<img crossorigin="anonymous" src="${esc(phs[0])}" style="width:100%;max-width:100px;aspect-ratio:1/1;object-fit:cover;border-radius:6px">`
+            : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;width:100%;max-width:100px">${phs.map(u=>`<img crossorigin="anonymous" src="${esc(u)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:5px">`).join("")}</div>`)
         : "—";
       return `<tr>
         <td style="width:112px;text-align:center">${phCell}</td>
@@ -5573,21 +5575,35 @@ function reqDocHTML(groups, lang, opts){
         <td style="text-align:center;white-space:nowrap">${po.unit_price?`${po.unit_price} ${esc(po.currency||"")}`:""}</td>
       </tr>`;
     }).join("");
-    return `<div style="margin-top:16px;page-break-inside:avoid">
-      <div style="background:#1C1B1A;color:#fff;padding:10px 12px;border-radius:8px 8px 0 0">
+    return `<div style="margin-top:16px">
+      <div style="background:#1C1B1A;color:#fff;padding:10px 12px;border-radius:8px 8px 0 0;break-inside:avoid">
         <div style="font-weight:800;font-size:20px;line-height:1.25;letter-spacing:.2px">${esc(su.name||"Supplier")}</div>
         ${info?`<div style="font-weight:400;font-size:12px;opacity:.85;margin-top:3px">${info}</div>`:""}</div>
-      <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th>
-        <th style="width:15%;text-align:center">SKU</th>
-        <th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}
-        ${money(sum)?`<tr><td colspan="4" style="text-align:${lang==="ar"?"left":"right"};font-weight:800">${H("TOTAL","الإجمالي","合计")}</td>
-          <td style="text-align:center;font-weight:800;white-space:nowrap">${money(sum)}</td></tr>`:""}</table>
+      <table>
+        <colgroup><col style="width:19%"><col style="width:30%"><col style="width:15%"><col style="width:19%"><col style="width:17%"></colgroup>
+        <thead><tr><th>${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th>
+        <th style="text-align:center">SKU</th>
+        <th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr></thead>
+        <tbody>${rows}</tbody>
+        ${money(sum)?`<tfoot><tr><td colspan="4" style="text-align:${lang==="ar"?"left":"right"};font-weight:800">${H("TOTAL","الإجمالي","合计")}</td>
+          <td style="text-align:center;font-weight:800">${money(sum)}</td></tr></tfoot>`:""}</table>
       ${opts.qr?`<div style="margin-top:8px;text-align:${align}"><span style="color:#666;font-size:12px">WeChat</span><br><img src="${opts.qr}" style="width:120px;height:120px;border-radius:8px"></div>`:""}
     </div>`;
   }).join("");
   const id=opts.id||"joSheet";
-  return `<div id="${id}" dir="${dir}" style="background:#fff;color:#1C1B1A;padding:22px;font-family:Tajawal,'Noto Sans SC',Arial,sans-serif">
-    <style>#${id} table{width:100%;border-collapse:collapse;margin-top:6px}#${id} td,#${id} th{border:1px solid #E6E1D8;padding:8px;text-align:${align}}</style>
+  return `<div id="${id}" dir="${dir}" style="background:#fff;color:#1C1B1A;padding:18px;max-width:100%;box-sizing:border-box;font-family:Tajawal,'Noto Sans SC',Arial,sans-serif">
+    <style>
+      #${id},#${id} *{box-sizing:border-box}
+      #${id} table{width:100%;max-width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
+      #${id} td,#${id} th{border:1px solid #E6E1D8;padding:7px 6px;text-align:${align};
+        word-wrap:break-word;overflow-wrap:anywhere;vertical-align:middle}
+      #${id} th{font-size:13px;line-height:1.3}
+      #${id} img{max-width:100%;height:auto}
+      #${id} tr{break-inside:avoid;page-break-inside:avoid}
+      #${id} thead{display:table-header-group}
+      #${id} tfoot{display:table-row-group}
+      @media print{ #${id}{padding:0} }
+    </style>
     <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1C1B1A;padding-bottom:12px">
       <div style="font-family:Arial;font-weight:700;letter-spacing:5px;font-size:22px">VEEVOGUE</div>
       <div style="text-align:${lang==="ar"?"left":"right"}"><b>${H("PURCHASE REQUEST","طلب مشتريات","采购订单")}</b>
@@ -9590,7 +9606,12 @@ function jobPrint(){
   const ifr=document.createElement("iframe"); ifr.style.position="fixed"; ifr.style.right="-9999px"; ifr.style.bottom="0"; ifr.style.width="800px"; ifr.style.height="1000px";
   document.body.appendChild(ifr);
   const d=ifr.contentWindow.document; d.open();
-  d.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${esc(nm)}</title><style>@page{size:auto;margin:0}body{font-family:Tajawal,Arial,sans-serif;padding:20px;color:#1C1B1A}table{width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}</style></head><body>${node.outerHTML}</body></html>`);
+  d.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${esc(nm)}</title><style>`
+    +`@page{size:A4;margin:10mm}*{box-sizing:border-box}`
+    +`body{font-family:Tajawal,Arial,sans-serif;padding:0;margin:0;color:#1C1B1A}`
+    +`table{width:100%;max-width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}`
+    +`img{max-width:100%;height:auto}`
+    +`</style></head><body>${node.outerHTML}</body></html>`);
   d.close();
   withDocTitle(nm, ()=>{
     setTimeout(()=>{ try{ifr.contentWindow.focus(); ifr.contentWindow.print();}catch(e){} setTimeout(()=>ifr.remove(),1500); },400);
