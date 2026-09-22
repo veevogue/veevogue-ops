@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.39:APPV-->
+<!--APPV:2026-08-13.40:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.39";
+const APP_VERSION="2026-08-13.40";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5090,12 +5090,167 @@ function tabFinance(){
       <div class="muted" style="text-align:left">${money(v.total)}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
   </div>`:""}
 
+  ${costPerPieceCard(money)}
+
   <div class="card" style="padding:14px;opacity:.75">
     <div class="title" style="font-size:16px">${isAr()?"المبيعات":"Sales"}</div>
     <div class="muted">${isAr()?"تُسجّل تلقائياً عند ربط الموقع الإلكتروني (لاحقاً) — وقتها يطلع الربح = المبيعات − المصروف":"Auto-recorded once the website is linked"}</div>
   </div>`;
 }
 
+/* ================= تكلفة القطعة الواحدة =================
+   أربع طبقات: الخامات + التنفيذ + العمولة + الإسقاط (شحن ونقل ومصاريف).
+   كلها بالدينار للقطعة الوحدة — مستقلة عن حجم الأمر. */
+function matChannel(m){
+  const sup=m&&m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
+  return (sup&&sup.channel) || chChannel || "china";
+}
+function matCurOf(m){ return (m&&m.currency) || chan(matChannel(m)).currency || "KWD"; }
+/* سعر الخام بالدينار لكل وحدة استهلاك (متر للأقمشة، حبة للإكسسوار) */
+function matKWDPerUnit(m){
+  const p=Number(m&&m.price); if(!isFinite(p)||!p) return null;
+  const pu=matPriceUnit(m);
+  const inCur = (pu==="yard")? (p/YARD) : p;     /* اليارد يتحوّل لمتر — الاستهلاك بالمتر */
+  const k=toKWDsafe(inCur, matCurOf(m));
+  return isFinite(k)? k : null;
+}
+/* الاستهلاك للقطعة: لو مخصّص لكل عمر ناخذ المتوسط */
+function bomQtyAvg(b){
+  const ps=b&&b.per_size;
+  if(ps){ const v=Object.values(ps).map(x=>Number(x)||0).filter(x=>x>0);
+    if(v.length) return v.reduce((a,x)=>a+x,0)/v.length; }
+  return Number(b&&b.qty)||0;
+}
+/* تكلفة التنفيذ للقطعة — من سعر أمر التنفيذ/التصنيع المسجّل */
+function prodExecKWD(pid){
+  const hits=[];
+  (DB.jobs||[]).forEach(j=>{
+    if(j.unit_price==null || !(Number(j.unit_price)>0)) return;
+    let mine=false;
+    if(((j.line_ids||[]).length)||((j.part_ids||[]).length)) mine=jobProds(j).indexOf(pid)>=0;
+    else if(j.order_id) mine=(DB.lines||[]).some(l=>l.order_id===j.order_id && l.product_id===pid);
+    if(mine) hits.push({v:toKWDsafe(j.unit_price, j.currency||chan(chChannel).currency||"KWD"),
+                        at:String(j.sent_at||j.created_at||"")});
+  });
+  if(!hits.length) return null;
+  hits.sort((a,b)=>b.at.localeCompare(a.at));
+  return hits[0].v;
+}
+/* الإسقاط: الشحن للقطعة من إعداد القناة، والمصاريف موزّعة على قطع الكولكشن */
+function prodOverKWD(pid){
+  const col=productCollection(pid);
+  const c=chan(prodChannelOf(pid));
+  const ship=(c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0;
+  let exp=0, pcs=0;
+  if(col){
+    exp=(DB.expenses||[]).filter(e=>e.collection_id===col).reduce((a,e)=>a+expKWD(e),0);
+    if(c.ship_mode==="flat") exp+=Number(c.ship_val)||0;
+    pcs=(DB.lines||[]).filter(l=>productCollection(l.product_id)===col)
+      .reduce((a,l)=>a+(Number(l.qty)||0),0);
+  }
+  return {ship, exp: pcs? exp/pcs : 0, expTotal:exp, pcs};
+}
+function prodChannelOf(pid){
+  const b=(allBom(product(pid))||[])[0];
+  const m=b? material(b.material_id) : null;
+  return m? matChannel(m) : (chChannel||"china");
+}
+function prodCost(pid){
+  const p=product(pid); if(!p) return null;
+  const lines=[]; let mat=0, comm=0; const missing=[];
+  (allBom(p)||[]).forEach(b=>{
+    const m=material(b.material_id); if(!m) return;
+    const q=bomQtyAvg(b); if(!(q>0)) return;
+    const u=matKWDPerUnit(m);
+    if(u==null){ missing.push(m.name||m.sku||"—"); return; }
+    const cost=q*u;
+    const cm=cost*((chan(matChannel(m)).commission||0)/100);
+    mat+=cost; comm+=cm;
+    lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost, comm:cm});
+  });
+  const exec=prodExecKWD(pid);
+  const ov=prodOverKWD(pid);
+  const over=ov.ship+ov.exp;
+  return {mat, comm, exec, over, ov, lines, missing,
+          total:mat+comm+over+(exec||0), execMissing:exec==null};
+}
+function costPerPieceCard(money){
+  const list=(DB.products||[]).filter(p=>p.active!==false && !isReadyProd(p) && (allBom(p)||[]).length)
+    .map(p=>({p, c:prodCost(p.id)})).filter(x=>x.c && (x.c.mat>0 || x.c.exec));
+  if(!list.length) return "";
+  list.sort((a,b)=>b.c.total-a.c.total);
+  const bar=(c)=>{ const t=c.total||1;
+    const seg=(v,col)=>v>0? `<span style="width:${Math.max(2,Math.round(v/t*100))}%;background:${col}"></span>`:"";
+    return `<div style="display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:5px;background:var(--line)">
+      ${seg(c.mat,"var(--ink)")}${seg(c.exec||0,"var(--wine)")}${seg(c.comm,"#C9A227")}${seg(c.over,"var(--green)")}</div>`; };
+  return `<div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"تكلفة القطعة الواحدة":"Cost per piece"}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
+      ?"من الاستهلاك وأسعار العينات — مستقلة عن حجم الأمر. اضغط المنتج تشوف التفصيل."
+      :"From consumption and sample prices. Tap for the breakdown."}</div>
+    <div class="pillrow" style="font-size:11px;margin-bottom:8px">
+      <span class="chip" style="background:var(--ink);color:#fff">${isAr()?"خامات":"materials"}</span>
+      <span class="chip" style="background:var(--wine);color:#fff">${isAr()?"تنفيذ":"making"}</span>
+      <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة":"commission"}</span>
+      <span class="chip sage">${isAr()?"شحن ومصاريف":"freight & expenses"}</span>
+    </div>
+    ${list.map(({p,c})=>`<div class="lineitem" style="cursor:pointer;align-items:flex-start" onclick="prodCostSheet('${p.id}')">
+      <div style="flex:1;min-width:0">
+        <b>${esc(pname(p))}</b>${p.sku?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(p.sku)}</span>`:""}
+        <div class="muted" style="font-size:12px;margin-top:2px">
+          ${isAr()?"خامات":"mat"} ${fmtKD(c.mat)} · ${isAr()?"تنفيذ":"make"} ${c.execMissing?"—":fmtKD(c.exec)}
+          · ${isAr()?"عمولة":"com"} ${fmtKD(c.comm)} · ${isAr()?"إسقاط":"ovh"} ${fmtKD(c.over)}</div>
+        ${bar(c)}
+        ${(c.execMissing||c.missing.length)?`<div class="muted" style="font-size:11px;color:var(--wine-dk);margin-top:3px">${
+          [c.execMissing?(isAr()?"ما دخلت سعر التنفيذ":"no making price"):"",
+           c.missing.length?(isAr()?`${c.missing.length} خام بلا سعر`:`${c.missing.length} unpriced`):""].filter(Boolean).join(" · ")}</div>`:""}
+      </div>
+      <div style="text-align:left;white-space:nowrap"><b style="font-size:16px">${fmtKD(c.total)}</b>
+        <div class="muted" style="font-size:11px">${isAr()?"د.ك/قطعة":"KWD/pc"}</div></div>
+    </div>`).join("")}
+  </div>`;
+}
+function prodCostSheet(pid){
+  const p=product(pid), c=prodCost(pid); if(!p||!c) return;
+  const row=(lbl,v,note)=>`<div class="lineitem"><div>${lbl}${note?`<div class="muted" style="font-size:11px">${note}</div>`:""}</div>
+    <div style="text-align:left;white-space:nowrap"><b>${fmtKD(v)}</b></div></div>`;
+  const cm=(chan(prodChannelOf(pid)).commission||0);
+  openSheet(`<div class="title">${isAr()?"تكلفة القطعة":"Cost per piece"} — ${esc(pname(p))}</div>
+    <div class="muted" style="font-size:12px">${p.sku?esc(p.sku)+" · ":""}${esc(chanLabel(prodChannelOf(pid)))}</div>
+
+    <div class="sechead" style="font-size:14px">${isAr()?"الخامات":"Materials"}</div>
+    <table><tr><th>${isAr()?"الخام":"Material"}</th><th style="text-align:center">${isAr()?"الاستهلاك":"Use"}</th>
+      <th style="text-align:center">${isAr()?"سعر الوحدة":"Unit"}</th><th style="text-align:center">${isAr()?"للقطعة":"Per pc"}</th></tr>
+    ${c.lines.map(l=>`<tr><td>${esc(l.name||"—")}${l.sku?`<div class="muted" style="font-size:10px;font-family:Arial;direction:ltr">${esc(l.sku)}</div>`:""}</td>
+      <td style="text-align:center">${Math.round(l.qty*1000)/1000} ${esc(l.unit)}</td>
+      <td style="text-align:center">${fmtKD(l.per)}</td>
+      <td style="text-align:center"><b>${fmtKD(l.cost)}</b></td></tr>`).join("")}
+    <tr><td colspan="3" style="font-weight:800">${isAr()?"مجموع الخامات":"Materials total"}</td>
+      <td style="text-align:center;font-weight:800">${fmtKD(c.mat)}</td></tr></table>
+    ${c.missing.length?`<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px">${isAr()
+      ?`بلا سعر مسجّل فما دخلت بالحساب: ${esc(c.missing.join(" · "))}`
+      :`No price: ${esc(c.missing.join(" · "))}`}</div>`:""}
+
+    <div class="sechead" style="font-size:14px">${isAr()?"التنفيذ والإسقاط":"Making & overhead"}</div>
+    ${c.execMissing
+      ? `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px">${isAr()
+          ?"ما فيه سعر تنفيذ مسجّل لهذا المنتج — دخّله من أمر التنفيذ الخارجي («السعر وموعد التسليم») وبيدخل بالحساب."
+          :"No making price recorded yet."}</div>`
+      : row(isAr()?"التنفيذ (خياطة)":"Making", c.exec, isAr()?"سعر القطعة من أمر التنفيذ":"from the job order")}
+    ${row(isAr()?`العمولة ${cm}%`:`Commission ${cm}%`, c.comm, isAr()?"على قيمة الخامات":"on materials")}
+    ${row(isAr()?"الشحن":"Freight", c.ov.ship, isAr()?"من إعدادات القناة":"channel setting")}
+    ${row(isAr()?"المصاريف":"Expenses", c.ov.exp, isAr()
+      ? (c.ov.pcs? `${fmtKD(c.ov.expTotal)} د.ك على ${c.ov.pcs} قطعة بالكولكشن` : "ما في قطع مسجّلة بالكولكشن")
+      : "collection expenses per piece")}
+
+    <div class="lineitem" style="font-weight:800;font-size:17px;border-top:2px solid var(--ink);margin-top:6px">
+      <div>${isAr()?"تكلفة القطعة":"Cost per piece"}</div>
+      <div style="text-align:left">${fmtKD(c.total)} <span class="muted" style="font-size:12px">${isAr()?"د.ك":"KWD"}</span></div></div>
+
+    <div class="note-box" style="font-size:12px;margin-top:8px">${isAr()
+      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. المصاريف موزّعة بالتساوي على قطع الكولكشن."
+      :"Materials = recorded consumption × approved sample price."}</div>`);
+}
 /* ================= المالية: نفقات + دفعات + ملخص (داخل المشتريات — مرجع) ================= */
 const EXP_CATS=[["transport","نقل"],["food","أكل"],["hotel","سكن"],["tickets","تذاكر"],["shipping","شحن"],["customs","تخليص / جمارك"],["insurance","تأمين"],["logistics","رسوم لوجستيك"],["misc","نثريات / بوكيت موني"],["other","أخرى"]];
 function expCatLabel(k){ const f=EXP_CATS.find(x=>x[0]===k); return f? f[1] : k; }
@@ -7270,7 +7425,7 @@ function hasEmbOn(){ return !!(el("p_hasemb")&&el("p_hasemb").checked); }
    سجل الخامات يبقى لللي تسجّله بيدك (مخزون قديم أو بند مو من عينة). */
 function sampleAsMat(x){
   const byCount=smpByCount(x); const mp=samplePrice(x);
-  return {id:x.id, sku:x.sku||null, name:x.fabric_type||kindLabel(x.kind),
+  return {id:x.id, sku:x.sku||null, currency:x.currency||null, name:x.fabric_type||kindLabel(x.kind),
           kind:x.kind||"fabric", unit:byCount?"حبة":"متر", color:null,
           supplier:x.supplier_name||null, supplier_id:x.supplier_id||null,
           price:mp.price, price_unit:mp.unit, design_id:x.design_id||null,
