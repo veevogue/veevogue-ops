@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.40:APPV-->
+<!--APPV:2026-08-13.41:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.40";
+const APP_VERSION="2026-08-13.41";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5169,9 +5169,13 @@ function prodCost(pid){
     lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost, comm:cm});
   });
   const exec=prodExecKWD(pid);
+  /* عمولة اللوجستيك تمشي على قيمة البضاعة كلها — الخامات وتنفيذ المصنع */
+  const cmPct=(chan(prodChannelOf(pid)).commission||0)/100;
+  const commExec=(exec||0)*cmPct;
+  comm+=commExec;
   const ov=prodOverKWD(pid);
   const over=ov.ship+ov.exp;
-  return {mat, comm, exec, over, ov, lines, missing,
+  return {mat, comm, commExec, cmPct, exec, over, ov, lines, missing,
           total:mat+comm+over+(exec||0), execMissing:exec==null};
 }
 function costPerPieceCard(money){
@@ -5191,15 +5195,15 @@ function costPerPieceCard(money){
     <div class="pillrow" style="font-size:11px;margin-bottom:8px">
       <span class="chip" style="background:var(--ink);color:#fff">${isAr()?"خامات":"materials"}</span>
       <span class="chip" style="background:var(--wine);color:#fff">${isAr()?"تنفيذ":"making"}</span>
-      <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة":"commission"}</span>
-      <span class="chip sage">${isAr()?"شحن ومصاريف":"freight & expenses"}</span>
+      <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة لوجستيك":"logistics"}</span>
+      <span class="chip sage">${isAr()?"مصاريف":"expenses"}</span>
     </div>
     ${list.map(({p,c})=>`<div class="lineitem" style="cursor:pointer;align-items:flex-start" onclick="prodCostSheet('${p.id}')">
       <div style="flex:1;min-width:0">
         <b>${esc(pname(p))}</b>${p.sku?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(p.sku)}</span>`:""}
         <div class="muted" style="font-size:12px;margin-top:2px">
           ${isAr()?"خامات":"mat"} ${fmtKD(c.mat)} · ${isAr()?"تنفيذ":"make"} ${c.execMissing?"—":fmtKD(c.exec)}
-          · ${isAr()?"عمولة":"com"} ${fmtKD(c.comm)} · ${isAr()?"إسقاط":"ovh"} ${fmtKD(c.over)}</div>
+          · ${isAr()?"لوجستيك":"log"} ${fmtKD(c.comm)} · ${isAr()?"مصاريف":"exp"} ${fmtKD(c.over)}</div>
         ${bar(c)}
         ${(c.execMissing||c.missing.length)?`<div class="muted" style="font-size:11px;color:var(--wine-dk);margin-top:3px">${
           [c.execMissing?(isAr()?"ما دخلت سعر التنفيذ":"no making price"):"",
@@ -5237,8 +5241,10 @@ function prodCostSheet(pid){
           ?"ما فيه سعر تنفيذ مسجّل لهذا المنتج — دخّله من أمر التنفيذ الخارجي («السعر وموعد التسليم») وبيدخل بالحساب."
           :"No making price recorded yet."}</div>`
       : row(isAr()?"التنفيذ (خياطة)":"Making", c.exec, isAr()?"سعر القطعة من أمر التنفيذ":"from the job order")}
-    ${row(isAr()?`العمولة ${cm}%`:`Commission ${cm}%`, c.comm, isAr()?"على قيمة الخامات":"on materials")}
-    ${row(isAr()?"الشحن":"Freight", c.ov.ship, isAr()?"من إعدادات القناة":"channel setting")}
+    ${row(isAr()?`عمولة اللوجستيك ${cm}%`:`Logistics fee ${cm}%`, c.comm, isAr()
+      ? `على الخامات${c.execMissing?"":" والتنفيذ"} — تشمل التخليص والتأمين والشحن ونقل البضاعة داخل الصين`
+      : "on materials & making — covers customs, insurance, freight and in-China transport")}
+    ${c.ov.ship?row(isAr()?"شحن إضافي":"Extra freight", c.ov.ship, isAr()?"من إعدادات القناة":"channel setting"):""}
     ${row(isAr()?"المصاريف":"Expenses", c.ov.exp, isAr()
       ? (c.ov.pcs? `${fmtKD(c.ov.expTotal)} د.ك على ${c.ov.pcs} قطعة بالكولكشن` : "ما في قطع مسجّلة بالكولكشن")
       : "collection expenses per piece")}
@@ -5248,7 +5254,7 @@ function prodCostSheet(pid){
       <div style="text-align:left">${fmtKD(c.total)} <span class="muted" style="font-size:12px">${isAr()?"د.ك":"KWD"}</span></div></div>
 
     <div class="note-box" style="font-size:12px;margin-top:8px">${isAr()
-      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. المصاريف موزّعة بالتساوي على قطع الكولكشن."
+      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. عمولة اللوجستيك على قيمة البضاعة (خامات + تنفيذ) وتغطي الشحن والتخليص والتأمين والنقل. باقي المصاريف موزّعة بالتساوي على قطع الكولكشن."
       :"Materials = recorded consumption × approved sample price."}</div>`);
 }
 /* ================= المالية: نفقات + دفعات + ملخص (داخل المشتريات — مرجع) ================= */
