@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.43:APPV-->
+<!--APPV:2026-08-13.44:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.43";
+const APP_VERSION="2026-08-13.44";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -1913,6 +1913,7 @@ function breakBar(){
 /* لا نحدّث تلقائياً وأنت تعبّي بيانات — عشان ما تنمسح قبل الحفظ */
 function userBusy(){
   if(mTab==="newOrder") return true;
+  if(mTab==="external" && extBusy()) return true;
   if(document.getElementById("ov")) return true;
   const a=document.activeElement;
   if(a && (a.tagName==="INPUT"||a.tagName==="TEXTAREA"||a.tagName==="SELECT")) return true;
@@ -6150,6 +6151,7 @@ function myTabs(){
 function renderDesk(){
   const tabs=myTabs();
   if(!tabs.includes(mTab)) mTab=tabs[0];
+  captureExt();   /* نلتقط نموذج الإرسال قبل ما نمسح الشاشة */
   el("app").innerHTML=`${offBar()}
     <div class="tabs">${tabs.map(k=>`<button class="${mTab===k?'on':''}" onclick="mTab='${k}';localStorage.setItem('vv2_tab','${k}');render()">${t(k)}</button>`).join("")}</div>
     <div id="tabbody"></div>`;
@@ -9183,6 +9185,34 @@ function atVendor(l){ if(!l || l.stage!=="ext" || l.stage_status!=="sent") retur
   return (DB.jobs||[]).some(j=>(j.line_ids||[]).indexOf(l.id)>=0); }
 function partAtVendor(x){ if(!x || x.stage!=="emb" || x.status!=="sent") return false;
   return (DB.jobs||[]).some(j=>(j.part_ids||[]).indexOf(x.id)>=0); }
+/* نموذج الإرسال للمشغل: اختياراتك والمورّد والسعر والتاريخ تبقى
+   لو انعادت الشاشة من التحديث التلقائي أو البث الفوري. */
+function extFormEls(){
+  return ["x_vendor_sel","x_vendor","x_vendor2","x_price","x_cur","x_deliv","j_vendor_sel","j_vendor"];
+}
+/* انرسل الجوب أوردر ← ننسى المسودة ولا نلتقطها من الشاشة القديمة */
+function extFormClear(){ window._xForm=null; window._xSkip=1; }
+function captureExt(){
+  if(window._xSkip){ window._xSkip=0; window._xForm=null; return; }
+  if(!el("x_vendor") && !el("j_vendor")) return;   /* الشاشة الحالية مو شاشة الخارجي */
+  const f=(window._xForm=window._xForm||{});
+  extFormEls().forEach(id=>{ const e=el(id); if(e) f[id]=e.value; });
+  f.ext=[...document.querySelectorAll(".extchk:checked")].map(c=>c.value);
+  f.emb=[...document.querySelectorAll(".embchk:checked")].map(c=>c.value);
+}
+function restoreExt(){
+  const f=window._xForm; if(!f) return;
+  extFormEls().forEach(id=>{ const e=el(id); if(e && f[id]!=null && f[id]!=="") e.value=f[id]; });
+  const tick=(cls,vals)=>{ if(!vals||!vals.length) return;
+    document.querySelectorAll(cls).forEach(c=>{ if(vals.indexOf(c.value)>=0) c.checked=true; }); };
+  tick(".extchk", f.ext); tick(".embchk", f.emb);
+}
+/* في نصّ تعبئة النموذج؟ ما نقاطعك بتحديث خلفي */
+function extBusy(){
+  const f=window._xForm; if(!f) return false;
+  if((f.ext&&f.ext.length)||(f.emb&&f.emb.length)) return true;
+  return extFormEls().some(id=>{ const v=f[id]; return v!=null && String(v).trim()!==""; });
+}
 function tabExternal(){
   /* التطريز صار على مستوى القطعة: نجمع قطع التصميم اللي مرحلتها emb */
   const embPool=DB.parts.filter(x=>x.stage==="emb" && x.status!=="done" && !partAtVendor(x)
@@ -9268,6 +9298,7 @@ function tabExternal(){
           {label:isAr()?"حذف الأمر (القطع ترجع للسلة)":"Delete job", icon:I.trash, danger:true, fn:()=>extJobDel(j.id)}
         ])}</div>
       </div>`;}).join("")}`;
+  restoreExt();
 }
 /* السعر وموعد التسليم — نحطهم عند الإنشاء ونقدر نعدّلهم بعد التفاوض */
 function extPriceSheet(jobId){
@@ -9407,6 +9438,7 @@ async function makeJob(mode){
     const j={id:jid,kind,vendor,supplier_id,part_ids:pids,line_ids:[],is_fix:isFix,status:"sent",sent_at:today()};
     if(error) return alert(error.message);
     for(const id of pids) await sb.from("line_parts").update({status:"sent"}).eq("id",id);
+    extFormClear();
     await logIt("ext_send","ext_jobs",j.id,`${kind} · ${pids.length} ${isAr()?"قطعة":"parts"}`);
     await refresh(); printJob(j.id);
   }else{
@@ -9428,6 +9460,7 @@ async function makeJob(mode){
     const j={id:jid,kind:"تنفيذ خارجي",vendor,supplier_id,line_ids:ids,part_ids:[],is_fix:isFix,status:"sent",sent_at:today(),...money};
     if(error) return alert(error.message);
     for(const id of ids) await sb.from("order_lines").update({stage_status:"sent"}).eq("id",id);
+    extFormClear();
     await logIt("ext_send","ext_jobs",j.id,`${isFix?(isAr()?"إرجاع تصليح":"fix return"):(isAr()?"تنفيذ خارجي":"external")} · ${ids.length}`);
     /* ٢ — جوب أوردر التطريز/الطباعة، منفصل، لأي قطعة عليها تطريز (ما يتكرر في الإرجاع) */
     const rows=isFix? [] : [];
