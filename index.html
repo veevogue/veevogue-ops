@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.38:APPV-->
+<!--APPV:2026-08-13.39:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.38";
+const APP_VERSION="2026-08-13.39";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2956,7 +2956,7 @@ async function syncSampleToPOs(x){
     }
     if(mp.price!=null){
       if(x.currency && po.currency!==x.currency) upd.currency=x.currency;
-      if((po.stage||"")==="production"){
+      if((po.stage||"")==="production" && !po.qty_manual){
         /* وحدة الشراء تتبع وحدة السعر المسجّلة، والكمية تنحسب من جديد عدد صحيح لأعلى */
         const u=mp.unit||"meter";
         const m=(po.plan_meters!=null)? Number(po.plan_meters) : null;
@@ -6404,7 +6404,8 @@ async function poSyncQty(orderId){
       stockLeft[mid]=(stockLeft[mid]||0)-use;
       const withMargin=withMarginRaw-use;
       if(!po) continue;
-      if(poLocked(po)){ out.kept++; continue; }
+      /* عدّلت كميته بيدك؟ يبقى مثل ما حطيته */
+      if(poLocked(po) || po.qty_manual){ out.kept++; continue; }
       if(withMargin<=0.0001){ out.covered++; continue; }   /* المخزون يغطّيه — نتركه لك تقرّر */
       const isMeter=(m.unit||"")==="متر";
       const pu=matPriceUnit(m);
