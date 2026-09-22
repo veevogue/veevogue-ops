@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.31:APPV-->
+<!--APPV:2026-08-13.32:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.31";
+const APP_VERSION="2026-08-13.32";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4356,7 +4356,7 @@ function poCard(x){
     <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} ${_stgChip}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
     ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"عينة — السعر المكتوب سعر الجملة للإنتاج، والأمتار خارج الستوك":"sample — price is the wholesale price; meters out of stock"}</div>`:""}
-    <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${x.plan_meters?` <span class="muted">(≈ ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
+    <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${(x.plan_meters&&q.unit==="yard")?` <span class="muted">(${isAr()?"الاستهلاك":"need"} ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
     ${(()=>{ const g=poPlanGap(x); if(!g) return "";
       return `<div class="note-box" style="background:var(--wine-lt);color:var(--wine-dk);font-size:12px;margin-top:6px">
         ${isAr()?"الكمية في التصميم":"Design plan"}: <b>${g.want} ${unitAr(g.unit)}</b> · ${isAr()?"وبهذا الأمر":"this order"}: <b>${g.cur==null?(isAr()?"بلا كمية":"—"):`${g.cur} ${unitAr(g.curUnit)}`}</b>
@@ -6336,12 +6336,15 @@ async function createPOsFromOrder(orderId, opts){
       const withMargin=withMarginRaw-use;
       if(withMargin<=0.0001){ covered++; return; }            /* المخزون يغطيه كاملاً */
       if(!colId) noCol++;
-      const qty = isMeter? Math.round(withMargin*100)/100 : Math.ceil(withMargin);
       const ck = sup.channel || chChannel || "china";
+      /* وحدة الشراء = الوحدة المسجّلة بسعر العينة — هي اللي اتفقنا عليها مع المحل
+         وينطلب فيها. ما نحوّل السعر، والكمية تتقرّب لعدد صحيح لأعلى بلا كسور. */
+      const pu=matPriceUnit(m);
+      const need=Math.round(withMargin*100)/100;      /* الاحتياج بالمتر قبل التقريب */
       let buy_unit, buy_qty, plan_meters=null, qty_yd=null, plan_qty=null;
-      if(!isMeter){ buy_unit="count"; buy_qty=qty; plan_qty=qty; }
-      else if(ck==="china"){ buy_unit="yard"; buy_qty=Math.ceil(qty/YARD); plan_meters=qty; qty_yd=buy_qty; }
-      else { buy_unit="meter"; buy_qty=qty; plan_meters=qty; }
+      if(!isMeter || pu==="count"){ buy_unit="count"; buy_qty=Math.ceil(need); plan_qty=buy_qty; }
+      else if(pu==="yard"){ buy_unit="yard"; buy_qty=Math.ceil(need/YARD); plan_meters=need; qty_yd=buy_qty; }
+      else { buy_unit="meter"; buy_qty=Math.ceil(need); plan_meters=need; }
       rows.push({id:newId(), order_id:orderId, collection_id:colId, trip_id:tr?tr.id:null, channel:ck,
         supplier_id:sup.id, supplier_name:sup.name||null, material_id:m.id, fabric_name:m.name||null,
         kind:isMeter?"fabric":"accessory", unit:buy_unit, buy_unit, buy_qty, plan_meters, qty_yd, plan_qty,
@@ -6431,18 +6434,23 @@ function showPurchase(orderId){
     const q = isMeter? withMargin : Math.ceil(withMargin);   /* العدد يُقرّب لفوق — ما تشتري نص زرار */
     const sup = m.supplier_id? (DB.suppliers||[]).find(s=>s.id===m.supplier_id):null;
     const key = sup? sup.id : "_none";
-    const cost = m.price? m.price*q : null; if(cost) grand+=cost;
-    (groups[key]=groups[key]||{name: sup? sup.name : (isAr()?"🔍 يحتاج مورّد — قائمة البحث":"🔍 Needs a supplier"), rows:[], sub:0, sourcing:!sup}).rows.push({m,q,cost});
+    /* الشراء بوحدة السعر المسجّلة، وعدد صحيح لأعلى — والتكلفة تتحسب عليها */
+    const pu=matPriceUnit(m);
+    const buy=(isMeter && pu==="yard")? {q:Math.ceil(q/YARD), unit:isAr()?"يارد":"yd"}
+            : {q:Math.ceil(q), unit:(m.unit||"")};
+    const cost = m.price? m.price*buy.q : null; if(cost) grand+=cost;
+    (groups[key]=groups[key]||{name: sup? sup.name : (isAr()?"🔍 يحتاج مورّد — قائمة البحث":"🔍 Needs a supplier"), rows:[], sub:0, sourcing:!sup}).rows.push({m,q,cost,buy});
     if(cost) groups[key].sub+=cost;
   });
   /* قائمة البحث تطلع أول — هذي اللي تدوّر لها بالسوق */
   const gEntries=Object.entries(groups).sort((a,b)=> (b[1].sourcing?0:1)-(a[1].sourcing?0:1));
   const section=([key,g])=>`<div class="sechead" style="font-size:15px">${I.pack} ${esc(g.name)}${g.sub?` <span class="muted" style="font-weight:600">· ${Math.round(g.sub*100)/100}</span>`:""}</div>
     <table><tr><th>${isAr()?"الخام":"Material"}</th><th>${isAr()?"الكود":"SKU"}</th><th>${isAr()?"بالمخزون":"On hand"}</th><th>${isAr()?"المطلوب":"Needed"}</th><th>${isAr()?"التكلفة":"Cost"}</th></tr>
-    ${g.rows.map(({m,q,cost})=>{ const bal=m.id?matBalance(m.id):0; const shortQ=Math.round((q-bal)*100)/100;
+    ${g.rows.map(({m,q,cost,buy})=>{ const bal=m.id?matBalance(m.id):0; const shortQ=Math.round((q-bal)*100)/100;
       return `<tr><td>${esc(m.name)}${m.color?` · ${esc(m.color)}`:""}</td><td>${esc(m.sku||"—")}</td>
       <td style="color:${bal<q?"var(--wine)":"var(--green)"}">${Math.round(bal*100)/100}${bal<q?`<div style="font-size:11px">${isAr()?"ناقص":"short"} ${shortQ}</div>`:""}</td>
-      <td><b>${Math.round(q*100)/100}</b> ${esc(m.unit||"")}</td><td>${cost?Math.round(cost*100)/100:"—"}</td></tr>`;}).join("")}</table>`;
+      <td><b>${buy.q}</b> ${esc(buy.unit)}${(buy.unit!==(m.unit||""))?`<div class="muted" style="font-size:11px">${isAr()?"الاستهلاك":"need"} ${Math.round(q*100)/100} ${esc(m.unit||"")}</div>`:""}</td>
+      <td>${cost?Math.round(cost*100)/100:"—"}</td></tr>`;}).join("")}</table>`;
   openSheet(`<div class="title">${I.pack} ${isAr()?"قائمة الشراء التقديرية":"Purchase list"} — ${t("order")} #${order(orderId).order_no}</div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"الكميات تشمل الزيادة (قصور + سبير) من إعدادات القناة، ومجمّعة حسب المورّد.":"Includes channel margin, grouped by supplier."}</div>
     ${gEntries.length? gEntries.map(section).join("") : `<div class="empty">${isAr()?"ما في خامات مربوطة بمنتجات هذا الأمر":"No materials linked"}</div>`}
