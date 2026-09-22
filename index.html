@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.32:APPV-->
+<!--APPV:2026-08-13.33:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.32";
+const APP_VERSION="2026-08-13.33";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4322,7 +4322,8 @@ function poGroupCard(rows){
     const lc=landedCost({channel:r.channel,qty_yd:r.qty_yd,buy_qty:r.buy_qty,unit_price:r.unit_price,currency:r.currency,plan_qty:r.plan_qty}); if(lc) totalKWD+=lc.total; });
   const dName=r=>{ const des=r.design_id?(design_(r.design_id)||{}):null; return des?(des.final_name||des.name):(r.product_id?pname(product(r.product_id)):(isAr()?"—":"—")); };
   return `<div class="card" style="padding:12px">
-    <div style="font-weight:700">${esc(x0.fabric_name||(isAr()?"خام":"fabric"))} ${stgChip} <span class="chip" style="font-size:10px">${rows.length} ${isAr()?"تصاميم":"designs"}</span></div>
+    <div style="font-weight:700">${esc(x0.fabric_name||(isAr()?"خام":"fabric"))}${(function(){const k=poSku(x0);
+      return k?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(k)}</span>`:"";})()} ${stgChip} <span class="chip" style="font-size:10px">${rows.length} ${isAr()?"تصاميم":"designs"}</span></div>
     ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"رسوم عينات — الأمتار تُسجّل خارج الستوك":"sample fees — out of stock"}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${isAr()?"الكمية الإجمالية للتصاميم":"total for all"}: <b>${fmtN(totalQty)} ${unitAr(unit)}</b> × ${x0.unit_price||0} ${esc(cur)}${_stg==="sample"?` <span class="muted" style="font-size:11px">(${isAr()?"سعر الجملة":"wholesale"})</span>`:""}</div>
     <div style="font-size:14px;margin-top:2px"><b>${fmtN(totalDeal)} ${esc(cur)}</b>${totalKWD?` <span class="muted" style="font-size:11px">≈ ${fmtKD(totalKWD)} ${isAr()?"د.ك":"KWD"}</span>`:""}
@@ -4353,7 +4354,8 @@ function poCard(x){
     ? `<span class="chip" style="background:#FBF0D8;color:#8a6d1f;font-size:10px">${isAr()?"عينة":"sample"}</span>`
     : `<span class="chip sage" style="font-size:10px">${isAr()?"إنتاج":"production"}</span>`;
   return `<div class="card" style="padding:12px">
-    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))} ${_stgChip}</div>
+    <div style="font-weight:700">${esc(x.fabric_name||(isAr()?"خام":"fabric"))}${(function(){const k=poSku(x);
+      return k?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(k)}</span>`:"";})()} ${_stgChip}</div>
     ${forName?`<div class="muted" style="font-size:12px">${isAr()?"للتصميم":"for"}: ${esc(forName)}</div>`:""}
     ${_stg==="sample"?`<div class="muted" style="font-size:11px;color:#8a6d1f">${isAr()?"عينة — السعر المكتوب سعر الجملة للإنتاج، والأمتار خارج الستوك":"sample — price is the wholesale price; meters out of stock"}</div>`:""}
     <div style="font-size:13px;margin-top:3px">${q.qty} ${unitAr(q.unit)}${(x.plan_meters&&q.unit==="yard")?` <span class="muted">(${isAr()?"الاستهلاك":"need"} ${x.plan_meters} ${isAr()?"متر":"m"})</span>`:""} × ${x.unit_price||0} ${esc(x.currency||"KWD")}/${unitAr(q.unit)}</div>
@@ -5304,12 +5306,19 @@ async function poSend(gidEnc, lang){
   const uLbl=(u)=> lang==="ar"? unitAr(u) : manUnit(u,lang);
   const rdyBreak=(x)=>{ const sl=Array.isArray(x.size_lines)?x.size_lines:[];
     return sl.length? sl.map(r=>`${r.size||"-"}${r.color?"/"+r.color:""}×${r.qty}`).join("  ") : ""; };
+  const tsum={};
   const tlines=rows.map((x,i)=>{ const q=poQtyUnit(x);
+    const sk=poSku(x); const kk=sk?` [${sk}]`:"";
+    { const c=x.currency||"KWD"; const v=(Number(q.qty)||0)*(Number(x.unit_price)||0);
+      if(v>0) tsum[c]=(tsum[c]||0)+v; }
     if(poIsReady(x)){ const p=product(x.product_id)||{}; const br=rdyBreak(x);
-      return `${i+1}) ${x.fabric_name||""}${p.supplier_model?` [${p.supplier_model}]`:""} — ${fmtN(q.qty)} ${uLbl(q.unit)}`+(br?NL+`   ${br}`:""); }
-    return `${i+1}) ${x.fabric_name||""} — ${fmtN(q.qty)} ${uLbl(q.unit)}${x.plan_meters?` (${x.plan_meters}m)`:""}`; });
+      return `${i+1}) ${x.fabric_name||""}${kk}${p.supplier_model?` [${p.supplier_model}]`:""} — ${fmtN(q.qty)} ${uLbl(q.unit)}`+(br?NL+`   ${br}`:""); }
+    return `${i+1}) ${x.fabric_name||""}${kk} — ${fmtN(q.qty)} ${uLbl(q.unit)}${x.plan_meters?` (${x.plan_meters}m)`:""}`; });
   const L=manT(lang);
-  const msg=`${L.po}`+NL+`${L.shop}: ${su.name||"—"}${shopNo?` (${shopNo})`:""}`+NL+`----------`+NL+tlines.join(NL);
+  const totTxt=Object.entries(tsum).filter(([,v])=>v>0).map(([c,v])=>`${fmtN(v)} ${c}`).join(" + ");
+  const totLbl= lang==="zh"? "合计" : lang==="en"? "TOTAL" : "الإجمالي";
+  const msg=`${L.po}`+NL+`${L.shop}: ${su.name||"—"}${shopNo?` (${shopNo})`:""}`+NL+`----------`+NL+tlines.join(NL)
+    +(totTxt? NL+`----------`+NL+`${totLbl}: ${totTxt}` : "");
   window._sendMsgText=msg;
   const ph2=phoneStr(sup.phone).split("·")[0].replace(/[^0-9]/g,"");
   const wa = ph2? `https://wa.me/${ph2}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -5512,6 +5521,13 @@ function prGroup(box){
   prPaint();
 }
 /* ===== قالب طلب المشتريات — واحد للطباعة وللإرسال للمورّد ===== */
+/* كود فيفوق للبند: المنتج الجاهز كوده، وغيره كود الخام/العينة */
+function poSku(po){
+  if(!po) return "";
+  if(poIsReady(po)) return (product(po.product_id)||{}).sku||"";
+  const m=po.material_id? (material(po.material_id)||{}) : {};
+  return m.sku||"";
+}
 function reqDocHTML(groups, lang, opts){
   opts=opts||{};
   const H=(en,ar,zh)=> lang==="zh"? `${en} / ${zh}` : lang==="en"? en : `${ar} / ${en}`;
@@ -5519,8 +5535,12 @@ function reqDocHTML(groups, lang, opts){
   const dir = lang==="ar"? "rtl" : "ltr";
   const align = lang==="ar"? "right" : "left";
   const img = opts.img || ((u)=>u);
+  const grand={};
+  const money=(bag)=>Object.entries(bag).filter(([,v])=>v>0)
+    .map(([c,v])=>`${fmtN(v)} ${esc(c)}`).join(" + ");
   const cards=groups.map(g=>{
     const su=g.sup||{};
+    const sum={};
     const info=[su.shop_no?`${H("Shop","محل","店号")} ${esc(su.shop_no)}`:"", su.plaza?esc(su.plaza):"",
       su.floor?`${H("Floor","دور","楼层")} ${esc(su.floor)}`:"", su.wechat?("WeChat: "+esc(su.wechat)):"",
       su.phone?esc(phoneStr(su.phone)):""].filter(Boolean).join(" · ");
@@ -5537,6 +5557,9 @@ function reqDocHTML(groups, lang, opts){
       if(rdy && pr.supplier_model) itemHtml+=`<div style="font-family:Arial;font-size:12px">${esc(pr.supplier_model)}</div>`;
       if(rdy){ const sl=Array.isArray(po.size_lines)?po.size_lines:[];
         if(sl.length) itemHtml+=`<div style="color:#666;font-size:11px;font-family:Arial">${esc(sl.map(r=>`${r.size||"-"}${r.color?"/"+r.color:""}×${r.qty}`).join("  "))}</div>`; }
+      { const cur=po.currency||"KWD"; const line=(Number(q.qty)||0)*(Number(po.unit_price)||0);
+        if(line>0){ sum[cur]=(sum[cur]||0)+line; grand[cur]=(grand[cur]||0)+line; } }
+      const sku=poSku(po);
       const phCell = phs.length
         ? (phs.length===1
             ? `<img crossorigin="anonymous" src="${esc(phs[0])}" style="width:104px;height:104px;object-fit:cover;border-radius:6px">`
@@ -5545,6 +5568,7 @@ function reqDocHTML(groups, lang, opts){
       return `<tr>
         <td style="width:112px;text-align:center">${phCell}</td>
         <td>${itemHtml}</td>
+        <td style="text-align:center;font-family:Arial;font-size:12px;white-space:nowrap;direction:ltr">${esc(sku||"—")}</td>
         <td style="text-align:center;font-weight:700;white-space:nowrap">${fmtN(q.qty)} ${uLbl(q.unit)}${po.plan_meters?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}${(po.buy_unit==="carton"&&po.plan_qty)?`<div style="color:#999;font-size:11px">${fmtN(po.plan_qty)} ${uLbl("count")}</div>`:""}</td>
         <td style="text-align:center;white-space:nowrap">${po.unit_price?`${po.unit_price} ${esc(po.currency||"")}`:""}</td>
       </tr>`;
@@ -5553,7 +5577,11 @@ function reqDocHTML(groups, lang, opts){
       <div style="background:#1C1B1A;color:#fff;padding:10px 12px;border-radius:8px 8px 0 0">
         <div style="font-weight:800;font-size:20px;line-height:1.25;letter-spacing:.2px">${esc(su.name||"Supplier")}</div>
         ${info?`<div style="font-weight:400;font-size:12px;opacity:.85;margin-top:3px">${info}</div>`:""}</div>
-      <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th><th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}</table>
+      <table><tr><th style="width:112px">${H("Photo","صورة","图片")}</th><th>${H("Item","الصنف","品名")}</th>
+        <th style="width:15%;text-align:center">SKU</th>
+        <th style="text-align:center">${H("Qty","الكمية","数量")}</th><th style="text-align:center">${H("Price","السعر","价格")}</th></tr>${rows}
+        ${money(sum)?`<tr><td colspan="4" style="text-align:${lang==="ar"?"left":"right"};font-weight:800">${H("TOTAL","الإجمالي","合计")}</td>
+          <td style="text-align:center;font-weight:800;white-space:nowrap">${money(sum)}</td></tr>`:""}</table>
       ${opts.qr?`<div style="margin-top:8px;text-align:${align}"><span style="color:#666;font-size:12px">WeChat</span><br><img src="${opts.qr}" style="width:120px;height:120px;border-radius:8px"></div>`:""}
     </div>`;
   }).join("");
@@ -5565,7 +5593,10 @@ function reqDocHTML(groups, lang, opts){
       <div style="text-align:${lang==="ar"?"left":"right"}"><b>${H("PURCHASE REQUEST","طلب مشتريات","采购订单")}</b>
         <br><span style="font-size:12px;color:#666">${esc(opts.sub||chanLabel(chChannel))} · ${today()}</span></div>
     </div>
-    ${cards}</div>`;
+    ${cards}
+    ${(groups.length>1 && money(grand))?`<div style="margin-top:14px;border-top:2px solid #1C1B1A;padding-top:10px;
+      display:flex;justify-content:space-between;font-weight:800;font-size:17px">
+      <span>${H("GRAND TOTAL","الإجمالي الكلي","总计")}</span><span style="direction:ltr">${money(grand)}</span></div>`:""}</div>`;
 }
 function reqLangDefault(){ return chChannel==="china" ? "zh" : "ar"; }
 function purchaseReqPrint(){
