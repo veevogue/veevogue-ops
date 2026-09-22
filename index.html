@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.35:APPV-->
+<!--APPV:2026-08-13.36:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.35";
+const APP_VERSION="2026-08-13.36";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5576,7 +5576,7 @@ function reqDocHTML(groups, lang, opts){
         <td style="width:112px;text-align:center">${phCell}</td>
         <td>${itemHtml}</td>
         <td style="text-align:center;font-family:Arial;font-size:12px;white-space:nowrap;direction:ltr">${esc(sku||"—")}</td>
-        <td style="text-align:center;font-weight:700;white-space:nowrap">${fmtN(q.qty)} ${uLbl(q.unit)}${po.plan_meters?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}${(po.buy_unit==="carton"&&po.plan_qty)?`<div style="color:#999;font-size:11px">${fmtN(po.plan_qty)} ${uLbl("count")}</div>`:""}</td>
+        <td style="text-align:center;font-weight:700">${fmtN(q.qty)} ${uLbl(q.unit)}${(po.plan_meters&&q.unit==="yard")?`<div style="color:#999;font-size:11px">${po.plan_meters}m</div>`:""}${(po.buy_unit==="carton"&&po.plan_qty)?`<div style="color:#999;font-size:11px">${fmtN(po.plan_qty)} ${uLbl("count")}</div>`:""}</td>
         <td style="text-align:center;white-space:nowrap">${po.unit_price?`${po.unit_price} ${esc(po.currency||"")}`:""}</td>
       </tr>`;
     }).join("");
