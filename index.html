@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.41:APPV-->
+<!--APPV:2026-08-13.42:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.41";
+const APP_VERSION="2026-08-13.42";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5136,19 +5136,26 @@ function prodExecKWD(pid){
   hits.sort((a,b)=>b.at.localeCompare(a.at));
   return hits[0].v;
 }
+/* مصاريف تمرّ على وكيل الشراء (يدفعها لك وياخذ عليها عمولته) مقابل مصاريف سفرك */
+const FRT_CATS=["transport","shipping","customs","insurance","logistics"];
 /* الإسقاط: الشحن للقطعة من إعداد القناة، والمصاريف موزّعة على قطع الكولكشن */
 function prodOverKWD(pid){
   const col=productCollection(pid);
   const c=chan(prodChannelOf(pid));
-  const ship=(c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0;
-  let exp=0, pcs=0;
+  let frt=(c.ship_mode==="perpiece")? (Number(c.ship_val)||0)*0 : 0;   /* يُحسب بعد القسمة */
+  let frtTot=0, othTot=0, pcs=0;
+  if(c.ship_mode==="flat") frtTot+=Number(c.ship_val)||0;
   if(col){
-    exp=(DB.expenses||[]).filter(e=>e.collection_id===col).reduce((a,e)=>a+expKWD(e),0);
-    if(c.ship_mode==="flat") exp+=Number(c.ship_val)||0;
+    (DB.expenses||[]).filter(e=>e.collection_id===col).forEach(e=>{
+      const v=expKWD(e);
+      if(FRT_CATS.indexOf(e.category)>=0) frtTot+=v; else othTot+=v;
+    });
     pcs=(DB.lines||[]).filter(l=>productCollection(l.product_id)===col)
       .reduce((a,l)=>a+(Number(l.qty)||0),0);
   }
-  return {ship, exp: pcs? exp/pcs : 0, expTotal:exp, pcs};
+  frt=(pcs? frtTot/pcs : 0) + ((c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0);
+  return {frt, oth: pcs? othTot/pcs : 0, frtTot, othTot, pcs,
+          perPiece:(c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0};
 }
 function prodChannelOf(pid){
   const b=(allBom(product(pid))||[])[0];
@@ -5157,26 +5164,24 @@ function prodChannelOf(pid){
 }
 function prodCost(pid){
   const p=product(pid); if(!p) return null;
-  const lines=[]; let mat=0, comm=0; const missing=[];
+  const lines=[]; let mat=0; const missing=[];
   (allBom(p)||[]).forEach(b=>{
     const m=material(b.material_id); if(!m) return;
     const q=bomQtyAvg(b); if(!(q>0)) return;
     const u=matKWDPerUnit(m);
     if(u==null){ missing.push(m.name||m.sku||"—"); return; }
-    const cost=q*u;
-    const cm=cost*((chan(matChannel(m)).commission||0)/100);
-    mat+=cost; comm+=cm;
-    lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost, comm:cm});
+    const cost=q*u; mat+=cost;
+    lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost});
   });
   const exec=prodExecKWD(pid);
-  /* عمولة اللوجستيك تمشي على قيمة البضاعة كلها — الخامات وتنفيذ المصنع */
-  const cmPct=(chan(prodChannelOf(pid)).commission||0)/100;
-  const commExec=(exec||0)*cmPct;
-  comm+=commExec;
   const ov=prodOverKWD(pid);
-  const over=ov.ship+ov.exp;
-  return {mat, comm, commExec, cmPct, exec, over, ov, lines, missing,
-          total:mat+comm+over+(exec||0), execMissing:exec==null};
+  /* وكيل الشراء ياخذ نسبته على كل اللي يدفعه عنك:
+     الخامات والتنفيذ والنقل والشحن وتأمينه والتخليص. سفرك مو منها. */
+  const cmPct=(chan(prodChannelOf(pid)).commission||0)/100;
+  const base=mat+(exec||0)+ov.frt;
+  const comm=base*cmPct;
+  return {mat, exec, frt:ov.frt, oth:ov.oth, base, comm, cmPct, ov, lines, missing,
+          total:base+comm+ov.oth, execMissing:exec==null};
 }
 function costPerPieceCard(money){
   const list=(DB.products||[]).filter(p=>p.active!==false && !isReadyProd(p) && (allBom(p)||[]).length)
@@ -5186,7 +5191,7 @@ function costPerPieceCard(money){
   const bar=(c)=>{ const t=c.total||1;
     const seg=(v,col)=>v>0? `<span style="width:${Math.max(2,Math.round(v/t*100))}%;background:${col}"></span>`:"";
     return `<div style="display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:5px;background:var(--line)">
-      ${seg(c.mat,"var(--ink)")}${seg(c.exec||0,"var(--wine)")}${seg(c.comm,"#C9A227")}${seg(c.over,"var(--green)")}</div>`; };
+      ${seg(c.mat,"var(--ink)")}${seg(c.exec||0,"var(--wine)")}${seg(c.frt,"#3A6EA5")}${seg(c.comm,"#C9A227")}${seg(c.oth,"var(--green)")}</div>`; };
   return `<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"تكلفة القطعة الواحدة":"Cost per piece"}</div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
@@ -5195,15 +5200,16 @@ function costPerPieceCard(money){
     <div class="pillrow" style="font-size:11px;margin-bottom:8px">
       <span class="chip" style="background:var(--ink);color:#fff">${isAr()?"خامات":"materials"}</span>
       <span class="chip" style="background:var(--wine);color:#fff">${isAr()?"تنفيذ":"making"}</span>
-      <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة لوجستيك":"logistics"}</span>
-      <span class="chip sage">${isAr()?"مصاريف":"expenses"}</span>
+      <span class="chip" style="background:#3A6EA5;color:#fff">${isAr()?"شحن ونقل":"freight"}</span>
+      <span class="chip" style="background:#C9A227;color:#fff">${isAr()?"عمولة الوكيل":"agent fee"}</span>
+      <span class="chip sage">${isAr()?"مصاريف أخرى":"other"}</span>
     </div>
     ${list.map(({p,c})=>`<div class="lineitem" style="cursor:pointer;align-items:flex-start" onclick="prodCostSheet('${p.id}')">
       <div style="flex:1;min-width:0">
         <b>${esc(pname(p))}</b>${p.sku?` <span class="muted" style="font-family:Arial;font-size:11px;direction:ltr">${esc(p.sku)}</span>`:""}
         <div class="muted" style="font-size:12px;margin-top:2px">
           ${isAr()?"خامات":"mat"} ${fmtKD(c.mat)} · ${isAr()?"تنفيذ":"make"} ${c.execMissing?"—":fmtKD(c.exec)}
-          · ${isAr()?"لوجستيك":"log"} ${fmtKD(c.comm)} · ${isAr()?"مصاريف":"exp"} ${fmtKD(c.over)}</div>
+          · ${isAr()?"شحن":"frt"} ${fmtKD(c.frt)} · ${isAr()?"وكيل":"fee"} ${fmtKD(c.comm)} · ${isAr()?"أخرى":"oth"} ${fmtKD(c.oth)}</div>
         ${bar(c)}
         ${(c.execMissing||c.missing.length)?`<div class="muted" style="font-size:11px;color:var(--wine-dk);margin-top:3px">${
           [c.execMissing?(isAr()?"ما دخلت سعر التنفيذ":"no making price"):"",
@@ -5241,20 +5247,27 @@ function prodCostSheet(pid){
           ?"ما فيه سعر تنفيذ مسجّل لهذا المنتج — دخّله من أمر التنفيذ الخارجي («السعر وموعد التسليم») وبيدخل بالحساب."
           :"No making price recorded yet."}</div>`
       : row(isAr()?"التنفيذ (خياطة)":"Making", c.exec, isAr()?"سعر القطعة من أمر التنفيذ":"from the job order")}
-    ${row(isAr()?`عمولة اللوجستيك ${cm}%`:`Logistics fee ${cm}%`, c.comm, isAr()
-      ? `على الخامات${c.execMissing?"":" والتنفيذ"} — تشمل التخليص والتأمين والشحن ونقل البضاعة داخل الصين`
-      : "on materials & making — covers customs, insurance, freight and in-China transport")}
-    ${c.ov.ship?row(isAr()?"شحن إضافي":"Extra freight", c.ov.ship, isAr()?"من إعدادات القناة":"channel setting"):""}
-    ${row(isAr()?"المصاريف":"Expenses", c.ov.exp, isAr()
-      ? (c.ov.pcs? `${fmtKD(c.ov.expTotal)} د.ك على ${c.ov.pcs} قطعة بالكولكشن` : "ما في قطع مسجّلة بالكولكشن")
-      : "collection expenses per piece")}
+    ${row(isAr()?"النقل والشحن والتأمين والتخليص":"Freight, insurance & customs", c.frt, isAr()
+      ? (c.ov.frtTot? `${fmtKD(c.ov.frtTot)} د.ك على ${c.ov.pcs} قطعة بالكولكشن${c.ov.perPiece?` + ${fmtKD(c.ov.perPiece)} للقطعة من إعدادات القناة`:""}`
+         : (c.ov.perPiece? "من إعدادات القناة" : "ما سجّلت مصاريف شحن بعد"))
+      : "freight-chain expenses per piece")}
+    <div class="lineitem" style="font-weight:700;background:var(--paper);border-radius:8px;padding:8px 10px">
+      <div>${isAr()?"قيمة ما يدفعه الوكيل عنك":"What the agent pays for you"}</div>
+      <div style="text-align:left">${fmtKD(c.base)}</div></div>
+    ${row(isAr()?`عمولة الوكيل ${cm}%`:`Agent fee ${cm}%`, c.comm, isAr()
+      ? "على الخامات والتنفيذ والنقل والشحن وتأمينه والتخليص"
+      : "on goods, making, freight, insurance & customs")}
+    ${row(isAr()?"مصاريف أخرى (سفرك)":"Your own expenses", c.oth, isAr()
+      ? (c.ov.pcs? `${fmtKD(c.ov.othTot)} د.ك على ${c.ov.pcs} قطعة — فندق وتذاكر وأكل، ما عليها عمولة`
+         : "ما في قطع مسجّلة بالكولكشن")
+      : "hotel, tickets, food — no agent fee on these")}
 
     <div class="lineitem" style="font-weight:800;font-size:17px;border-top:2px solid var(--ink);margin-top:6px">
       <div>${isAr()?"تكلفة القطعة":"Cost per piece"}</div>
       <div style="text-align:left">${fmtKD(c.total)} <span class="muted" style="font-size:12px">${isAr()?"د.ك":"KWD"}</span></div></div>
 
     <div class="note-box" style="font-size:12px;margin-top:8px">${isAr()
-      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. عمولة اللوجستيك على قيمة البضاعة (خامات + تنفيذ) وتغطي الشحن والتخليص والتأمين والنقل. باقي المصاريف موزّعة بالتساوي على قطع الكولكشن."
+      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. عمولة الوكيل ٥٪ فوق كل اللي يدفعه عنك — بضاعة وتنفيذ ونقل وشحن وتأمين وتخليص. مصاريف سفرك ما عليها عمولة. كل المصاريف موزّعة بالتساوي على قطع الكولكشن."
       :"Materials = recorded consumption × approved sample price."}</div>`);
 }
 /* ================= المالية: نفقات + دفعات + ملخص (داخل المشتريات — مرجع) ================= */
