@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.29:APPV-->
+<!--APPV:2026-08-13.30:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.29";
+const APP_VERSION="2026-08-13.30";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2989,13 +2989,58 @@ async function poMatchPlan(id){
   await sb.from("purchases").update(upd).eq("id",id);
   Object.assign(p,upd); cacheDB(); render();
 }
+/* العينة المعتمدة هي الخام نفسه — فاسم بند التصميم واسم العينة لازم يكونان واحد.
+   تغيّره بمكان وينزل على الثاني وعلى أوامر الشراء اللي ما انفّذت. */
+function smpsOfItem(designId, itemId){
+  return (DB.samples||[]).filter(z=>smpItemFor(z, designId)===itemId);
+}
+async function chkNameSync(designId, itemId, oldName, newName){
+  const nm=String(newName||"").trim();
+  if(!nm || nm===String(oldName||"").trim()) return 0;
+  let n=0;
+  const smps=smpsOfItem(designId, itemId);
+  for(const z of smps){
+    if(String(z.fabric_type||"").trim()===nm) continue;
+    try{ await sb.from("trip_samples").update({fabric_type:nm}).eq("id",z.id); }catch(e){}
+    z.fabric_type=nm; n++;
+  }
+  const ids=smps.map(z=>z.id);
+  for(const po of (DB.purchases||[])){
+    if(poExecuted(po)) continue;
+    const mine = ids.indexOf(po.sample_id)>=0
+      || (String(po.design_id)===String(designId)
+          && String(po.fabric_name||"").trim()===String(oldName||"").trim());
+    if(!mine || String(po.fabric_name||"").trim()===nm) continue;
+    try{ await sb.from("purchases").update({fabric_name:nm}).eq("id",po.id); }catch(e){}
+    po.fabric_name=nm; n++;
+  }
+  if(n) cacheDB();
+  return n;
+}
+/* والعكس: تغيّر اسم العينة ← بنود التصاميم المربوطة فيها تتبعه */
+async function smpNameSync(x, newName){
+  const nm=String(newName||"").trim(); if(!x || !nm) return 0;
+  let n=0;
+  for(const did of [...new Set([...(x.design_ids||[]), x.design_id].filter(Boolean))]){
+    const d=design_(did); if(!d) continue;
+    const iid=smpItemFor(x, did); if(!iid) continue;
+    const arr=[...(d.checklist||[])];
+    const i=arr.findIndex(c=>c.id===iid); if(i<0) continue;
+    if(String(arr[i].name||"").trim()===nm) continue;
+    arr[i]={...arr[i], name:nm};
+    try{ await sb.from("design_projects").update({checklist:arr}).eq("id",did); }catch(e){}
+    d.checklist=arr; n++;
+  }
+  if(n) cacheDB();
+  return n;
+}
 /* تعديل الكمية في التصميم ينزل على أوامر الشراء المرتبطة —
    إلا المنفّذ منها أو اللي عدّلته بيدك، هذي ما تنمسّ. */
 async function syncChkToPO(designId, itemId){
   const d=design_(designId); const out={done:0, kept:0};
   if(!d) return out;
   const it=(d.checklist||[]).find(c=>c.id===itemId); if(!it) return out;
-  const smpIds=(DB.samples||[]).filter(z=>z.checklist_item_id===itemId).map(z=>z.id);
+  const smpIds=smpsOfItem(designId, itemId).map(z=>z.id);
   const pos=(DB.purchases||[]).filter(z=>String(z.design_id)===String(designId)
       && (smpIds.indexOf(z.sample_id)>=0 || String(z.fabric_name||"").trim()===String(it.name||"").trim()));
   for(const z of pos){
@@ -3514,6 +3559,7 @@ async function sampleSave(){
     const upd={...row}; delete upd.id; delete upd.trip_id; delete upd.status;
     await sb.from("trip_samples").update(upd).eq("id",window._smpEdit);
     const i=(DB.samples||[]).findIndex(x=>x.id===window._smpEdit); if(i>=0) DB.samples[i]={...DB.samples[i],...upd};
+    try{ await smpNameSync(i>=0?DB.samples[i]:{...row, id:window._smpEdit}, row.fabric_type); }catch(e){}
     try{ await syncSamplePrice(i>=0?DB.samples[i]:{...row, id:window._smpEdit}); }catch(e){}
     window._smpEdit=null; closeSheet(); cacheDB(); render(); return;
   }
@@ -5702,7 +5748,7 @@ async function delLinked(kind, id, label, after){
 /* حذف عام لأي صف */
 /* حذف الأمر: السيرفر يشيل بنوده وأوامر شرائه وإرسالياته،
    ونشيلها من الذاكرة فوراً عشان ما تبقى ظاهرة قدامك. */
-async function delOrder(id){
+async function delOrder(id, opts){
   const o=order(id)||{};
   const pos=(DB.purchases||[]).filter(x=>x.order_id===id);
   const locked=pos.filter(poLocked);           /* مدفوع أو مُرسل أو مستلم — شراء صار فعلاً */
@@ -5711,7 +5757,7 @@ async function delOrder(id){
   const pids=(DB.parts||[]).filter(x=>lids.indexOf(x.line_id)>=0).map(x=>x.id);
   const xj=extJobsOfLines(lids, pids);
   /* ما نسأل مرتين إلا إذا في شي ثاني يروح معه — عشان تعرف وش بيصير بالضبط */
-  if((xj.length||pos.length) && !confirm(isAr()
+  if(!(opts&&opts.quiet) && (xj.length||pos.length) && !confirm(isAr()
     ? `حذف الأمر #${o.order_no||""}؟\n\n`
       +`• ${lids.length} بند إنتاج\n`
       +(xj.length? `• ${xj.length} أمر تنفيذ/تطريز خارجي بينشال من اللوحة\n`:"")
@@ -8216,6 +8262,7 @@ function chkEdit(id,i){
 async function chkEditSave(id,i){
   const d=design_(id); const arr=[...(d.checklist||[])]; const it=arr[i]; if(!it) return;
   const qs=String((el("ce_qty")?el("ce_qty").value:"")||"").trim();
+  const wasName=it.name||"";
   arr[i]={...it,
     name:(el("ce_name").value||"").trim()||it.name,
     qty: qs===""? null : (parseFloat(toAsciiDigits(qs))||null),
@@ -8223,6 +8270,7 @@ async function chkEditSave(id,i){
     kind: el("ce_kind")?el("ce_kind").value:(it.kind||"fabric")};
   await sb.from("design_projects").update({checklist:arr}).eq("id",id);
   d.checklist=arr;
+  await chkNameSync(id, arr[i].id, wasName, arr[i].name);
   const r=await syncChkToPO(id, arr[i].id);
   closeSheet(); reopenDesign(id);
   if(r.kept) alert(isAr()
@@ -8895,6 +8943,24 @@ async function extJobDel(id){
   closeSheet(); render();
   toast(isAr()? (held.n? `انحذف الأمر · ${held.n} قطعة رجعت للسلة` : "انحذف الأمر") : "Deleted",
     held.n?4000:2500);
+  /* الطلبية اللي كلها تنفيذ خارجي وما بقى منها ولا قطعة شغالة — نعرض إلغاءها معه */
+  const oids=[...new Set(held.lines.map(lid=>{ const l=(DB.lines||[]).find(x=>x.id===lid); return l&&l.order_id; }).filter(Boolean))];
+  for(const oid of oids){
+    if(!orderAllExt(oid)) continue;
+    const o=order(oid)||{}; const n=(DB.purchases||[]).filter(x=>x.order_id===oid).length;
+    if(!confirm(isAr()
+      ? `الأمر #${o.order_no||""} كله تنفيذ خارجي وما بقى منه شي شغّال.\n\n`
+        +`تبي نلغي الطلبية كاملة${n?` و${n} أمر شرائها`:""}؟\n\n`
+        +`«موافق» = تنحذف الطلبية · «إلغاء» = تبقى بالسلة تقدر ترسلها لمشغل ثاني.`
+      : `Order #${o.order_no||""} is fully external and idle — delete it too?`)) continue;
+    await delOrder(oid, {quiet:true});
+  }
+}
+/* الطلبية كلها تنفيذ خارجي وما فيها قطعة عند مشغل ولا تحرّكت لمرحلة ثانية */
+function orderAllExt(oid){
+  const ls=(DB.lines||[]).filter(l=>l.order_id===oid);
+  if(!ls.length) return false;
+  return ls.every(l=>l.external_make && l.stage==="ext" && !atVendor(l));
 }
 /* المصانع والمشاغل — مع وحدة القياس عشان تبين وأنت تختار */
 function vendorOpts(){
