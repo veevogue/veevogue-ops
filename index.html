@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.34:APPV-->
+<!--APPV:2026-08-13.35:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.34";
+const APP_VERSION="2026-08-13.35";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5350,27 +5350,32 @@ async function poManifestSaveImg(btn){
   if(btn){btn.disabled=false;btn.textContent=orig;}
 }
 function poCopyMsg2(){ try{ navigator.clipboard.writeText(window._sendMsgText||""); }catch(e){ try{document.execCommand("copy");}catch(_){} } alert(isAr()?"تم نسخ النص":"Copied"); }
-function poManifestPrint(){
-  const node=el("poManifest"); if(!node) return;
-  const w=window.open("about:blank","_blank"); if(!w){ alert(isAr()?"اسمح بالنوافذ المنبثقة عشان الطباعة":"Allow popups to print"); return; }
+/* الطباعة لازم تنطلق بضغطة منك — سفاري وكروم يمنعون الطباعة التلقائية
+   ويطلعون «This website has been blocked from automatically printing».
+   فنفتح الورقة بنافذة فيها زر طباعة، وضغطتك عليه هي اللي تشغّلها. */
+function printDoc(node, nm, dir){
+  if(!node) return;
+  const w=window.open("about:blank","_blank");
+  if(!w){ alert(isAr()?"اسمح بالنوافذ المنبثقة عشان الطباعة":"Allow popups to print"); return; }
   const closeLbl=isAr()?"إغلاق":"Close", printLbl=isAr()?"طباعة / حفظ PDF":"Print / Save PDF";
-  const _pd=(window._manLang==="ar")?"rtl":"ltr";
-  const _nm=window._docName||docName("po");
-  w.document.write(`<!DOCTYPE html><html dir="${_pd}"><head><meta charset="utf-8"><title>${esc(_nm)}</title><style>
+  w.document.write(`<!DOCTYPE html><html dir="${dir||"rtl"}"><head><meta charset="utf-8"><title>${esc(nm||"")}</title><style>
     *{box-sizing:border-box}
-    body{font-family:Arial,'Noto Sans SC',Tajawal,sans-serif;padding:16px;color:#18181B;margin:0}
-    .bar{position:sticky;top:0;display:flex;gap:8px;background:#fff;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:12px}
-    .bar button{flex:1;padding:12px;border:0;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
-    .b-print{background:#18181B;color:#fff}.b-close{background:#F4F4F2;color:#18181B}
-    table{width:100%;max-width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #E7E7E4;padding:8px}
-    img{border-radius:8px;max-width:100%;height:auto}.muted{color:#8A8A85;font-size:12px}.note-box{background:#F4F4F2;border-radius:10px;padding:10px;margin-bottom:8px}
+    body{font-family:Tajawal,Arial,'Noto Sans SC',sans-serif;padding:12px;color:#1C1B1A;margin:0;background:#F0F0EE}
+    .bar{position:sticky;top:0;z-index:5;display:flex;gap:8px;background:#fff;padding:10px;border-bottom:1px solid #eee;margin:-12px -12px 12px}
+    .bar button{flex:1;padding:14px;border:0;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer}
+    .b-print{background:#1C1B1A;color:#fff}.b-close{background:#F4F4F2;color:#1C1B1A}
+    table{width:100%;max-width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px}
+    img{max-width:100%;height:auto}.muted{color:#8A8A85;font-size:12px}
     /* هوامش الصفحة تتكفّل بالفراغ — عشان ما ينقص شي لو غيّرت المقاس أو حجم الورقة */
-    @media print{.bar{display:none} body{padding:0}} @page{size:A4;margin:10mm}
+    @media print{.bar{display:none} body{padding:0;background:#fff}} @page{size:A4;margin:10mm}
   </style></head><body>
     <div class="bar"><button class="b-print" onclick="window.print()">${printLbl}</button><button class="b-close" onclick="window.close()">${closeLbl}</button></div>
-    ${node.innerHTML}
+    ${node.outerHTML}
   </body></html>`);
   w.document.close();
+}
+function poManifestPrint(){
+  printDoc(el("poManifest"), window._docName||docName("po"), (window._manLang==="ar")?"rtl":"ltr");
 }
 
 function poCopyMsg(){ const t=el("send_msg"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand("copy");}catch(_){} } alert(isAr()?"تم نسخ النص":"Copied"); }
@@ -9602,20 +9607,7 @@ async function jobSaveImg(btn){
 }
 function jobPrint(){
   const node=el("joSheet"); if(!node) return;
-  const nm=window._docName||docName("job");
-  const ifr=document.createElement("iframe"); ifr.style.position="fixed"; ifr.style.right="-9999px"; ifr.style.bottom="0"; ifr.style.width="800px"; ifr.style.height="1000px";
-  document.body.appendChild(ifr);
-  const d=ifr.contentWindow.document; d.open();
-  d.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${esc(nm)}</title><style>`
-    +`@page{size:A4;margin:10mm}*{box-sizing:border-box}`
-    +`body{font-family:Tajawal,Arial,sans-serif;padding:0;margin:0;color:#1C1B1A}`
-    +`table{width:100%;max-width:100%;border-collapse:collapse}td,th{border:1px solid #E6E1D8;padding:8px;text-align:right}`
-    +`img{max-width:100%;height:auto}`
-    +`</style></head><body>${node.outerHTML}</body></html>`);
-  d.close();
-  withDocTitle(nm, ()=>{
-    setTimeout(()=>{ try{ifr.contentWindow.focus(); ifr.contentWindow.print();}catch(e){} setTimeout(()=>ifr.remove(),1500); },400);
-  });
+  printDoc(node, window._docName||docName("job"), node.getAttribute("dir")||"rtl");
 }
 
 /* ---- التصوير ---- */
