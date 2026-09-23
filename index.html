@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.44:APPV-->
+<!--APPV:2026-08-13.45:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.44";
+const APP_VERSION="2026-08-13.45";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4666,6 +4666,30 @@ function smpFeeByDesign(pays){
   });
   return map;
 }
+/* الرسوم العامة بدفعات العينات (عمولة تحويل بنكي وغيره) ما تنزل على تصميم —
+   تنزل على كولكشن الدفعة نفسها: من تصاميم البنود اللي انحسبت معها بنفس الدفعة. */
+function smpGenByCol(pays){
+  const out={};
+  (pays||[]).forEach(pp=>{
+    if((pp.stage||"production")!=="sample") return;
+    const parts=smpFeeSplit(pp);
+    const gen=parts.filter(a=>!a.design_id).reduce((s,a)=>s+(Number(a.amount)||0),0);
+    if(!(gen>0)) return;
+    const w={};
+    parts.filter(a=>a.design_id).forEach(a=>{ const d=design_(a.design_id); const c=d&&d.collection_id;
+      if(c) w[c]=(w[c]||0)+(Number(a.amount)||0); });
+    if(!Object.keys(w).length){
+      /* دفعة كلها رسوم؟ ناخذ كولكشن عينات نفس المورّد */
+      (DB.purchases||[]).filter(po=>poIsSample(po) && poSupKey(po)===pp.supplier_key).forEach(po=>{
+        const d=po.design_id? design_(po.design_id) : null; const c=(d&&d.collection_id)||po.collection_id;
+        if(c) w[c]=(w[c]||0)+1; });
+    }
+    const tot=Object.values(w).reduce((a,v)=>a+v,0);
+    if(!tot){ out.__none=(out.__none||0)+gen; return; }
+    Object.keys(w).forEach(c=>{ out[c]=(out[c]||0)+gen*w[c]/tot; });
+  });
+  return out;
+}
 /* رسوم العينات المصروفة على تصميم واحد */
 function smpFeeForDesign(designId, pays){
   const m=smpFeeByDesign(pays||(DB.supplier_payments||[]));
@@ -4737,7 +4761,7 @@ function poPaySup(gidEnc){
         ${smpRows.map(line).join("")}
         <div class="lineitem" style="padding:6px 0;align-items:center">
           <div style="flex:1;min-width:0"><b style="font-size:13px">${isAr()?"رسوم عامة / بند مو مسجّل":"Other / unlisted"}</b>
-            <div class="muted" style="font-size:11px">${isAr()?"ما ينزل على تصميم":"not tied to a design"}</div></div>
+            <div class="muted" style="font-size:11px">${isAr()?"عمولة تحويل وغيرها — تنزل على مصاريف الكولكشن العامة بلا عمولة الوكيل":"bank/transfer fees — collection overhead, no agent fee"}</div></div>
           <input id="psa_other" inputmode="decimal" placeholder="0" oninput="psSum()" style="width:96px;text-align:center">
         </div>
         <div class="note-box" style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
@@ -5058,6 +5082,9 @@ function tabFinance(){
       if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0,ready:0,tailor:0});
         const v=poTotals(po).total; byCol[c].pur+=v;
         if(poIsReady(po)) byCol[c].ready+=v; else byCol[c].tailor+=v; } });
+    (function(){ const gc=smpGenByCol(DB.supplier_payments||[]);
+      Object.keys(gc).forEach(c=>{ if(c==="__none") return;
+        (byCol[c]=byCol[c]||{pur:0,exp:0,ready:0,tailor:0}); byCol[c].exp+=gc[c]; }); })();
     (function(){ const fm=smpFeeByDesign(DB.supplier_payments||[]);
       Object.keys(fm).forEach(did=>{ const d=did==="__none"?null:design_(did); const c=d&&d.collection_id;
         if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0,ready:0,tailor:0}); byCol[c].pur+=fm[did]; byCol[c].tailor+=fm[did]; } }); })();
@@ -5163,8 +5190,10 @@ function prodOverKWD(pid){
     Object.keys(fm).forEach(did=>{ const d=did==="__none"? null : design_(did);
       if(d && d.collection_id===col) smpTot+=fm[did]; });
   }
-  return {frt, oth: pcs? othTot/pcs : 0, smp: pcs? smpTot/pcs : 0,
-          frtTot, othTot, smpTot, pcs,
+  /* رسوم التحويل والرسوم العامة: تكلفة على الكولكشن، بس الوكيل ما ياخذ عليها نسبة */
+  const genTot= col? ((smpGenByCol(DB.supplier_payments||[])[col])||0) : 0;
+  return {frt, oth: pcs? othTot/pcs : 0, gen: pcs? genTot/pcs : 0, smp: pcs? smpTot/pcs : 0,
+          frtTot, othTot, genTot, smpTot, pcs,
           perPiece:(c.ship_mode==="perpiece")? (Number(c.ship_val)||0) : 0};
 }
 function prodChannelOf(pid){
@@ -5190,8 +5219,8 @@ function prodCost(pid){
   const cmPct=(chan(prodChannelOf(pid)).commission||0)/100;
   const base=mat+(exec||0)+ov.frt+ov.smp;
   const comm=base*cmPct;
-  return {mat, exec, frt:ov.frt, smp:ov.smp, oth:ov.oth, base, comm, cmPct, ov, lines, missing,
-          total:base+comm+ov.oth, execMissing:exec==null};
+  return {mat, exec, frt:ov.frt, smp:ov.smp, oth:ov.oth+ov.gen, gen:ov.gen, base, comm, cmPct, ov, lines, missing,
+          total:base+comm+ov.oth+ov.gen, execMissing:exec==null};
 }
 function costPerPieceCard(money){
   const list=(DB.products||[]).filter(p=>p.active!==false && !isReadyProd(p) && (allBom(p)||[]).length)
@@ -5273,10 +5302,13 @@ function prodCostSheet(pid){
     ${row(isAr()?`عمولة الوكيل ${cm}%`:`Agent fee ${cm}%`, c.comm, isAr()
       ? "على الخامات والتنفيذ والعينات والنقل والشحن وتأمينه والتخليص"
       : "on goods, making, freight, insurance & customs")}
-    ${row(isAr()?"مصاريف أخرى (سفرك)":"Your own expenses", c.oth, isAr()
+    ${row(isAr()?"مصاريف أخرى (سفرك)":"Your own expenses", c.ov.oth, isAr()
       ? (c.ov.pcs? `${fmtKD(c.ov.othTot)} د.ك على ${c.ov.pcs} قطعة — فندق وتذاكر وأكل، ما عليها عمولة`
          : "ما في قطع مسجّلة بالكولكشن")
       : "hotel, tickets, food — no agent fee on these")}
+    ${c.ov.genTot? row(isAr()?"رسوم عامة (تحويل بنكي)":"General fees (bank transfer)", c.ov.gen, isAr()
+      ? `${fmtKD(c.ov.genTot)} د.ك على ${c.ov.pcs} قطعة — من دفعات الموردين، ما عليها عمولة`
+      : "from supplier payments — no agent fee") : ""}
 
     <div class="lineitem" style="font-weight:800;font-size:17px;border-top:2px solid var(--ink);margin-top:6px">
       <div>${isAr()?"تكلفة القطعة":"Cost per piece"}</div>
