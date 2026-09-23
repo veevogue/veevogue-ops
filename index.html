@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.46:APPV-->
+<!--APPV:2026-08-13.47:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.46";
+const APP_VERSION="2026-08-13.47";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2615,8 +2615,9 @@ function tripAllocation(tripId){
 /* اللوجستيك: نسبة على (خامات مستوردة + تصنيع + شحن) — والمحلي خارجها */
 function logisticsStatement(tripId){
   const cfg=chan("china"), pct=(cfg.commission||0)/100;
+  const _pm=poPaidMap();   /* النسبة على اللي انْدفع فعلاً بعد الدفعة النهائية */
   const goods=(DB.purchases||[]).filter(x=>x.trip_id===tripId && (x.channel||"")!=="local")
-              .reduce((a,x)=>a+(poTotals(x).raw||0),0);
+              .reduce((a,x)=>a+(poEffTotals(x,_pm).raw||0),0);
   const mfg=(DB.jobs||[]).filter(j=>j.trip_id===tripId)
               .reduce((a,j)=>a+toKWDsafe(jobTotals(j).gross, j.currency||"CNY"),0);
   const ship=(DB.expenses||[]).filter(e=>e.trip_id===tripId && ["shipping","logistics","customs"].indexOf(e.category)>=0)
@@ -4706,6 +4707,47 @@ function smpGenByCol(pays){
   });
   return out;
 }
+/* قيمة أمر الإنتاج الخام بالدينار (الكمية × السعر) — أساس توزيع الدفعة المجمّعة */
+function poRawKWD(po){
+  const q=(po.buy_qty!=null?po.buy_qty:(po.qty_yd||0));
+  return toKWDsafe(q*(Number(po.unit_price)||0), po.currency||chan(po.channel).currency||"KWD");
+}
+/* المدفوع فعلاً لكل أمر إنتاج (بالدينار) من دفعات المورّد:
+   الدفعة المفصّلة تنزل على أوامرها، والمجمّعة تتوزّع على أوامر نفس المورّد بوزن قيمتها
+   (قيمة وليس أمتار — لأن سعر المتر/اليارد يختلف بين الخامات). */
+function poPaidMap(pays){
+  const out={};
+  const add=(id,k,fin)=>{ const o=(out[id]=out[id]||{kwd:0,final:false}); o.kwd+=k; if(fin) o.final=true; };
+  (pays||DB.supplier_payments||[]).forEach(pp=>{
+    if((pp.stage||"production")==="sample") return;
+    const fin=pp.kind==="final";
+    const al=(Array.isArray(pp.alloc)?pp.alloc:[]).filter(a=>a&&a.po_id&&Number(a.amount)>0);
+    if(al.length){ al.forEach(a=>add(a.po_id, toKWDsafe(a.amount, pp.currency), fin)); return; }
+    const kwd=toKWDsafe(pp.amount, pp.currency); if(!(kwd>0)) return;
+    const rows=(DB.purchases||[]).filter(po=>!poIsSample(po) && poSupKey(po)===pp.supplier_key
+      && (po.channel||"local")===(pp.channel||"local"));
+    if(!rows.length) return;
+    const vals=rows.map(poRawKWD); const tot=vals.reduce((a,v)=>a+v,0);
+    rows.forEach((po,i)=>add(po.id, kwd*(tot>0? vals[i]/tot : 1/rows.length), fin));
+  });
+  return out;
+}
+/* القيمة الفعلية لأمر الإنتاج: قبل الدفع = سعر المشتريات، وبعد الدفعة النهائية = المدفوع.
+   العربون لحاله ما ينزّل التكلفة تحت سعر الأمر. */
+function poEffRaw(po, pm){
+  const raw=poRawKWD(po);
+  const p=(pm||poPaidMap())[po.id];
+  if(!p || !(p.kwd>0)) return {raw, eff:raw, src:"po", paid:0};
+  const settled = p.final || po.paid || p.kwd>=raw-0.0005;
+  return {raw, eff: settled? p.kwd : Math.max(raw,p.kwd), src: settled? "paid" : "part", paid:p.kwd};
+}
+/* نفس poTotals بس على القيمة الفعلية — للمالية */
+function poEffTotals(po, pm){
+  const t=poTotals(po); if(poIsSample(po)) return t;
+  const e=poEffRaw(po, pm); const cm=(chan(po.channel).commission||0)/100;
+  const ship=Math.max(0,(t.total||0)-(t.raw||0)*(1+cm));
+  return Object.assign({}, t, {raw:e.eff, total:e.eff*(1+cm)+ship, src:e.src});
+}
 /* رسوم العينات المصروفة على تصميم واحد */
 function smpFeeForDesign(designId, pays){
   const m=smpFeeByDesign(pays||(DB.supplier_payments||[]));
@@ -4786,6 +4828,28 @@ function poPaySup(gidEnc){
         </div>
       </div>`;
     })():""}
+    ${(()=>{
+      const prodRows=G.rows.filter(po=>!poIsSample(po));
+      if(prodRows.length<2) return "";
+      const pm=poPaidMap();
+      const line=(r)=>{ const d=r.design_id?(design_(r.design_id)||{}):null; const q=poQtyUnit(r);
+        const pc=r.currency||cur; const dt=poDealTotals(r);
+        const pd=pm[r.id]? (fromKWD(pm[r.id].kwd, pc)||0) : 0;
+        return `<div class="lineitem" style="padding:6px 0;align-items:center">
+          <div style="flex:1;min-width:0">
+            <b style="font-size:13px">${esc(r.fabric_name||"—")}</b>
+            <div class="muted" style="font-size:11px">${d?esc(d.final_name||d.name||"")+" · ":""}${q.qty?`${fmtN(q.qty)} ${unitAr(q.unit)} × ${fmtN(r.unit_price||0)}`:""} = ${fmtN(dt.total)} ${esc(pc)}${pd>0.001?` · ${isAr()?"مدفوع":"paid"} ${fmtN(Math.round(pd*100)/100)}`:""}</div>
+          </div>
+          <input id="ppa_${r.id}" inputmode="decimal" placeholder="0" oninput="ppSum()" style="width:96px;text-align:center">
+        </div>`; };
+      return `<div id="psProdBox">
+        <div class="sechead" style="font-size:11px;margin-top:6px">${isAr()?"كم دفعت لكل خامة؟ (اختياري)":"Paid per material (optional)"}</div>
+        <div class="muted" style="font-size:11px">${isAr()
+          ?"لو كتبت المبلغ الإجمالي بس، يتوزّع على الخامات بقيمة كل وحدة (مو بالأمتار) — لأن سعر المتر أو اليارد يختلف بينها."
+          :"Leave empty to split the total by each order's value."}</div>
+        ${prodRows.map(line).join("")}
+      </div>`;
+    })()}
     <div id="psAmtBox" style="display:grid;grid-template-columns:2fr 1fr;gap:10px${hasSmp&&!hasProd?";display:none":""}">
       <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
@@ -4813,13 +4877,22 @@ function psSum(){
   const a=el("ps_amt"); if(a) a.value=t?String(t):"";
   return t;
 }
-/* دفعة عينات = بنود مفصّلة · دفعة إنتاج = مبلغ واحد */
+/* دفعة إنتاج مفصّلة: مجموع الخامات هو المبلغ، والمبلغ يتقفل لين تفضّيها */
+function ppSum(){
+  let t=0;
+  document.querySelectorAll('[id^="ppa_"]').forEach(i=>{ t += parseFloat(toAsciiDigits(i.value))||0; });
+  t=Math.round(t*1000)/1000;
+  const a=el("ps_amt"); if(a){ if(t>0){ a.value=String(t); a.readOnly=true; } else if(a.readOnly){ a.value=""; a.readOnly=false; } }
+  return t;
+}
+/* دفعة عينات = بنود مفصّلة · دفعة إنتاج = مبلغ واحد أو مفصّل على الخامات */
 function psKindToggle(){
   const k=el("ps_kind")?el("ps_kind").value:"sample";
-  const box=el("psSmpBox"), amt=el("psAmtBox");
+  const box=el("psSmpBox"), amt=el("psAmtBox"), pbox=el("psProdBox");
   if(box) box.style.display = k==="sample" ? "block" : "none";
   if(amt) amt.style.display = k==="sample" ? "none" : "grid";
-  if(k==="sample") psSum();
+  if(pbox) pbox.style.display = k==="sample" ? "none" : "block";
+  if(k==="sample") psSum(); else ppSum();
 }
 async function poPayReceiptSup(files){ const f=files&&files[0]; if(!f)return; const u=await captureSamplePhoto(f); if(u){ window._payReceipt=u; const r=el("psReceiptRow"); if(r) r.innerHTML=`<img class="thumb" src="${esc(u)}" style="width:56px;height:56px">`; } }
 async function poPaySupAdd(gidEnc){
@@ -4839,7 +4912,13 @@ async function poPaySupAdd(gidEnc){
     amt=Math.round(alloc.reduce((a,x)=>a+x.amount,0)*1000)/1000;
     if(!amt) return alert(isAr()?"اكتب كم دفعت لكل خامة":"Enter what you paid per item");
   } else {
-    amt=parseFloat(toAsciiDigits(el("ps_amt").value))||0;
+    /* مفصّلة على الخامات؟ كل مبلغ ينزل على خامته. وإلا تنحفظ مجمّعة وتتوزّع بالقيمة */
+    G.rows.filter(po=>!poIsSample(po)).forEach(r=>{
+      const i=el("ppa_"+r.id); const v=i? (parseFloat(toAsciiDigits(i.value))||0) : 0;
+      if(v>0) alloc.push({po_id:r.id, design_id:r.design_id||null, amount:v});
+    });
+    amt = alloc.length? Math.round(alloc.reduce((a,x)=>a+x.amount,0)*1000)/1000
+                      : (parseFloat(toAsciiDigits(el("ps_amt").value))||0);
     if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
   }
   const fee = stage==="production"? (parseFloat(toAsciiDigits((el("ps_fee")||{}).value||""))||null) : null;
@@ -5041,8 +5120,9 @@ function tabFinance(){
   const pos=(DB.purchases||[]), exps=(DB.expenses||[]);
   /* الإنتاج يُحسب بالمستحق، والعينات باللي دفعته فعلاً (سعرها مو سعر جملة) */
   let mProd=0, mReady=0, mTailor=0; const bySup={}, byTrip={};
+  const pm=poPaidMap();   /* بعد الدفعة النهائية: المدفوع فعلاً بدل سعر الأمر */
   pos.forEach(po=>{ if(poIsSample(po)) return;
-    const t=poTotals(po); mProd+=t.total;
+    const t=poEffTotals(po, pm); mProd+=t.total;
     if(poIsReady(po)) mReady+=t.total; else mTailor+=t.total;
     const sk=supNameOf(po); (bySup[sk]=bySup[sk]||{total:0,paid:0}); bySup[sk].total+=t.total;
     const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
@@ -5106,7 +5186,7 @@ function tabFinance(){
     pos.forEach(po=>{ const d=po.design_id?design_(po.design_id):null;
       const c=po.collection_id || (d&&d.collection_id);
       if(c){ (byCol[c]=byCol[c]||{pur:0,exp:0,ready:0,tailor:0});
-        const v=poTotals(po).total; byCol[c].pur+=v;
+        const v=poEffTotals(po, pm).total; byCol[c].pur+=v;
         if(poIsReady(po)) byCol[c].ready+=v; else byCol[c].tailor+=v; } });
     (function(){ const gc=smpGenByCol(DB.supplier_payments||[]);
       Object.keys(gc).forEach(c=>{ if(c==="__none") return;
@@ -5227,16 +5307,39 @@ function prodChannelOf(pid){
   const m=b? material(b.material_id) : null;
   return m? matChannel(m) : (chChannel||"china");
 }
+/* سعر الخام من أوامر الإنتاج: قبل الدفع سعر المشتريات، وبعد الدفع المدفوع ÷ الكمية.
+   بوحدة الاستهلاك (متر للأقمشة، حبة للإكسسوار). */
+function matPOPerUnit(m, pm){
+  if(!m) return null;
+  const byCount=matPriceUnit(m)==="count";
+  let kwd=0, qty=0, paid=0, n=0, nPaid=0, nPart=0;
+  (DB.purchases||[]).forEach(po=>{
+    if(poIsSample(po) || !(po.material_id===m.id || po.sample_id===m.id)) return;
+    const q=Number(po.buy_qty); const bu=po.buy_unit;
+    if(!(q>0) || !(Number(po.unit_price)>0)) return;
+    let qc;
+    if(byCount){ if(bu!=="count") return; qc=q; }
+    else if(bu==="meter") qc=q; else if(bu==="yard") qc=q*YARD; else return;
+    const e=poEffRaw(po, pm);
+    kwd+=e.eff; qty+=qc; paid+=e.paid; n++;
+    if(e.src==="paid") nPaid++; else if(e.src==="part") nPart++;
+  });
+  if(!(qty>0) || !(kwd>0)) return null;
+  const src = nPaid===n? "paid" : (nPaid||nPart)? "part" : "po";
+  return {per:kwd/qty, src, kwd, qty, paid, n};
+}
 function prodCost(pid){
   const p=product(pid); if(!p) return null;
   const lines=[]; let mat=0; const missing=[];
+  const pm=poPaidMap();
   (allBom(p)||[]).forEach(b=>{
     const m=material(b.material_id); if(!m) return;
     const q=bomQtyAvg(b); if(!(q>0)) return;
-    const u=matKWDPerUnit(m);
+    const fromPO=matPOPerUnit(m, pm);
+    const u=fromPO? fromPO.per : matKWDPerUnit(m);
     if(u==null){ missing.push(m.name||m.sku||"—"); return; }
     const cost=q*u; mat+=cost;
-    lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost});
+    lines.push({name:m.name, sku:m.sku, qty:q, unit:m.unit||"متر", per:u, cost, src:fromPO? fromPO.src : "sample"});
   });
   const exec=prodExecKWD(pid);
   const ov=prodOverKWD(pid);
@@ -5260,7 +5363,7 @@ function costPerPieceCard(money){
   return `<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"تكلفة القطعة الواحدة":"Cost per piece"}</div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">${isAr()
-      ?"من الاستهلاك وأسعار العينات — مستقلة عن حجم الأمر. اضغط المنتج تشوف التفصيل."
+      ?"من الاستهلاك × سعر الخام (المدفوع فعلاً بعد الدفعة النهائية، وقبلها سعر أمر الشراء). اضغط المنتج تشوف التفصيل."
       :"From consumption and sample prices. Tap for the breakdown."}</div>
     <div class="pillrow" style="font-size:11px;margin-bottom:8px">
       <span class="chip" style="background:var(--ink);color:#fff">${isAr()?"خامات":"materials"}</span>
@@ -5287,6 +5390,14 @@ function costPerPieceCard(money){
     </div>`).join("")}
   </div>`;
 }
+/* مصدر سعر الخام: المدفوع فعلاً، أو دفعة جزئية، أو سعر أمر الشراء، أو سعر العينة */
+function matSrcTag(src){
+  const m={paid:[isAr()?"✓ المدفوع فعلاً":"✓ actual paid","var(--green)"],
+           part:[isAr()?"عربون — سعر الأمر لين الدفعة النهائية":"deposit — order price until final","#8a6d1f"],
+           po:[isAr()?"سعر أمر الشراء — ما انْدفع بعد":"order price — unpaid","var(--faint)"],
+           sample:[isAr()?"سعر العينة — ما فيه أمر شراء":"sample price — no order","var(--faint)"]}[src||"sample"];
+  return m? `<div style="font-size:10px;color:${m[1]}">${m[0]}</div>` : "";
+}
 function prodCostSheet(pid){
   const p=product(pid), c=prodCost(pid); if(!p||!c) return;
   const row=(lbl,v,note)=>`<div class="lineitem"><div>${lbl}${note?`<div class="muted" style="font-size:11px">${note}</div>`:""}</div>
@@ -5298,7 +5409,7 @@ function prodCostSheet(pid){
     <div class="sechead" style="font-size:14px">${isAr()?"الخامات":"Materials"}</div>
     <table><tr><th>${isAr()?"الخام":"Material"}</th><th style="text-align:center">${isAr()?"الاستهلاك":"Use"}</th>
       <th style="text-align:center">${isAr()?"سعر الوحدة":"Unit"}</th><th style="text-align:center">${isAr()?"للقطعة":"Per pc"}</th></tr>
-    ${c.lines.map(l=>`<tr><td>${esc(l.name||"—")}${l.sku?`<div class="muted" style="font-size:10px;font-family:Arial;direction:ltr">${esc(l.sku)}</div>`:""}</td>
+    ${c.lines.map(l=>`<tr><td>${esc(l.name||"—")}${l.sku?`<div class="muted" style="font-size:10px;font-family:Arial;direction:ltr">${esc(l.sku)}</div>`:""}${matSrcTag(l.src)}</td>
       <td style="text-align:center">${Math.round(l.qty*1000)/1000} ${esc(l.unit)}</td>
       <td style="text-align:center">${fmtKD(l.per)}</td>
       <td style="text-align:center"><b>${fmtKD(l.cost)}</b></td></tr>`).join("")}
@@ -5341,7 +5452,7 @@ function prodCostSheet(pid){
       <div style="text-align:left">${fmtKD(c.total)} <span class="muted" style="font-size:12px">${isAr()?"د.ك":"KWD"}</span></div></div>
 
     <div class="note-box" style="font-size:12px;margin-top:8px">${isAr()
-      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر العينة المعتمدة. عمولة الوكيل ٥٪ فوق كل اللي يدفعه عنك — بضاعة وتنفيذ ونقل وشحن وتأمين وتخليص. مصاريف سفرك ما عليها عمولة. كل المصاريف موزّعة بالتساوي على قطع الكولكشن."
+      ?"الخامات من الاستهلاك المسجّل بالمنتج × سعر الخام: قبل الدفع سعر أمر الشراء (أو العينة لو ما فيه أمر)، وبعد الدفعة النهائية المبلغ المدفوع ÷ الكمية المطلوبة. عمولة الوكيل ٥٪ فوق كل اللي يدفعه عنك — بضاعة وتنفيذ ونقل وشحن وتأمين وتخليص. مصاريف سفرك ما عليها عمولة. كل المصاريف موزّعة بالتساوي على قطع الكولكشن."
       :"Materials = recorded consumption × approved sample price."}</div>`);
 }
 /* ================= المالية: نفقات + دفعات + ملخص (داخل المشتريات — مرجع) ================= */
@@ -5375,8 +5486,9 @@ function chFin(){
   const exps=(DB.expenses||[]).filter(e=> tr? e.trip_id===tr.id : !e.trip_id);
   const pays=(DB.supplier_payments||[]).filter(pp=> tr? pp.trip_id===tr.id : (pp.channel||"local")===chChannel);
   let mProd=0, mSmpPaid=0, mReady=0, mTailor=0; const bySup={}, byDesign={};
+  const pm=poPaidMap();
   pos.forEach(po=>{ if(poIsSample(po)) return;
-    const t=poTotals(po); mProd+=t.total;
+    const t=poEffTotals(po, pm); mProd+=t.total;
     if(poIsReady(po)) mReady+=t.total; else mTailor+=t.total;
     const sk=supNameOf(po); (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0}); bySup[sk].total+=t.total;
     let dk = po.design_id? ((DB.designs||[]).find(d=>d.id===po.design_id)||{}).name : (po.product_id? pname(product(po.product_id)) : null);
