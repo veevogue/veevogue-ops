@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.48:APPV-->
+<!--APPV:2026-08-13.49:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.48";
+const APP_VERSION="2026-08-13.49";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2776,8 +2776,8 @@ function chSamples(){
   const allS=(DB.samples||[]).filter(x=>(x.channel||"china")===chChannel);
   const desWithSamples=[...new Set(allS.flatMap(x=>[x.design_id,...(x.design_ids||[])]).filter(Boolean))];
   const desWithChk=activeDesigns().filter(d=>(d.checklist||[]).length).map(d=>d.id);
-  const designIds=[...new Set([...desWithChk, ...desWithSamples])];
-  const loose=allS.filter(x=>!x.design_id && !isReadySmp(x));
+  const designIds=[...new Set([...desWithChk, ...desWithSamples])].filter(id=>!dCancelled(design_(id)));
+  const loose=allS.filter(x=>!x.design_id && !isReadySmp(x) && smpLive(x));
   const showList=(list)=> chCompare? list.filter(x=>x.status==="shortlist") : list;
 
   const slotBlock=(d, item)=>{
@@ -3161,6 +3161,7 @@ async function smpQtySave(sid, did){
 async function sampleStar(id){
   const x=(DB.samples||[]).find(s=>s.id===id); if(!x) return;
   if(x.status==="shortlist") return;
+  if(!smpLive(x)) return alert(isAr()?"التصميم ملغى — ما ينطلب له خام. رجّعه من صفحة التصميم لو بتنفّذه.":"Design cancelled");
   if(!(DB.purchases||[]).some(pp=>pp.sample_id===id)){ const ok=await poFromSample(x); if(!ok) return; }
   await sb.from("trip_samples").update({status:"shortlist"}).eq("id",id); x.status="shortlist";
   if(x.supplier_id){ const sup=(DB.suppliers||[]).find(sx=>sx.id===x.supplier_id); if(sup&&sup.status==="potential"){ await sb.from("suppliers").update({status:"approved"}).eq("id",x.supplier_id); sup.status="approved"; } }
@@ -3194,7 +3195,8 @@ async function sampleRestore(id){
 }
 /* اعتماد جماعي (اختياري): يعتمد كل عينات التصميم غير المرفوضة */
 async function approveDesignPurchase(designId){
-  const chosen=(DB.samples||[]).filter(x=>x.design_id===designId && (x.status||"candidate")==="candidate");
+  if(dCancelled(design_(designId))) return alert(isAr()?"التصميم ملغى — ما ينطلب له خام.":"Design cancelled");
+  const chosen=(DB.samples||[]).filter(x=>x.design_id===designId && (x.status||"candidate")==="candidate" && smpLive(x));
   if(!chosen.length) return alert(isAr()?"ما في عينات جاهزة للاعتماد":"Nothing to approve");
   let made=0;
   for(const x of chosen){
@@ -4268,12 +4270,13 @@ function poF(){ const f=window._poF; if(!f||typeof f!=="object"){ window._poF={d
   window._poF.dlv=window._poF.dlv||[]; window._poF.pay=window._poF.pay||[]; return window._poF; }
 function poFCount(){ const f=poF(); return f.dlv.length+f.pay.length; }
 function poFPass(x){ const f=poF();
+  if(!poLive(x)) return false;
   if(f.dlv.length && f.dlv.indexOf(poDlvKey(x))<0) return false;
   if(f.pay.length && f.pay.indexOf(poPayKey(x))<0) return false;
   return true; }
 function poFilterSheet(){
   const f=poF();
-  const pool=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel);
+  const pool=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && poLive(x));
   const row=(kind,list,cur)=>`<div class="pillrow" id="pf_${kind}">${list.map(([k,ar,en])=>{
       const n=pool.filter(x=>(kind==="dlv"?poDlvKey(x):poPayKey(x))===k).length;
       return `<span class="pill ${cur.indexOf(k)>=0?"on":""}" data-k="${k}" onclick="this.classList.toggle('on')">${isAr()?ar:en} (${n})</span>`;
@@ -4607,8 +4610,8 @@ async function readyReceiveSave(id){
 /* ===== الدفع على مستوى المورد + تعديل الكمية ===== */
 function supGroup(gidEnc){
   const gid=decodeURIComponent(gidEnc); let rows,sup=null,name;
-  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
-  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
+  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && poLive(x) && !x.supplier_id && (x.supplier_name||"—")===name); }
+  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && poLive(x) && x.supplier_id===gid); }
   return {gid, rows, sup, name};
 }
 /* بطاقة «إسقاط رسوم العينات على التصاميم» — تُستخدم في المالية العامة ومالية الرحلة */
@@ -5704,8 +5707,8 @@ async function poSend(gidEnc, lang){
   lang = lang || reqLangDefault();
   window._manLang = lang; window._manGid = gidEnc;
   const gid=decodeURIComponent(gidEnc); let rows, sup=null, name;
-  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && !x.supplier_id && (x.supplier_name||"—")===name); }
-  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && x.supplier_id===gid); }
+  if(gid.indexOf("name:")===0){ name=gid.slice(5); rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && poLive(x) && !x.supplier_id && (x.supplier_name||"—")===name); }
+  else { sup=(DB.suppliers||[]).find(s=>s.id===gid)||null; name=sup?sup.name:""; rows=(DB.purchases||[]).filter(x=>(x.channel||"local")===chChannel && poLive(x) && x.supplier_id===gid); }
   if(!rows.length) return;
   /* المورّد يهمّه الإجمالي — نفس الخام بنفس الوحدة والسعر يندمج بسطر واحد.
      الفصل حسب الكولكشن داخلي للتكلفة فقط. */
@@ -7686,7 +7689,7 @@ function matPool(){
   const regs=(DB.materials||[]).filter(m=>m.active!==false);
   const have=new Set(regs.map(m=>m.sku).filter(Boolean));
   const smps=(DB.samples||[])
-    .filter(x=>x.status==="shortlist" && x.sku && !isReadySmp(x) && !have.has(x.sku))
+    .filter(x=>x.status==="shortlist" && x.sku && !isReadySmp(x) && !have.has(x.sku) && smpLive(x))
     .map(sampleAsMat);
   return [...regs, ...smps];
 }
@@ -8415,6 +8418,22 @@ function showChart(pid, size){
    تبقى محسوبة على الكولكشن — ما يوخذ نصيب من المصاريف العمومية
    لأنه ما ينتج ولا قطعة. */
 function dCancelled(d){ return !!(d && d.cancelled); }
+/* العينة شغّالة لو مربوطة بتصميم واحد على الأقل مو ملغى (أو ما لها تصميم) */
+function smpLive(sm){
+  if(!sm) return true;
+  const ids=[sm.design_id, ...(Array.isArray(sm.design_ids)?sm.design_ids:[])].filter(Boolean);
+  if(!ids.length) return true;
+  return ids.some(id=>{ const d=design_(id); return !d || !dCancelled(d); });
+}
+/* أمر شراء عينة لتصميم ملغى: يختفي من المشتريات — ما ينمسح لأن عليه دفعات
+   وتكلفته باقية على الكولكشن */
+function poLive(po){
+  if(!po || !poIsSample(po)) return true;
+  const sm=(DB.samples||[]).find(x=>x.id===(po.sample_id||po.material_id));
+  if(sm) return smpLive(sm);
+  const d=po.design_id? design_(po.design_id) : null;
+  return !(d && dCancelled(d));
+}
 async function designCancel(id, on){
   const d=design_(id); if(!d) return;
   const nm=d.final_name||d.name||"";
