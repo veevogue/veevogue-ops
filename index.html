@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.49:APPV-->
+<!--APPV:2026-08-13.50:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.49";
+const APP_VERSION="2026-08-13.50";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -5257,7 +5257,8 @@ function tabFinance(){
   ${Object.keys(bySup).length?`<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"حسب المورد":"By supplier"}</div>
     ${Object.entries(bySup).map(([k,v])=>{ const vr=Math.max(0,(v.due||0)-(v.paid||0)); return `<div class="lineitem"><div><b>${esc(k)}</b></div>
-      <div class="muted" style="text-align:left">${money(v.total)}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
+      <div class="muted" style="text-align:left;font-size:13px">${money(v.due)}${(v.paid>0.001&&vr>0.001)?` · ${isAr()?"مدفوع":"paid"} ${fmtKD(v.paid)}`:""}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
+    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"المبلغ = قيمة البضاعة للمورّد (بعد الدفعة النهائية = المدفوع). عمولة الوكيل ٥٪ مو منه — محسوبة بإجمالي المصروف وتكلفة القطعة.":"Supplier goods value; agent fee excluded."}</div>
   </div>`:""}
 
   ${costPerPieceCard(money)}
@@ -5575,8 +5576,8 @@ function chFin(){
 
   ${Object.keys(bySup).length?`<div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"مشتريات كل مورد":"By supplier"}</div>
-    ${Object.entries(bySup).map(([k,v])=>`<div class="lineitem"><div><b>${esc(k)}</b></div>
-      <div class="muted" style="font-size:13px;text-align:left">${money(v.total)}${v.rem>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(v.rem)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`).join("")}
+    ${Object.entries(bySup).map(([k,v])=>{ const vr=v.rem||0; return `<div class="lineitem"><div><b>${esc(k)}</b></div>
+      <div class="muted" style="text-align:left;font-size:13px">${money(v.due)}${(v.paid>0.001&&vr>0.001)?` · ${isAr()?"مدفوع":"paid"} ${fmtKD(v.paid)}`:""}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
   </div>`:""}
 
   ${Object.keys(byDesign).length?`<div class="card" style="padding:14px">
