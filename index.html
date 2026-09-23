@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.45:APPV-->
+<!--APPV:2026-08-13.46:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1487,7 +1487,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.45";
+const APP_VERSION="2026-08-13.46";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -4670,6 +4670,24 @@ function smpFeeByDesign(pays){
    تنزل على كولكشن الدفعة نفسها: من تصاميم البنود اللي انحسبت معها بنفس الدفعة. */
 function smpGenByCol(pays){
   const out={};
+  const put=(gen, w)=>{
+    const tot=Object.values(w).reduce((a,v)=>a+v,0);
+    if(!tot){ out.__none=(out.__none||0)+gen; return; }
+    Object.keys(w).forEach(c=>{ out[c]=(out[c]||0)+gen*w[c]/tot; });
+  };
+  /* رسوم تحويل دفعات الإنتاج: على كولكشن أوامر هذا المورّد، بوزن قيمتها */
+  (pays||[]).forEach(pp=>{
+    if((pp.stage||"production")==="sample") return;
+    const f=Number(pp.fee); if(!(f>0)) return;
+    const gen=toKWDsafe(f, pp.currency);
+    if(pp.collection_id){ put(gen, {[pp.collection_id]:1}); return; }
+    const w={};
+    (DB.purchases||[]).filter(po=>!poIsSample(po) && poSupKey(po)===pp.supplier_key
+        && (po.channel||"local")===(pp.channel||"local")).forEach(po=>{
+      const d=po.design_id? design_(po.design_id) : null; const c=po.collection_id||(d&&d.collection_id);
+      if(c) w[c]=(w[c]||0)+((poTotals(po).total)||1); });
+    put(gen, w);
+  });
   (pays||[]).forEach(pp=>{
     if((pp.stage||"production")!=="sample") return;
     const parts=smpFeeSplit(pp);
@@ -4684,9 +4702,7 @@ function smpGenByCol(pays){
         const d=po.design_id? design_(po.design_id) : null; const c=(d&&d.collection_id)||po.collection_id;
         if(c) w[c]=(w[c]||0)+1; });
     }
-    const tot=Object.values(w).reduce((a,v)=>a+v,0);
-    if(!tot){ out.__none=(out.__none||0)+gen; return; }
-    Object.keys(w).forEach(c=>{ out[c]=(out[c]||0)+gen*w[c]/tot; });
+    put(gen, w);
   });
   return out;
 }
@@ -4724,6 +4740,7 @@ function poPaySup(gidEnc){
         const d=a.design_id?(design_(a.design_id)||{}):null;
         const nm=(po&&po.fabric_name)||(d&&(d.final_name||d.name))||(isAr()?"رسوم عامة":"other");
         return `${esc(nm)} ${fmtN(a.amount)}`; }).join(" · ")}</div>`:""}
+      ${Number(pp.fee)>0?`<div class="muted" style="font-size:11px;margin-top:2px">${isAr()?"عمولة تحويل":"transfer fee"} ${fmtN(pp.fee)} ${esc(pp.currency||cur)} — ${isAr()?"على مصاريف الكولكشن":"collection overhead"}</div>`:""}
       ${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}
       ${pp.discrepancy_note?`<div style="font-size:12px;color:var(--wine)">⚠ ${esc(pp.discrepancy_note)}</div>`:""}
       ${pp.receipt?`<div><img class="thumb" src="${esc(pp.receipt)}" style="width:44px;height:44px" onclick="viewImg('${esc(pp.receipt)}')"></div>`:""}</div>
@@ -4772,6 +4789,11 @@ function poPaySup(gidEnc){
     <div id="psAmtBox" style="display:grid;grid-template-columns:2fr 1fr;gap:10px${hasSmp&&!hasProd?";display:none":""}">
       <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="ps_amt" inputmode="decimal"></div>
       <div><label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1"><label>${isAr()?"عمولة تحويل / رسوم بنكية (اختياري)":"Bank / transfer fee (optional)"}</label>
+        <input id="ps_fee" inputmode="decimal" placeholder="0">
+        <div class="muted" style="font-size:11px;margin-top:3px">${isAr()
+          ?"ما تنحسب من المستحق للمورّد — تنزل على مصاريف الكولكشن العامة بلا عمولة الوكيل."
+          :"Not counted against the supplier's due — collection overhead, no agent fee."}</div></div>
     </div>
     ${(hasSmp&&!hasProd)?`<label>${isAr()?"العملة":"Currency"}</label><select id="ps_cur2" onchange="el('ps_cur').value=this.value;psSum()">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select>`:""}
     <label>${isAr()?"نسخة إثبات الدفع (صورة)":"Receipt photo"}</label>
@@ -4820,6 +4842,7 @@ async function poPaySupAdd(gidEnc){
     amt=parseFloat(toAsciiDigits(el("ps_amt").value))||0;
     if(!amt) return alert(isAr()?"ادخل المبلغ":"Amount?");
   }
+  const fee = stage==="production"? (parseFloat(toAsciiDigits((el("ps_fee")||{}).value||""))||null) : null;
   const paid=supPaid(gid,dinfo.cur).paid;
   let discrepancy_note=null;
   /* دفعات العينات ما تُقاس على مستحق — كميات صغيرة بأسعارها. لا تنبيه ولا فرق. */
@@ -4842,7 +4865,7 @@ async function poPaySupAdd(gidEnc){
   }
   const tr=activeTrip(chChannel);
   const row={id:newId(), trip_id:tr?tr.id:null, channel:chChannel, supplier_key:gid, supplier_id:(G.sup&&G.sup.id)||null, supplier_name:G.name||null, amount:amt, currency:cur0, kind, stage, paid_on:today(), receipt:window._payReceipt||null, note:el("ps_note").value||null, discrepancy_note,
-    alloc, design_id:null};
+    alloc, design_id:null, fee};
   const {error}=await sb.from("supplier_payments").insert(row);
   if(error && !/queued/i.test(error.message||"")) return alert(error.message);
   (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
@@ -5036,7 +5059,10 @@ function tabFinance(){
   const mRem=Math.max(0,mProd-mProdPaid);
   exps.forEach(e=>{ const tk=e.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].exp+=expKWD(e); });
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
-  const grand=mTotal+expTotal;
+  /* عمولات التحويل على دفعات الإنتاج — برّا مستحق المورّد، بس مصروف فعلي */
+  const feeTotal=(DB.supplier_payments||[]).filter(pp=>(pp.stage||"production")!=="sample")
+    .reduce((a,pp)=>a+(Number(pp.fee)>0? toKWDsafe(pp.fee,pp.currency) : 0),0);
+  const grand=mTotal+expTotal+feeTotal;
   el("tabbody").innerHTML=`
   <div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"الرحلات/الدفعات":"Batches"}</div>
@@ -5058,7 +5084,7 @@ function tabFinance(){
   <div class="card" style="padding:16px">
     <div class="title">${isAr()?"إجمالي المصروف":"Total spend"}</div>
     <div style="font-size:30px;font-weight:800;margin:4px 0">${money(grand)}</div>
-    <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}</div>
+    <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}${feeTotal?` · ${isAr()?"عمولات تحويل":"transfer fees"}: ${money(feeTotal)}`:""}</div>
     <div class="muted" style="margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
     ${mReady?`<div class="muted" style="margin-top:2px">${isAr()?"تفصال":"tailored"}: ${money(mTailor)} · <span style="color:var(--wine-dk)">${isAr()?"جاهز":"ready"}: ${money(mReady)}</span></div>`:""}
     ${smpFeeCard(DB.supplier_payments||[], money)}
@@ -5370,7 +5396,10 @@ function chFin(){
       (byDesign[dk]=byDesign[dk]||0); byDesign[dk]+=fm[did]; }); })();
   const mTotal=mProd+mSmpPaid, mRem=Math.max(0,mProd-mProdPaid);
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
-  const grand=mTotal+expTotal;
+  /* عمولات التحويل على دفعات الإنتاج — برّا مستحق المورّد، بس مصروف فعلي */
+  const feeTotal=(DB.supplier_payments||[]).filter(pp=>(pp.stage||"production")!=="sample")
+    .reduce((a,pp)=>a+(Number(pp.fee)>0? toKWDsafe(pp.fee,pp.currency) : 0),0);
+  const grand=mTotal+expTotal+feeTotal;
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
   el("chBody").innerHTML=`
   ${!tr?`<div class="note-box">${isAr()?"سوّ دفعة/رحلة أول عشان النفقات والمشتريات تنربط فيها":"Create a batch first"}</div>`:
