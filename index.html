@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.50:APPV-->
+<!--APPV:2026-08-13.52:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -213,7 +213,7 @@
   .sc-rule{width:38px;height:2px;background:#201c18;margin-bottom:10px;}
   .sc-badge{font-family:'Outfit',sans-serif;font-size:10px;font-weight:500;letter-spacing:2px;color:#6e6558;text-transform:uppercase;unicode-bidi:plaintext;}
   .sc-photo{flex:0 0 130px;width:130px;height:168px;border-radius:6px;overflow:hidden;background:#eee8dc;border:1px solid #d8d0bf;position:relative;}
-  .sc-photo div{position:absolute;inset:0;background-size:cover;background-position:center;}
+  .sc-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
   .sc-table{flex:1;display:flex;flex-direction:column;margin-top:18px;min-height:0;}
   .sc-hrow,.sc-drow{display:grid;grid-template-columns:repeat(var(--sccols),1fr);align-items:center;}
   .sc-hrow{border-bottom:1.5px solid #201c18;flex:0 0 auto;}
@@ -230,7 +230,8 @@
   .sc.on-white{background:#fff;border:1px solid #E6E1D8;}
   .sc.on-white .sc-photo{background:#f3f0ea;border-color:#e6e1d8;}
   .sc.on-white .sc-drow{border-bottom-color:#efece4;}
-  .sc-prev{border:1px solid var(--line);border-radius:10px;overflow:hidden;width:270px;height:270px;margin:10px auto;}
+  /* المعاينة: الصفحة يمين لليسار، فالتصغير لازم يبدأ من الزاوية اللي يبدأ منها الكرت وإلا يطلع برّا الإطار */
+  .sc-prev{border:1px solid var(--line);border-radius:10px;overflow:hidden;width:270px;height:270px;margin:10px auto;direction:ltr;cursor:zoom-in;}
   .sc-prev > .sc{transform:scale(.5);transform-origin:top left;}
   .extbar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:14px 0;background:var(--paper);}
   .extbar.on{background:var(--wine-lt);border-color:#E8D4D8;color:var(--wine-dk);}
@@ -1487,7 +1488,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.50";
+const APP_VERSION="2026-08-13.52";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -7860,19 +7861,22 @@ function redrawParts(){
   toggleExt(); toggleEmb();
 }
 /* ===== جدول القياسات للنشر — نفس هوية أداة فيفوق، مربع 1080×1080 ===== */
+/* البنود اللي تطلع بالجدول: كل بنود المنتج، أو اللي اخترتها */
 function scData(pid){
   const p=product(pid);
-  window._scUnit=chartUnitOf(p);
   const ages=Object.keys(p.size_chart||{});
-  const rows=(p.meas_rows&&p.meas_rows.length? p.meas_rows : defaultRows("full"))
-    .map(k=>measByKey(k)).filter(Boolean);
-  return {p, ages, rows};
+  const all=productRows(p);
+  const pick=window._scRows;
+  const rows= Array.isArray(pick)? all.filter(m=>pick.indexOf(m[0])>=0) : all;
+  return {p, ages, rows, all};
 }
 /* كرت جدول القياسات — نفس هوية أداة النشر، ونقدر نستخدمه بجدول محوّل وخلفية بيضاء */
 function scCard(o){
   const rows=o.rows||[], ages=o.ages||[], chart=o.chart||{};
   const cols=1+rows.length;
-  return `<div class="sc ${o.cls||""}" ${o.id?`id="${o.id}"`:""} style="--sccols:${cols}">
+  /* الاتجاه من لغة العنوان: إنجليزي ← من اليسار (العمر أول عمود)، عربي ← من اليمين */
+  const dir=o.dir||(/[\u0600-\u06FF]/.test(o.title||"")?"rtl":"ltr");
+  return `<div class="sc ${o.cls||""}" ${o.id?`id="${o.id}"`:""} style="--sccols:${cols};direction:${dir}">
     <div class="sc-head">
       <div class="sc-txt">
         <div class="sc-eyebrow">${esc(o.eyebrow||"")}</div>
@@ -7881,7 +7885,7 @@ function scCard(o){
         <div class="sc-rule"></div>
         <div class="sc-badge">${esc(o.badge||"")}</div>
       </div>
-      <div class="sc-photo"><div style="background-image:url('${esc(o.img||"")}')"></div></div>
+      <div class="sc-photo">${o.img?`<img src="${esc(o.img)}" alt="">`:""}</div>
     </div>
     <div class="sc-table">
       <div class="sc-hrow">
@@ -7899,62 +7903,107 @@ function scCard(o){
     <div class="sc-brand">VEEVOGUE</div>
   </div>`;
 }
-function scStage(pid, o){
+function scUnit(pid){ return window._scUnit || chartUnitOf(product(pid)); }
+function scStage(pid, o, img){
   const {p, ages, rows}=scData(pid);
-  const u=chartUnitOf(p);
+  const u=chartUnitOf(p), to=scUnit(pid);
   return scCard({id:"scStage", eyebrow:o.eyebrow, title:o.title, sub:o.sub, badge:o.badge,
     ageLabel:o.ageLabel, rows, ages,
-    chart:chartExport(p.size_chart||{}, u, u),   /* تصدير للموقع: مقرّب */
-    img:pimg(p)});
+    chart:chartExport(p.size_chart||{}, u, to),   /* بوحدة المنتج، أو اللي حوّلت لها */
+    img:img||pimg(p)});
 }
-function scOpts(){
+function scOpts(pid){
+  const cm=scUnit(pid)==="cm";
   return {eyebrow:"SIZE GUIDE", ageLabel:"AGE",
-          sub:"size chart · "+((window._scUnit||"inch")==="cm"?"cm":"inch"),
+          sub:"size chart · "+(cm?"cm":"inch"),
           title:(el("sc_title")?.value)||"",
-          badge:(el("sc_badge")?.value)||"MEASUREMENTS IN CM"};
+          badge:cm?"MEASUREMENTS IN CM":"MEASUREMENTS IN INCHES"};
 }
 function sizeChartSheet(pid){
-  const {p, ages, rows}=scData(pid);
+  const p=product(pid);
+  window._scUnit=chartUnitOf(p); window._scRows=null;
+  const {ages, all}=scData(pid);
   if(!ages.length) return alert(isAr()?"ما فيه أعمار في جدول القياسات":"No sizes in the chart");
-  if(!rows.length) return alert(isAr()?"ما فيه صفوف قياس مختارة":"No measurement rows");
+  if(!all.length) return alert(isAr()?"ما فيه صفوف قياس مختارة":"No measurement rows");
+  const u=window._scUnit;
   openSheet(`<div class="title">${I.ruler} ${isAr()?"جدول القياسات للنشر":"Size chart image"}</div>
-    <div class="sc-prev" id="scPrev"></div>
+    <div class="sc-prev" id="scPrev" onclick="scOpen('${pid}')"></div>
+    <div class="muted" style="font-size:11px;text-align:center;margin-top:-4px">${isAr()
+      ?"اضغط على الصورة تنفتح بالجودة الكاملة — ضغطة مطوّلة عليها وتحفظها"
+      :"Tap to open full size — long-press to save"}</div>
     <div class="grid2">
       <div><label>${isAr()?"العنوان":"Title"}</label><input id="sc_title" value="${esc(p.name_en||p.name||"")}" oninput="scRefresh('${pid}')"></div>
-      <div><label>${isAr()?"الوحدة":"Unit"}</label><input id="sc_badge" dir="ltr" value="MEASUREMENTS IN CM" oninput="scRefresh('${pid}')"></div>
+      <div><label>${isAr()?"الوحدة":"Unit"}</label><select id="sc_unit" onchange="window._scUnit=this.value;scRefresh('${pid}')">
+        <option value="inch" ${u==="inch"?"selected":""}>${isAr()?"إنش":"inch"}</option>
+        <option value="cm" ${u==="cm"?"selected":""}>${isAr()?"سنتيمتر":"cm"}</option></select></div>
     </div>
-    <button class="btn btn-wine btn-big" onclick="scDownload('${pid}')">${I.file} ${isAr()?"تنزيل الصورة":"Download PNG"}</button>
-    <button class="btn btn-line btn-big" onclick="scSave('${pid}')">${I.pack} ${isAr()?"احفظها مع المنتج":"Save to product"}</button>
+    <details id="scRowsBox" style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:8px 12px">
+      <summary style="cursor:pointer;font-weight:700;font-size:14px">${isAr()?"بنود الجدول":"Rows"} <span class="muted" id="scRowsN" style="font-weight:400;font-size:12px"></span></summary>
+      <div style="margin-top:6px">${all.map(m=>`<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:400">
+        <input type="checkbox" class="scRow" value="${esc(m[0])}" checked onchange="scPickRows('${pid}')" style="width:auto">
+        <span>${esc(m[1]||m[2]||"")}</span> <span class="muted" style="font-size:11px;direction:ltr">${esc((m[2]||"").toUpperCase())}</span></label>`).join("")}</div>
+    </details>
+    <button class="btn btn-wine btn-big" style="margin-top:10px" onclick="scSave('${pid}')">${I.pack} ${isAr()?"تصدير جدول القياسات":"Export size chart"}</button>
     <div id="scMsg" class="muted" style="text-align:center;margin-top:6px"></div>`);
   scRefresh(pid);
 }
+function scPickRows(pid){
+  const v=[...document.querySelectorAll(".scRow")].filter(i=>i.checked).map(i=>i.value);
+  if(!v.length){ alert(isAr()?"لازم بند واحد على الأقل":"Pick at least one row");
+    const f=document.querySelector(".scRow"); if(f){ f.checked=true; v.push(f.value); } }
+  window._scRows=v; scRefresh(pid);
+}
 function scRefresh(pid){
   const box=el("scPrev"); if(!box) return;
-  box.innerHTML=scStage(pid, scOpts());
+  box.innerHTML=scStage(pid, scOpts(pid));
+  const n=el("scRowsN"); if(n){ const {rows,all}=scData(pid); n.textContent=`(${rows.length} ${isAr()?"من":"of"} ${all.length})`; }
+}
+/* صورة المنتج تدخل الرسم مقصوصة على مقاس الإطار وبدقتها الكاملة:
+   أداة الرسم ما تفهم «object-fit»، والخلفية ترسمها بحجمها الصغير فتطلع ممسوحة. */
+async function scImgData(url){
+  if(!url) return url;
+  window._scImgC=window._scImgC||{};
+  if(window._scImgC[url]) return window._scImgC[url];
+  try{
+    let src=url;
+    if(!/^data:/.test(url)){
+      const r=await fetch(url,{mode:"cors"}); const b=await r.blob();
+      src=await new Promise((ok,no)=>{ const f=new FileReader(); f.onload=()=>ok(f.result); f.onerror=no; f.readAsDataURL(b); });
+    }
+    const im=await new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=no; i.src=src; });
+    const W=520, H=672;   /* إطار الصورة 130×168 × أربع */
+    const sc=Math.max(W/im.naturalWidth, H/im.naturalHeight);
+    const sw=W/sc, sh=H/sc, sx=(im.naturalWidth-sw)/2, sy=(im.naturalHeight-sh)/2;
+    const c=document.createElement("canvas"); c.width=W; c.height=H;
+    const g=c.getContext("2d"); g.imageSmoothingQuality="high";
+    g.drawImage(im, sx, sy, sw, sh, 0, 0, W, H);
+    const d=c.toDataURL("image/jpeg",0.92);
+    window._scImgC[url]=d; return d;
+  }catch(e){ return url; }
 }
 async function scRender(pid){
-  /* نرسم بالحجم الطبيعي في حاوية مخفية ثم نصدّر بضعف الدقة */
+  /* نرسم بالحجم الطبيعي في حاوية مخفية ثم نصدّر بأربع أضعاف الدقة (2160×2160) */
   let wrap=el("scWrap");
   if(!wrap){ wrap=document.createElement("div"); wrap.id="scWrap"; document.body.appendChild(wrap); }
-  wrap.innerHTML=scStage(pid, scOpts());
+  const img=await scImgData(pimg(product(pid)));
+  wrap.innerHTML=scStage(pid, scOpts(pid), img);
   await document.fonts.ready.catch(()=>{});
-  await new Promise(r=>setTimeout(r,120));
-  const canvas=await html2canvas(wrap.firstElementChild,{scale:2,backgroundColor:"#f7f4ee",useCORS:true});
+  await new Promise(r=>setTimeout(r,150));
+  const canvas=await html2canvas(wrap.firstElementChild,{scale:4,backgroundColor:"#f7f4ee",useCORS:true,imageTimeout:15000});
   wrap.innerHTML="";
   return canvas;
 }
-async function scDownload(pid){
+/* ضغطة على المعاينة: تنفتح بالجودة الكاملة، وضغطة مطوّلة تحفظها */
+async function scOpen(pid){
   const msg=el("scMsg"); if(msg) msg.textContent=isAr()?"جاري التجهيز…":"Rendering…";
   try{
     const c=await scRender(pid);
-    const a=document.createElement("a");
-    a.download=`veevogue-${(scOpts().title||"size").trim().replace(/\s+/g,"-")}-size-chart.png`;
-    a.href=c.toDataURL("image/png"); a.click();
-    if(msg) msg.textContent=isAr()?"تم ✓":"Done ✓";
-  }catch(e){ if(msg) msg.textContent=(isAr()?"فشل التصدير: ":"Export failed: ")+e.message; }
+    viewImg(c.toDataURL("image/png"));
+    if(msg) msg.textContent="";
+  }catch(e){ if(msg) msg.textContent=(isAr()?"فشل التجهيز: ":"Render failed: ")+e.message; }
 }
 async function scSave(pid){
-  const msg=el("scMsg"); if(msg) msg.textContent=isAr()?"جاري الحفظ…":"Saving…";
+  const msg=el("scMsg"); if(msg) msg.textContent=isAr()?"جاري التصدير…":"Exporting…";
   try{
     const c=await scRender(pid);
     const blob=await new Promise(r=>c.toBlob(r,"image/png"));
@@ -7963,9 +8012,10 @@ async function scSave(pid){
     if(error) throw error;
     const url=sb.storage.from("files").getPublicUrl(path).data.publicUrl;
     await sb.from("products").update({chart_image:url}).eq("id",pid);
-    await refresh();
-    if(msg) msg.innerHTML=(isAr()?"انحفظت ✓ ":"Saved ✓ ")+`<a href="${esc(url)}" target="_blank">${isAr()?"افتحها":"open"}</a>`;
-  }catch(e){ if(msg) msg.textContent=(isAr()?"فشل الحفظ: ":"Save failed: ")+e.message; }
+    const pr=(DB.products||[]).find(x=>x.id===pid); if(pr) pr.chart_image=url;
+    if(msg) msg.textContent=isAr()?"انحفظت مع المنتج ✓ — اضغط عليها مطوّل وتحفظها":"Saved ✓";
+    viewImg(c.toDataURL("image/png"));
+  }catch(e){ if(msg) msg.textContent=(isAr()?"فشل التصدير: ":"Export failed: ")+e.message; }
 }
 
 /* ===== تطريزات متعددة على نفس القطعة (تطريز + طباعة، أو تطريزين) ===== */
@@ -10891,7 +10941,7 @@ async function wDone(lineId, partId){
   window._inflight = window._inflight || new Map();   /* المفتاح ← وقت البدء */
   const STUCK_MS = 25000;   /* عملية علقت أكثر من ذلك: نحرّرها بدل ما يموت الزر للأبد */
   const GUARDED = ["saveOrder","poSave","sampleSave","supSave","saveProduct","saveCollection",
-    "newDesign","expSave","saveMaterial","saveWorker","scSave","tripSave","fxSaveManual",
+    "newDesign","expSave","saveMaterial","saveWorker","scSave","scOpen","tripSave","fxSaveManual",
     "poFromSample","poPaySupAdd","poEditQtySave","poPayAdd","approveDesignPurchase","finishApprove",
     "jobSaveImg","shootDone","addReason","chkAdd","addDesignPattern","addDesignFiles","addDesignNote",
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
