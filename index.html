@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<!--APPV:2026-08-13.52:APPV-->
+<!--APPV:2026-08-13.53:APPV-->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>VEEVOGUE — نظام المشغل</title>
@@ -1488,7 +1488,7 @@ function factorySheet(jobId){
 }
 
 /* ================= أدوات ================= */
-const APP_VERSION="2026-08-13.52";
+const APP_VERSION="2026-08-13.53";
 async function checkVersion(){
   if(userBusy()) return;   /* لا نعيد تحميل الصفحة وأنت تعبّي */
   try{
@@ -2624,8 +2624,8 @@ function logisticsStatement(tripId){
   const ship=(DB.expenses||[]).filter(e=>e.trip_id===tripId && ["shipping","logistics","customs"].indexOf(e.category)>=0)
               .reduce((a,e)=>a+expKWD(e),0);
   const base=goods+mfg+ship, owed=base*pct;
-  const logIds=new Set((DB.suppliers||[]).filter(x=>x.kind==="logistics").map(x=>x.id));
-  const paid=(DB.supplier_payments||[]).filter(x=>x.trip_id===tripId && logIds.has(x.supplier_id))
+  const logIds=new Set((DB.suppliers||[]).filter(x=>x.kind==="logistics"||x.kind==="agent").map(x=>x.id));
+  const paid=(DB.supplier_payments||[]).filter(x=>x.trip_id===tripId && (x.stage==="logistics" || logIds.has(x.supplier_id)))
               .reduce((a,x)=>a+toKWDsafe(x.amount,x.currency),0);
   return {goods,mfg,ship,base,pct:cfg.commission||0,owed,paid,left:owed-paid};
 }
@@ -4682,7 +4682,7 @@ function smpGenByCol(pays){
   };
   /* رسوم تحويل دفعات الإنتاج: على كولكشن أوامر هذا المورّد، بوزن قيمتها */
   (pays||[]).forEach(pp=>{
-    if((pp.stage||"production")==="sample") return;
+    if(!ppIsProd(pp)) return;
     const f=Number(pp.fee); if(!(f>0)) return;
     const gen=toKWDsafe(f, pp.currency);
     if(pp.collection_id){ put(gen, {[pp.collection_id]:1}); return; }
@@ -4711,6 +4711,8 @@ function smpGenByCol(pays){
   });
   return out;
 }
+/* دفعة إنتاج للمورّد؟ (العينات ودفعات اللوجستيك لها حسابها) */
+function ppIsProd(pp){ const st=pp&&pp.stage; return !st || st==="production"; }
 /* قيمة أمر الإنتاج الخام بالدينار (الكمية × السعر) — أساس توزيع الدفعة المجمّعة */
 function poRawKWD(po){
   const q=(po.buy_qty!=null?po.buy_qty:(po.qty_yd||0));
@@ -4723,7 +4725,7 @@ function poPaidMap(pays){
   const out={};
   const add=(id,k,fin)=>{ const o=(out[id]=out[id]||{kwd:0,final:false}); o.kwd+=k; if(fin) o.final=true; };
   (pays||DB.supplier_payments||[]).forEach(pp=>{
-    if((pp.stage||"production")==="sample") return;
+    if(!ppIsProd(pp)) return;
     const fin=pp.kind==="final";
     const al=(Array.isArray(pp.alloc)?pp.alloc:[]).filter(a=>a&&a.po_id&&Number(a.amount)>0);
     if(al.length){ al.forEach(a=>add(a.po_id, toKWDsafe(a.amount, pp.currency), fin)); return; }
@@ -4783,7 +4785,7 @@ function supSettled(key, rows){
 function supBalance(key, rows, cur){
   const prod=(rows||[]).filter(po=>!poIsSample(po));
   const pays=(DB.supplier_payments||[]).filter(pp=>pp.supplier_key===key && (pp.channel||"")===chChannel
-      && (pp.stage||"production")!=="sample");
+      && ppIsProd(pp));
   const fin=pays.filter(pp=>pp.kind==="final")
     .sort((a,b)=>String(b.created_at||"9").localeCompare(String(a.created_at||"9")));
   const last=fin[0]||null;
@@ -4798,7 +4800,7 @@ function supBalance(key, rows, cur){
 function supPaid(key, cur){
   const all=(DB.supplier_payments||[]).filter(pp=>pp.supplier_key===key && (pp.channel||"")===chChannel);
   const isSmp=pp=>(pp.stage||"production")==="sample";
-  const list=all.filter(pp=>!isSmp(pp)), sList=all.filter(isSmp);
+  const list=all.filter(ppIsProd), sList=all.filter(isSmp);
   const add=(l)=>l.reduce((a,pp)=>a+toCur(pp.amount,pp.currency,cur),0);
   return {list, paid:add(list), sList, samplePaid:add(sList), all};
 }
@@ -5151,19 +5153,202 @@ async function poSave(){
 
 /* ================= قسم المالية الرئيسي (كل الرحلات) ================= */
 function tripName(id){ const t=(DB.trips||[]).find(x=>x.id===id); return t? (t.name||"") : (isAr()?"عام":"general"); }
+/* ================= حساب المشغل (التنفيذ الخارجي) =================
+   كل مصنع/مشغل: إجمالي أوامره (العدد × سعر القطعة) والمدفوع والباقي. */
+function jobSupKey(j){ return j.supplier_id || ("name:"+(j.vendor||"—")); }
+function jobKWD(j, v){ return toKWDsafe(v, j.currency||"CNY"); }
+/* أمر مستورد؟ (من قناة غير المحلي) — عليه عمولة الوكيل */
+function jobImported(j){
+  const sp=j.supplier_id? (DB.suppliers||[]).find(x=>x.id===j.supplier_id) : null;
+  return sp&&sp.channel? sp.channel!=="local" : (j.currency||"CNY")!=="KWD";
+}
+function jobLabel(j){
+  const names=[...new Set(jobProds(j).map(pid=>pname(product(pid))).filter(Boolean))];
+  return names.length? names.join("، ") : (j.kind||(isAr()?"تنفيذ":"job"));
+}
+function workshopDues(){
+  const out={};
+  (DB.jobs||[]).forEach(j=>{
+    const k=jobSupKey(j); const sp=j.supplier_id? (DB.suppliers||[]).find(x=>x.id===j.supplier_id) : null;
+    const o=out[k]=out[k]||{key:k, name:(sp&&sp.name)||j.vendor||"—", jobs:[], curs:{}, gross:0, paid:0, left:0,
+                            grossK:0, paidK:0, leftK:0, noPrice:0};
+    const T=jobTotals(j); const cur=j.currency||"CNY";
+    o.jobs.push(j); o.curs[cur]=1;
+    if(!(Number(j.unit_price)>0)) o.noPrice++;
+    o.gross+=T.gross; o.paid+=T.paid; o.left+=Math.max(0,T.left);
+    o.grossK+=jobKWD(j,T.gross); o.paidK+=jobKWD(j,T.paid); o.leftK+=Math.max(0,jobKWD(j,T.left));
+  });
+  Object.values(out).forEach(o=>{ const cs=Object.keys(o.curs); o.cur=cs.length===1? cs[0] : null; });
+  return out;
+}
+function workshopCard(WS, money){
+  const list=Object.values(WS); if(!list.length) return "";
+  return `<div class="card" style="padding:14px">
+    <div class="title" style="font-size:16px">${isAr()?"حساب المشغل":"Workshops"}</div>
+    ${list.map(v=>{ const nat=(x)=>v.cur&&v.cur!=="KWD"? ` <span style="font-size:11px">(${fmtN(Math.round(x*100)/100)} ${esc(v.cur)})</span>` : "";
+      return `<div class="lineitem" style="cursor:pointer" onclick="wsPaySheet('${encodeURIComponent(v.key)}')"><div style="min-width:0"><b>${esc(v.name)}</b>
+        <div class="muted" style="font-size:12px">${v.jobs.length} ${isAr()?"أمر":"jobs"}${v.noPrice?` · <span style="color:var(--wine-dk)">${v.noPrice} ${isAr()?"بلا سعر":"unpriced"}</span>`:""}</div></div>
+      <div class="muted" style="text-align:left;font-size:13px">${money(v.grossK)}${nat(v.gross)}
+        ${v.paidK>0.001&&v.leftK>0.001?`<div>${isAr()?"مدفوع":"paid"} ${fmtKD(v.paidK)}</div>`:""}
+        <div>${v.leftK>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(v.leftK)}${nat(v.left)}</span>`:`<span style="color:var(--green)">✓</span>`}</div></div></div>`; }).join("")}
+    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"من أوامر التنفيذ الخارجي: العدد × سعر القطعة. اضغط المشغل تشوف أوامره وتسجّل دفعة.":"From external jobs. Tap to pay."}</div>
+  </div>`;
+}
+function wsPaySheet(kEnc){
+  const key=decodeURIComponent(kEnc); const v=workshopDues()[key]; if(!v) return;
+  const jobs=v.jobs.slice().sort((a,b)=>String(a.sent_at||a.created_at||"").localeCompare(String(b.sent_at||b.created_at||"")));
+  const pays=[]; jobs.forEach(j=>(j.pay_log||[]).forEach((x,i)=>pays.push({j,x,i})));
+  pays.sort((a,b)=>String(b.x.on||"").localeCompare(String(a.x.on||"")));
+  const line=(j)=>{ const T=jobTotals(j); const cur=j.currency||"CNY"; const priced=Number(j.unit_price)>0;
+    return `<div class="lineitem" style="padding:6px 0;align-items:center">
+      <div style="flex:1;min-width:0"><b style="font-size:13px">${esc(jobLabel(j))}</b>
+        <div class="muted" style="font-size:11px">${priced?`${fmtN(j.qty||0)} × ${fmtN(j.unit_price)} = ${fmtN(Math.round(T.gross*100)/100)} ${esc(cur)}`
+          :(isAr()?"ما دخلت سعر القطعة":"no price")}${T.paid>0?` · ${isAr()?"مدفوع":"paid"} ${fmtN(Math.round(T.paid*100)/100)}`:""}${priced?` · ${T.left>0.001?`<span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtN(T.left)}</span>`:`<span style="color:var(--green)">✓</span>`}`:""}</div></div>
+      ${priced?`<input id="wsa_${j.id}" inputmode="decimal" placeholder="0" oninput="wsSum()" style="width:96px;text-align:center">`:""}</div>`; };
+  openSheet(`<div class="title">${isAr()?"حساب المشغل":"Workshop"} — ${esc(v.name)}</div>
+    <div class="note-box">${isAr()?"الإجمالي":"Total"}: <b>${v.cur?`${fmtN(Math.round(v.gross*100)/100)} ${esc(v.cur)}`:fmtKD(v.grossK)+" د.ك"}</b>
+      · ${isAr()?"مدفوع":"paid"}: ${v.cur?fmtN(Math.round(v.paid*100)/100):fmtKD(v.paidK)}
+      · ${v.leftK>0.001?`<b style="color:var(--wine)">${isAr()?"باقي":"due"}: ${v.cur?`${fmtN(Math.round(v.left*100)/100)} ${esc(v.cur)}`:fmtKD(v.leftK)}</b>`:`<b style="color:var(--green)">${isAr()?"مدفوع بالكامل":"fully paid"}</b>`}</div>
+    ${pays.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${pays.map(({j,x,i})=>`<div class="lineitem"><div style="min-width:0"><b>${fmtN(x.amount)} ${esc(x.cur||j.currency||"CNY")}</b>
+      <span class="muted" style="font-size:12px">${esc(x.on||"")} · ${esc(jobLabel(j))}</span>${x.note?`<div class="muted" style="font-size:12px">${esc(x.note)}</div>`:""}</div>
+      <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="wsPayDel('${j.id}',${i},'${kEnc}')">✕</button></div>`).join("")}`:""}
+    <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة — كم دفعت لكل أمر؟":"NEW PAYMENT — per job"}</div>
+    ${jobs.map(line).join("")}
+    <label>${isAr()?"أو المبلغ كامل":"Or the total"}${v.cur?` (${esc(v.cur)})`:""}</label><input id="ws_amt" inputmode="decimal">
+    <div class="muted" style="font-size:11px;margin-top:3px">${isAr()?"لو كتبت المبلغ كامل بس، ينزل على الأوامر اللي عليها باقي بنسبة باقيها.":"A lump sum is split by each job's remaining."}</div>
+    <label>${isAr()?"التاريخ":"Date"}</label><input id="ws_on" type="date" value="${today()}">
+    <label>${isAr()?"ملاحظة":"Note"}</label><input id="ws_note">
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="wsPayAdd('${kEnc}')">${isAr()?"أضف الدفعة":"Add payment"}</button>`);
+}
+function wsSum(){
+  let t=0; document.querySelectorAll('[id^="wsa_"]').forEach(i=>{ t+=parseFloat(toAsciiDigits(i.value))||0; });
+  t=Math.round(t*1000)/1000;
+  const a=el("ws_amt"); if(a){ if(t>0){ a.value=String(t); a.readOnly=true; } else if(a.readOnly){ a.value=""; a.readOnly=false; } }
+  return t;
+}
+async function wsPayAdd(kEnc){
+  const key=decodeURIComponent(kEnc); const v=workshopDues()[key]; if(!v) return;
+  const priced=v.jobs.filter(j=>Number(j.unit_price)>0);
+  const on=el("ws_on").value||today(), note=el("ws_note").value||null;
+  let parts=[];
+  priced.forEach(j=>{ const i=el("wsa_"+j.id); const a=i? (parseFloat(toAsciiDigits(i.value))||0) : 0; if(a>0) parts.push({j,a}); });
+  if(!parts.length){
+    const tot=parseFloat(toAsciiDigits(el("ws_amt").value))||0;
+    if(!(tot>0)) return alert(isAr()?"اكتب المبلغ":"Amount?");
+    if(!v.cur) return alert(isAr()?"أوامر هذا المشغل بأكثر من عملة — اكتب كم دفعت لكل أمر":"Mixed currencies — enter per job");
+    const open=priced.filter(j=>jobTotals(j).left>0.001);
+    const base=open.length? open : priced; if(!base.length) return alert(isAr()?"ما فيه أمر عليه سعر":"No priced job");
+    const w=base.map(j=>open.length? jobTotals(j).left : jobTotals(j).gross); const sw=w.reduce((a,x)=>a+x,0)||base.length;
+    let acc=0; base.forEach((j,i)=>{ const a= i===base.length-1? Math.round((tot-acc)*100)/100 : Math.round(tot*(w[i]||1)/sw*100)/100; acc+=a; if(a>0) parts.push({j,a}); });
+  }
+  for(const {j,a} of parts){
+    const log=[...(j.pay_log||[]), {amount:a, cur:j.currency||"CNY", on, note}];
+    const {error}=await sb.from("ext_jobs").update({pay_log:log}).eq("id",j.id);
+    if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+    j.pay_log=log;
+    await logIt("pay","ext_jobs",j.id,`${a} ${j.currency||"CNY"}`);
+  }
+  cacheDB(); render(); closeSheet(); wsPaySheet(kEnc);
+}
+
+async function wsPayDel(jobId, idx, kEnc){
+  const j=(DB.jobs||[]).find(x=>x.id===jobId); if(!j) return;
+  if(!confirm(isAr()?"حذف هذه الدفعة؟":"Delete this payment?")) return;
+  const log=[...(j.pay_log||[])]; log.splice(idx,1);
+  const {error}=await sb.from("ext_jobs").update({pay_log:log}).eq("id",jobId);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  j.pay_log=log; cacheDB(); render(); closeSheet(); wsPaySheet(kEnc);
+}
+/* ================= حساب اللوجستيك =================
+   عمولتهم على كل اللي يدفعونه عنك: البضاعة (المدفوع بعد التسديد) والعينات والتنفيذ
+   والنقل والشحن وتأمينه والتخليص. سفرك ورسوم التحويل البنكي مو منها. */
+function logisticsAll(){
+  const pct=chan("china").commission||0, cm=pct/100;
+  const pm=poPaidMap();
+  let goods=0, smp=0;
+  (DB.purchases||[]).forEach(po=>{ if((po.channel||"local")==="local" || poIsSample(po)) return; goods+=poEffRaw(po,pm).eff; });
+  (DB.supplier_payments||[]).forEach(pp=>{
+    if((pp.channel||"local")==="local" || pp.stage!=="sample") return;
+    const al=Array.isArray(pp.alloc)?pp.alloc:[];
+    smp+= al.length? al.filter(a=>a.po_id||a.design_id).reduce((t,a)=>t+toKWDsafe(a.amount,pp.currency),0)
+                   : toKWDsafe(pp.amount,pp.currency);
+  });
+  const mfg=(DB.jobs||[]).filter(jobImported).reduce((a,j)=>a+jobKWD(j,jobTotals(j).gross),0);
+  const tripLocal=(e)=>{ const tr=e.trip_id? (DB.trips||[]).find(t=>t.id===e.trip_id) : null; return !!(tr && tr.channel==="local"); };
+  const frt=(DB.expenses||[]).filter(e=>FRT_CATS.indexOf(e.category)>=0 && !tripLocal(e)).reduce((a,e)=>a+expKWD(e),0);
+  const base=goods+smp+mfg+frt, owed=base*cm;
+  const agents=new Set((DB.suppliers||[]).filter(x=>x.kind==="logistics"||x.kind==="agent").map(x=>x.id));
+  const pays=(DB.supplier_payments||[]).filter(pp=>pp.stage==="logistics" || (pp.supplier_id && agents.has(pp.supplier_id)));
+  const paid=pays.reduce((a,pp)=>a+toKWDsafe(pp.amount,pp.currency),0);
+  return {goods, smp, mfg, frt, base, pct, owed, paid, left:owed-paid, pays};
+}
+function logisticsCard(L, money){
+  if(!(L.base>0) && !L.pays.length) return "";
+  return `<div class="card" style="padding:14px;cursor:pointer" onclick="logisticsPaySheet()">
+    <div class="title" style="font-size:16px">${isAr()?"حساب اللوجستيك":"Logistics"} <span class="muted" style="font-size:13px">· ${L.pct}%</span></div>
+    <div class="lineitem"><div>${isAr()?"حسابهم":"Owed"}</div><div><b>${money(L.owed)}</b></div></div>
+    <div class="lineitem"><div>${isAr()?"مدفوع لهم":"Paid"}</div><div>${money(L.paid)}</div></div>
+    <div class="lineitem" style="font-weight:800"><div>${isAr()?"الباقي":"Remaining"}</div>
+      <div style="color:${L.left>0.001?"var(--wine)":"var(--green)"}">${L.left>0.001?money(L.left):(L.left<-0.001?`${isAr()?"زيادة":"over"} ${money(-L.left)}`:"✓")}</div></div>
+    <div class="muted" style="font-size:11px;margin-top:4px">${isAr()?"اضغط تشوف على شنو انحسبت وتسجّل دفعة.":"Tap for the breakdown and to pay."}</div>
+  </div>`;
+}
+function logisticsPaySheet(){
+  const L=logisticsAll(); const cur=chan("china").currency||"CNY";
+  const row=(a,b,bold)=>`<div class="lineitem"${bold?' style="font-weight:800"':''}><div>${a}</div><div>${fmtKD(b)}</div></div>`;
+  openSheet(`<div class="title">${isAr()?"حساب اللوجستيك":"Logistics"}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">${isAr()?"المحلي مو داخل، ولا سفرك ولا رسوم التحويل البنكي.":"Local, travel and bank fees excluded."}</div>
+    ${row(isAr()?"بضاعة الإنتاج":"Production goods", L.goods)}
+    ${row(isAr()?"العينات (المدفوع)":"Samples paid", L.smp)}
+    ${row(isAr()?"تنفيذ المشغل":"Workshop", L.mfg)}
+    ${row(isAr()?"نقل وشحن وتأمين وتخليص":"Freight, insurance & customs", L.frt)}
+    ${row(isAr()?"الأساس":"Base", L.base, true)}
+    <div class="lineitem" style="font-weight:800;background:var(--soft)"><div>${isAr()?"حسابهم":"Owed"} (${L.pct}%)</div><div>${inBoth(L.owed, cur==="KWD"?null:cur)}</div></div>
+    ${row(isAr()?"مدفوع لهم":"Paid", L.paid)}
+    <div class="lineitem" style="font-weight:800"><div>${isAr()?"الباقي":"Remaining"}</div><div style="color:${L.left>0.001?"var(--wine)":"var(--green)"}">${inBoth(Math.max(0,L.left), cur==="KWD"?null:cur)}</div></div>
+    ${L.pays.length?`<div class="sechead" style="font-size:11px">${isAr()?"الدفعات":"PAYMENTS"}</div>${L.pays.map(pp=>`<div class="lineitem"><div style="min-width:0">
+      <b>${fmtN(pp.amount)} ${esc(pp.currency||"")}</b> <span class="muted" style="font-size:12px">${esc(pp.paid_on||"")}</span>${pp.note?`<div class="muted" style="font-size:12px">${esc(pp.note)}</div>`:""}</div>
+      ${pp.stage==="logistics"?`<button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;color:var(--wine)" onclick="logisticsPayDel('${pp.id}')">✕</button>`:""}</div>`).join("")}`:""}
+    <div class="sechead" style="font-size:11px;margin-top:10px">${isAr()?"دفعة جديدة":"NEW PAYMENT"}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div><label>${isAr()?"المبلغ":"Amount"}</label><input id="lg_amt" inputmode="decimal"></div>
+      <div><label>${isAr()?"العملة":"Currency"}</label><select id="lg_cur">${["KWD","CNY","USD"].map(c=>`<option ${cur===c?"selected":""}>${c}</option>`).join("")}</select></div></div>
+    <label>${isAr()?"ملاحظة":"Note"}</label><input id="lg_note">
+    <button class="btn btn-ink btn-big" style="margin-top:10px" onclick="logisticsPayAdd()">${isAr()?"أضف الدفعة":"Add payment"}</button>`);
+}
+async function logisticsPayAdd(){
+  const amt=parseFloat(toAsciiDigits(el("lg_amt").value))||0; if(!(amt>0)) return alert(isAr()?"اكتب المبلغ":"Amount?");
+  const ag=(DB.suppliers||[]).find(x=>x.kind==="logistics"||x.kind==="agent")||null;
+  const tr=activeTrip("china");
+  const row={id:newId(), trip_id:tr?tr.id:null, channel:"china", supplier_key:ag?ag.id:"logistics", supplier_id:ag?ag.id:null,
+    supplier_name:ag?ag.name:(isAr()?"اللوجستيك":"Logistics"), amount:amt, currency:el("lg_cur").value||"CNY",
+    kind:"final", stage:"logistics", paid_on:today(), note:el("lg_note").value||null, alloc:[], design_id:null,
+    created_at:new Date().toISOString()};
+  const {error}=await sb.from("supplier_payments").insert(row);
+  if(error && !/queued/i.test(error.message||"")) return alert(error.message);
+  (DB.supplier_payments=DB.supplier_payments||[]); if(!DB.supplier_payments.some(x=>x.id===row.id)) DB.supplier_payments.unshift(row);
+  cacheDB(); render(); closeSheet(); logisticsPaySheet();
+}
+async function logisticsPayDel(id){
+  if(!confirm(isAr()?"حذف هذه الدفعة؟":"Delete this payment?")) return;
+  await sb.from("supplier_payments").delete().eq("id",id);
+  DB.supplier_payments=(DB.supplier_payments||[]).filter(x=>x.id!==id); cacheDB(); render(); closeSheet(); logisticsPaySheet();
+}
 function tabFinance(){
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
   const pos=(DB.purchases||[]), exps=(DB.expenses||[]);
   /* الإنتاج يُحسب بالمستحق، والعينات باللي دفعته فعلاً (سعرها مو سعر جملة) */
-  let mProd=0, mReady=0, mTailor=0; const bySup={}, byTrip={};
+  let mProd=0, mReady=0, mTailor=0, prodComm=0; const bySup={}, byTrip={};
   const pm=poPaidMap();   /* بعد الدفعة النهائية: المدفوع فعلاً بدل سعر الأمر */
   pos.forEach(po=>{ if(poIsSample(po)) return;
     const t=poEffTotals(po, pm); mProd+=t.total;
+    prodComm+=(t.raw||0)*((chan(po.channel).commission||0)/100);
     if(poIsReady(po)) mReady+=t.total; else mTailor+=t.total;
     const sk=supNameOf(po); (bySup[sk]=bySup[sk]||{total:0,paid:0,due:0}); bySup[sk].total+=t.total; bySup[sk].due+=t.raw;
     const tk=po.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].pur+=t.total; });
   let mPaid=0, mProdPaid=0, mSmpPaid=0;
   (DB.supplier_payments||[]).forEach(pp=>{
+    if(pp.stage==="logistics") return;   /* لها كرتها */
     const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
     const smp=(pp.stage||"production")==="sample";
     if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
@@ -5171,15 +5356,21 @@ function tabFinance(){
     if(smp){ bySup[sk].total+=kk; bySup[sk].due+=kk; bySup[sk].paid+=kk; } else bySup[sk].paid+=kk;
     const tk=pp.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); if(smp) byTrip[tk].pur+=kk;
   });
-  const mTotal=mProd+mSmpPaid;
+  /* المشتريات بلا عمولة الوكيل — العمولة كلها تنحسب مرة وحدة بكرت اللوجستيك */
+  const mTotal=mProd-prodComm+mSmpPaid;
   /* الباقي للموردين = قيمة البضاعة − المدفوع (عمولة الوكيل تنحسب له مو للمورد) */
-  const mRem=Object.values(bySup).reduce((a,v)=>a+Math.max(0,(v.due||0)-(v.paid||0)),0);
+  const supRem=Object.values(bySup).reduce((a,v)=>a+Math.max(0,(v.due||0)-(v.paid||0)),0);
+  const WS=workshopDues(), LG=logisticsAll();
+  const wsList=Object.values(WS);
+  const wsGross=wsList.reduce((a,v)=>a+v.grossK,0), wsPaid=wsList.reduce((a,v)=>a+v.paidK,0), wsRem=wsList.reduce((a,v)=>a+v.leftK,0);
+  const mRem=supRem+wsRem+Math.max(0,LG.left);
+  mPaid+=wsPaid+LG.paid;
   exps.forEach(e=>{ const tk=e.trip_id||"__none"; (byTrip[tk]=byTrip[tk]||{pur:0,exp:0}); byTrip[tk].exp+=expKWD(e); });
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   /* عمولات التحويل على دفعات الإنتاج — برّا مستحق المورّد، بس مصروف فعلي */
-  const feeTotal=(DB.supplier_payments||[]).filter(pp=>(pp.stage||"production")!=="sample")
+  const feeTotal=(DB.supplier_payments||[]).filter(ppIsProd)
     .reduce((a,pp)=>a+(Number(pp.fee)>0? toKWDsafe(pp.fee,pp.currency) : 0),0);
-  const grand=mTotal+expTotal+feeTotal;
+  const grand=mTotal+wsGross+expTotal+feeTotal+LG.owed;
   el("tabbody").innerHTML=`
   <div class="card" style="padding:14px">
     <div class="title" style="font-size:16px">${isAr()?"الرحلات/الدفعات":"Batches"}</div>
@@ -5201,11 +5392,15 @@ function tabFinance(){
   <div class="card" style="padding:16px">
     <div class="title">${isAr()?"إجمالي المصروف":"Total spend"}</div>
     <div style="font-size:30px;font-weight:800;margin:4px 0">${money(grand)}</div>
-    <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}${feeTotal?` · ${isAr()?"عمولات تحويل":"transfer fees"}: ${money(feeTotal)}`:""}</div>
-    <div class="muted" style="margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
+    <div class="muted">${isAr()?"مشتريات":"purchases"}: ${money(mTotal)}${wsGross?` · ${isAr()?"تنفيذ المشغل":"workshop"}: ${money(wsGross)}`:""} · ${isAr()?"نفقات":"expenses"}: ${money(expTotal)}${LG.owed?` · ${isAr()?"عمولة اللوجستيك":"logistics fee"}: ${money(LG.owed)}`:""}${feeTotal?` · ${isAr()?"عمولات تحويل":"transfer fees"}: ${money(feeTotal)}`:""}</div>
+    <div class="muted" style="margin-top:2px">${isAr()?"إنتاج":"production"}: ${money(mProd-prodComm)} · ${isAr()?"عينات (المدفوع)":"samples paid"}: ${money(mSmpPaid)}</div>
     ${mReady?`<div class="muted" style="margin-top:2px">${isAr()?"تفصال":"tailored"}: ${money(mTailor)} · <span style="color:var(--wine-dk)">${isAr()?"جاهز":"ready"}: ${money(mReady)}</span></div>`:""}
     ${smpFeeCard(DB.supplier_payments||[], money)}
     <div class="muted" style="margin-top:2px">${isAr()?"مدفوع":"paid"}: ${money(mPaid)} · ${mRem>0.001?`<b style="color:var(--wine)">${isAr()?"باقي عليك":"due"}: ${money(mRem)}</b>`:`<b style="color:var(--green)">${isAr()?"لا يوجد متبقٍ":"all paid"}</b>`}</div>
+    ${mRem>0.001?`<div class="muted" style="font-size:12px;margin-top:2px">${[
+      supRem>0.001?`${isAr()?"موردين":"suppliers"} ${fmtKD(supRem)}`:"",
+      wsRem>0.001?`${isAr()?"المشغل":"workshop"} ${fmtKD(wsRem)}`:"",
+      LG.left>0.001?`${isAr()?"اللوجستيك":"logistics"} ${fmtKD(LG.left)}`:""].filter(Boolean).join(" · ")}</div>`:""}
   </div>
 
   <div class="card" style="padding:14px">
@@ -5259,8 +5454,11 @@ function tabFinance(){
     <div class="title" style="font-size:16px">${isAr()?"حسب المورد":"By supplier"}</div>
     ${Object.entries(bySup).map(([k,v])=>{ const vr=Math.max(0,(v.due||0)-(v.paid||0)); return `<div class="lineitem"><div><b>${esc(k)}</b></div>
       <div class="muted" style="text-align:left;font-size:13px">${money(v.due)}${(v.paid>0.001&&vr>0.001)?` · ${isAr()?"مدفوع":"paid"} ${fmtKD(v.paid)}`:""}${vr>0.001?` · <span style="color:var(--wine)">${isAr()?"باقي":"due"} ${fmtKD(vr)}</span>`:` · <span style="color:var(--green)">✓</span>`}</div></div>`; }).join("")}
-    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"المبلغ = قيمة البضاعة للمورّد (بعد الدفعة النهائية = المدفوع). عمولة الوكيل ٥٪ مو منه — محسوبة بإجمالي المصروف وتكلفة القطعة.":"Supplier goods value; agent fee excluded."}</div>
+    <div class="muted" style="font-size:11px;margin-top:6px">${isAr()?"المبلغ = قيمة البضاعة للمورّد (بعد الدفعة النهائية = المدفوع). عمولة الوكيل ٥٪ مو منه — محسوبة بكرت اللوجستيك.":"Supplier goods value; agent fee excluded."}</div>
   </div>`:""}
+
+  ${workshopCard(WS, money)}
+  ${logisticsCard(LG, money)}
 
   ${costPerPieceCard(money)}
 
@@ -5533,7 +5731,7 @@ function chFin(){
     dk = dk || (isAr()?"غير مخصص":"unassigned"); (byDesign[dk]=byDesign[dk]||0); byDesign[dk]+=t.raw;
   });
   let mPaid=0, mProdPaid=0;
-  pays.forEach(pp=>{ const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
+  pays.forEach(pp=>{ if(pp.stage==="logistics") return; const kk=toKWDsafe(pp.amount,pp.currency); mPaid+=kk;
     const smp=(pp.stage||"production")==="sample";
     if(smp) mSmpPaid+=kk; else mProdPaid+=kk;
     const sk=supNameOf(pp); (bySup[sk]=bySup[sk]||{total:0,paid:0,rem:0,due:0});
@@ -5547,7 +5745,7 @@ function chFin(){
   const mTotal=mProd+mSmpPaid, mRem=Object.values(bySup).reduce((a,v)=>a+(v.rem||0),0);
   const expTotal=exps.reduce((a,e)=>a+expKWD(e),0);
   /* عمولات التحويل على دفعات الإنتاج — برّا مستحق المورّد، بس مصروف فعلي */
-  const feeTotal=(DB.supplier_payments||[]).filter(pp=>(pp.stage||"production")!=="sample")
+  const feeTotal=(DB.supplier_payments||[]).filter(ppIsProd)
     .reduce((a,pp)=>a+(Number(pp.fee)>0? toKWDsafe(pp.fee,pp.currency) : 0),0);
   const grand=mTotal+expTotal+feeTotal;
   const money=(v)=>`${fmtKD(v)} <span class="muted" style="font-size:11px">${isAr()?"د.ك":"KWD"}</span>`;
@@ -10942,7 +11140,7 @@ async function wDone(lineId, partId){
   const STUCK_MS = 25000;   /* عملية علقت أكثر من ذلك: نحرّرها بدل ما يموت الزر للأبد */
   const GUARDED = ["saveOrder","poSave","sampleSave","supSave","saveProduct","saveCollection",
     "newDesign","expSave","saveMaterial","saveWorker","scSave","scOpen","tripSave","fxSaveManual",
-    "poFromSample","poPaySupAdd","poEditQtySave","poPayAdd","approveDesignPurchase","finishApprove",
+    "poFromSample","poPaySupAdd","wsPayAdd","logisticsPayAdd","poEditQtySave","poPayAdd","approveDesignPurchase","finishApprove",
     "jobSaveImg","shootDone","addReason","chkAdd","addDesignPattern","addDesignFiles","addDesignNote",
     "sendToSample","backToSample","closeOrder","cancelOrder","saveSettings","saveChannels","saveLineEdit",
     "gateSubmit","captureSamplePhoto","smpAddPhotos","smpAddCard","supAddCard","supApprove",
